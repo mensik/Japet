@@ -127,6 +127,48 @@ protected:
 	};
 };
 
+///Rectangular grid structure used for generating rectangular Meshes
+class RectGrid {
+public:
+	PetscInt numElements;			///<Number of all elements in mesh
+	PetscInt numPoints;				///<Number of all nodes in mesh
+
+	Point *nodes;							///<Array of local nodes
+	Element2D *elements;			///<Array of local elements
+
+	PetscInt xPoints;			///<Number of nodes along axis X
+	PetscInt yPoints;			///<Number of nodes along axis Y
+	PetscInt *iL;					///<Array of indexes on left border of mesh
+	PetscInt *iR;					///<Array of indexes on right border of mesh
+	PetscInt *iT;					///<Array of indexes on top border of mesh
+	PetscInt *iB;					///<Array of indexes on bottom border of mesh
+
+/**
+	 @param[in] m		x coords of begining	
+	 @param[in] n		x coords of end
+	 @param[in] k		y coords of begining
+	 @param[in] l		y coords of end
+	 @param[in] h		lenght of step of discretication mesh
+*/
+
+	RectGrid(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h);
+	~RectGrid();
+protected:
+	///Static function to determine number of nodes in mesh
+	static PetscInt nPoints(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h){
+		PetscInt xEdges = (PetscInt)ceil((n - m) / h);
+		PetscInt yEdges = (PetscInt)ceil((l - k) / h);
+		return (xEdges + 1)*(yEdges + 1);
+	};
+	///Static function to determine number of elements in mesh
+	static PetscInt nElements(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h){
+		PetscInt xEdges = (PetscInt)ceil((n - m) / h);
+		PetscInt yEdges = (PetscInt)ceil((l - k) / h);
+		return xEdges*yEdges*2; 
+	};
+
+};
+
 /**
 	@brief	
 
