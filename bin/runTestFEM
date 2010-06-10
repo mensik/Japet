@@ -1,0 +1,2 @@
+clear
+mpiexec -n 2 ./test -test_h 0.01 -test_f 0 -test_K 0
