@@ -33,7 +33,6 @@ class Feti1 : public SolverApp, public SolverCtr {
 	Vec u;			///< Solution
 	
 	Mat Aloc;		///< Local part of stifness matrix
-	IS ISlocal; ///< Local indexes
 	Vec bloc;		///< Ghosted local force vector
 	Vec uloc;		///< Ghosted local solution
 
@@ -65,7 +64,6 @@ public:
 };
 
 void GenerateJumpOperator(Mesh *mesh,Mat &B, Vec &lmb);
-
 void Generate2DLaplaceNullSpace(Mesh *mesh,bool &isSingular,bool &isLocalSingular, Mat *Rmat);
 
 #endif

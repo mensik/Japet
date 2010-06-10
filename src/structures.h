@@ -172,6 +172,15 @@ public:
 void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h, PetscInt xSize, PetscInt ySize,PetscInt n_dirchletSides, BoundSide dirchletBounds[], Mesh **mesh);
 
 /**
+	@brief	Extract local part from global matrix A. Most likely mesh.localVetriceSet will work best for
+					this purpose.
+
+	@param[in] A global matrix
+	@param[in] vetrices set of matrix rows x cols to extract on this procesor
+	@param[out] Aloc local matrix (user is responsible for destroy) 
+**/
+void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc); 
+/**
 	@brief	holds information about bounding of two nodes (a,b)
 */
 struct NodeBound {

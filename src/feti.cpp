@@ -7,18 +7,8 @@ Feti1::Feti1(Mesh *mesh,PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
 	Generate2DLaplaceNullSpace(mesh, isSingular, isLocalSingular, &R);
 
 	//Extrakce lokalni casti matice tuhosti A
-	PetscInt localIndexes[mesh->localVetricesSet.size()];
-	PetscInt counter = 0;
-	for (std::set<PetscInt>::iterator i = mesh->localVetricesSet.begin();
-		i != mesh->localVetricesSet.end(); i++) {
-		localIndexes[counter++] = *i;
-	}
-	ISCreateGeneral(PETSC_COMM_SELF, mesh->localVetricesSet.size(), localIndexes, &ISlocal);
-	Mat *sm;
-	MatGetSubMatrices(A, 1, &ISlocal, &ISlocal, MAT_INITIAL_MATRIX, &sm);
-	Aloc = *sm;
-
-	//Sestaveni Nuloveho prostoru lokalni cesti matice tuhosti A
+	extractLocalAPart(A, mesh->localVetricesSet, &Aloc);
+	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
 	if (isLocalSingular) {
 		MatNullSpaceCreate(PETSC_COMM_SELF, PETSC_TRUE, 0, PETSC_NULL, &locNS);
 	}
@@ -107,7 +97,6 @@ Feti1::~Feti1() {
 	MatDestroy(Aloc);
 	VecDestroy(uloc);
 	VecDestroy(bloc);
-	ISDestroy(ISlocal);
 	
 	if (isSingular) {
 		MatDestroy(R);
@@ -167,25 +156,24 @@ void Feti1::solve() {
 	MatMultTransposeAdd(B, lmb, b, temp);
 
 	if (isLocalSingular) MatNullSpaceRemove(locNS, tempLoc, PETSC_NULL);
-	
 	KSPSolve(kspA, tempLoc, uloc);
+	if (isSingular) {
+		Vec tLmb, bAlp,alpha;
+		VecDuplicate(lmb, &tLmb);
+		MatMult(B, u, tLmb);
+		VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, gN, &bAlp);
+		VecDuplicate(bAlp, &alpha);
+		MatMultTranspose(G, tLmb, bAlp); 	
+		KSPSolve(kspG, bAlp, alpha);
 
-	Vec tLmb, bAlp,alpha;
-	VecDuplicate(lmb, &tLmb);
-	MatMult(B, u, tLmb);
-	VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, gN, &bAlp);
-	VecDuplicate(bAlp, &alpha);
-	MatMultTranspose(G, tLmb, bAlp); 	
-	KSPSolve(kspG, bAlp, alpha);
-
-	VecScale(alpha, -1);
-	MatMultAdd(R, alpha, u, u);
-
+		VecScale(alpha, -1);
+		MatMultAdd(R, alpha, u, u);
+	
+		VecDestroy(tLmb);
+		VecDestroy(bAlp);
+		VecDestroy(alpha);
+	}
 	VecDestroy(d);
-	VecDestroy(tLmb);
-	VecDestroy(bAlp);
-	VecDestroy(alpha);
-
 }
 
 void Feti1::projectGOrth(Vec in) {

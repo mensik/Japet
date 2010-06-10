@@ -108,6 +108,36 @@ SDRectSystem::~SDRectSystem() {
 	delete [] subMesh;
 }
 
+SDSystem::SDSystem(Mesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
+	Mat Agl;
+	Vec bgl;
+	Vec lmb;
+	FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh,Agl,bgl,f,K);
+	GenerateJumpOperator(mesh,B,lmb);
+	extractLocalAPart(Agl, mesh->localVetricesSet, &A);
+
+	PetscInt mA,nA, mB, nB;
+	MatGetSize(A, &mA, &nA);
+	MatGetSize(B, &mB, &nB);
+	
+	VecCreateSeq(PETSC_COMM_SELF, mA, &b);
+	VecCreateMPI(PETSC_COMM_WORLD,PETSC_DECIDE,  mB, &c);
+	VecSet(c, 0);
+
+	Vec tempG, tempLoc;
+	VecCreateGhost(PETSC_COMM_WORLD, mA, PETSC_DECIDE, 0, PETSC_NULL,  &tempG);
+	VecCopy(bgl, tempG);
+	VecGhostGetLocalForm(tempG, &tempLoc);
+	VecCopy(tempLoc, b);
+
+	VecDestroy(tempLoc);
+	VecDestroy(tempG);
+
+	MatDestroy(Agl);
+	VecDestroy(bgl);
+	VecDestroy(lmb);
+}
+
 void SDRectSystem::setDirchletBound(PetscInt n, BoundSide *sides) {
 	PetscInt xCoords, yCoords;
 	layout->getMyCoords(localIndex, xCoords, yCoords);
@@ -129,7 +159,7 @@ void SDRectSystem::setDirchletBound(PetscInt n, BoundSide *sides) {
 	}
 }
 
-Smale::Smale(SDRectSystem *sd, PetscReal mi, PetscReal ro, PetscReal beta, PetscReal M) {
+Smale::Smale(SDSystem *sd, PetscReal mi, PetscReal ro, PetscReal beta, PetscReal M) {
 	this->sd = sd;
 	this->mi = mi;
 	this->ro = ro;

@@ -413,6 +413,21 @@ void DomainRectLayout::getMyCoords(PetscInt ind, PetscInt &x, PetscInt &y) {
 		}
 }
 
+void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc) {
+	PetscInt localIndexes[vetrices.size()];
+	PetscInt counter = 0;
+	for (std::set<PetscInt>::iterator i = vetrices.begin();
+		i != vetrices.end(); i++) {
+		localIndexes[counter++] = *i;
+	}
+	IS ISlocal;
+	ISCreateGeneral(PETSC_COMM_SELF, vetrices.size(), localIndexes, &ISlocal);
+	Mat *sm;
+	MatGetSubMatrices(A, 1, &ISlocal, &ISlocal, MAT_INITIAL_MATRIX, &sm);
+	*Aloc = *sm;
+}
+
+
 RectGrid::RectGrid(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h) {
 	PetscInt xEdges = (PetscInt)ceil((n - m) / h);
 	PetscInt yEdges = (PetscInt)ceil((l - k) / h);

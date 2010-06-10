@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
 	PetscInt				boundedSideCount = 1;
 	PetscTruth 			flg;
 
-	PetscLogStage		assemblyStage, dirchletStage, smaleStage;
+	PetscLogStage		assemblyStage, smaleStage;
 
 
 	char fileName[PETSC_MAX_PATH_LEN]="matlab/out.m";			
@@ -54,37 +54,25 @@ int main(int argc, char *argv[]) {
 	PetscOptionsGetInt("-test_x", &xSubs, PETSC_NULL);
 	PetscOptionsGetInt("-test_y", &ySubs, PETSC_NULL);
 	PetscOptionsGetInt("-test_f", &f, PETSC_NULL);
-	PetscOptionsGetInt("-test_bounded_side_cont", &boundedSideCount, PETSC_NULL);
+	PetscOptionsGetInt("-test_bounded_side_count", &boundedSideCount, PETSC_NULL);
 	PetscOptionsGetString(PETSC_NULL, "-test_out_file", fileName, PETSC_MAX_PATH_LEN-1, &flg);
 	//if (!flg) SETERRQ(1,"Must indicate binary file with the -test_out_file option");
 
 	{
-  	n = xSubs;
-		l = ySubs;
+  	//n = xSubs;
+		//l = ySubs;
 		
 		ierr = MPI_Comm_rank(PETSC_COMM_WORLD,&rank);CHKERRQ(ierr);
 		
 		PetscViewer v;
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 
-		//PetscViewer matLabView;
-		//PetscViewerSocketOpen(PETSC_COMM_WORLD, PETSC_NULL, PETSC_DEFAULT, &matLabView);
-
-		//PetscViewerASCIIOpen(PETSC_COMM_WORLD,fileName,&v);
-		//PetscViewerSetFormat(v,PETSC_VIEWER_ASCII_MATLAB);
-
 		PetscLogStageRegister("Assembly", &assemblyStage);
 		PetscLogStagePush(assemblyStage);
-		SDRectSystem sdSystem(m,n,k,l,h,xSubs,ySubs,fList[f],fList[0]);
-		PetscLogStagePop();
-		
-		
 		BoundSide dirchlet[] = {LEFT,TOP,RIGHT,BOTTOM};
-		
-		
-		PetscLogStageRegister("Dirchlet", &dirchletStage);
-		PetscLogStagePush(dirchletStage);
-		sdSystem.setDirchletBound(boundedSideCount,dirchlet);
+		Mesh *mesh;
+		generateRectangularTearedMesh(m,n,k,l,h,xSubs,ySubs, boundedSideCount, dirchlet, &mesh);
+		SDSystem sdSystem(mesh,fList[f],fList[0]);
 		PetscLogStagePop();
 		
 		Smale smale(&sdSystem,mi,ro,beta,M);
@@ -95,6 +83,11 @@ int main(int argc, char *argv[]) {
 		smale.dumpSolution(v);
 		//smale.dumpSolution(matLabView);
 		PetscViewerDestroy(v);
+
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
+		mesh->dumpForMatlab(v);
+		PetscViewerDestroy(v);
+		delete mesh;
 		//PetscViewerDestroy(matLabView);
 	}
 	

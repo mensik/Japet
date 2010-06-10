@@ -20,6 +20,10 @@ test: test.o chkopts $(MYLIB)
 	-${CLINKER} -o test test.o $(MYLIB) ${PETSC_KSP_LIB}
 	${RM} test.o 
 
+testSmale: testSmale.o chkopts $(MYLIB)
+	-${CLINKER} -o testSmale testSmale.o $(MYLIB) ${PETSC_KSP_LIB}
+	${RM} testSmale.o
+
 testSassi: testSassi.o chkopts $(MYLIB)
 	-${CLINKER} -o testSassi testSassi.o $(MYLIB) ${PETSC_KSP_LIB}
 	${RM} testSassi.o

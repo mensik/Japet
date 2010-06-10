@@ -12,6 +12,7 @@
 #include "petscmat.h"
 #include "fem.h"
 #include "solver.h"
+#include "feti.h"
 /** 
 		@brief SDRectSystem represents structure of subdomains and their mutual bounds
 		
@@ -49,9 +50,24 @@ public:
 	Mat getB() { return B; }	///< @return Jump operator B matrix
 };
 
+class SDSystem {
+	Mat A;
+	Vec b;
+	Mat B;
+	Vec c;
+public:
+	SDSystem(Mesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
+	~SDSystem() { MatDestroy(A); MatDestroy(B); VecDestroy(b); VecDestroy(c); }
+	Mat getA() { return A; }	///< @return mass matrix A of local subdomain
+	Vec getb() { return b; }	///< @return right side vector b of local subdomain
+	Vec getc() { return c; }	///< @return vector c of Jump operator
+	Mat getB() { return B; }	///< @return Jump operator B matrix
+
+};
+
 class Smale {
 	static const PetscInt MAX_OUT_IT = 100;
-	SDRectSystem	*sd;
+	SDSystem	*sd;
 
 	Vec	x;
 	Vec	l;
@@ -78,7 +94,7 @@ class Smale {
 	bool isOuterConverged();
 	PetscReal	L();
 public:
-	Smale(SDRectSystem *sd, PetscReal mi = 1e-3, PetscReal ro = 5, PetscReal beta = 1.1, PetscReal M = 0.1);
+	Smale(SDSystem *sd, PetscReal mi = 1e-3, PetscReal ro = 5, PetscReal beta = 1.1, PetscReal M = 0.1);
 	~Smale();
 	void solve();
 	void dump(PetscViewer v);
