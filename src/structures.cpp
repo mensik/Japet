@@ -39,7 +39,7 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 	PetscReal xWidth = (n - m) / (PetscReal)xSize;
 	PetscReal yWidth = (l - k) / (PetscReal)ySize;
 	
-	RectMesh **subMesh = new RectMesh *[subMeshCount];
+	RectGrid **subMesh = new RectGrid *[subMeshCount];
 
 	for (int i = 0; i < subMeshCount; i++) {
 		PetscInt xCoords, yCoords;
@@ -52,7 +52,7 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 
 		PetscPrintf(PETSC_COMM_WORLD, "Dom. num. %d: <%f-%f>x<%f-%f>\n", i, xStart,xEnd, yStart,yEnd);
 		
-		subMesh[i] = new RectMesh(xStart,xEnd,yStart,yEnd,h);
+		subMesh[i] = new RectGrid(xStart,xEnd,yStart,yEnd,h);
 	}
 	
 
@@ -413,4 +413,68 @@ void DomainRectLayout::getMyCoords(PetscInt ind, PetscInt &x, PetscInt &y) {
 		}
 }
 
+RectGrid::RectGrid(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h) {
+	PetscInt xEdges = (PetscInt)ceil((n - m) / h);
+	PetscInt yEdges = (PetscInt)ceil((l - k) / h);
 
+	xPoints = xEdges + 1;
+	yPoints = yEdges + 1;
+
+	PetscReal hx = (n - m) / xEdges;
+	PetscReal hy = (l - k) / yEdges;
+
+	numPoints = xPoints * yPoints;
+	numElements = xEdges * yEdges * 2;
+
+	nodes = new Point[numPoints];
+	elements = new Element2D[numElements];
+	
+	PetscInt iLc=0,iRc=0,iTc=0,iBc=0,nodeC=0, elementC=0; //Counters
+
+	iT = new PetscInt[xPoints];
+	iB = new PetscInt[xPoints];
+	iL = new PetscInt[yPoints];
+	iR = new PetscInt[yPoints];
+	
+	//Discretization
+	
+	for (PetscInt j = 0; j < yPoints; j++)
+		for (PetscInt i = 0; i < xPoints; i++) {
+				PetscReal xPos = m + i*hx;
+				PetscReal yPos = k + j*hy;			
+
+				nodes[nodeC].x = xPos;
+				nodes[nodeC].y = yPos;
+				
+				//Element creation
+				if (j < yPoints - 1 && i < xPoints - 1) {
+					elements[elementC].nodes[0] = nodeC;
+					elements[elementC].nodes[1] = nodeC + xPoints + 1;
+					elements[elementC].nodes[2] = nodeC + 1;
+					elementC++;
+					elements[elementC].nodes[0] = nodeC;
+					elements[elementC].nodes[1] = nodeC + xPoints;
+					elements[elementC].nodes[2] = nodeC + xPoints + 1;
+					elementC++;				
+				}
+
+				//Defining boundaries
+				if (yPos == k) iB[iBc++]=nodeC;
+				if (yPos >= l) iT[iTc++]=nodeC;
+				if (xPos == m) iL[iLc++]=nodeC;
+				if (xPos >= n) iR[iRc++]=nodeC;
+				
+				nodeC++;
+		}
+ 
+}
+
+RectGrid::~RectGrid() {
+	delete [] elements;
+	delete [] nodes;
+
+	delete [] iT;
+	delete [] iB;
+	delete [] iL;
+	delete [] iR;
+}

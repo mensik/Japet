@@ -153,20 +153,6 @@ public:
 
 	RectGrid(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h);
 	~RectGrid();
-protected:
-	///Static function to determine number of nodes in mesh
-	static PetscInt nPoints(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h){
-		PetscInt xEdges = (PetscInt)ceil((n - m) / h);
-		PetscInt yEdges = (PetscInt)ceil((l - k) / h);
-		return (xEdges + 1)*(yEdges + 1);
-	};
-	///Static function to determine number of elements in mesh
-	static PetscInt nElements(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h){
-		PetscInt xEdges = (PetscInt)ceil((n - m) / h);
-		PetscInt yEdges = (PetscInt)ceil((l - k) / h);
-		return xEdges*yEdges*2; 
-	};
-
 };
 
 /**
