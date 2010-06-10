@@ -4,7 +4,7 @@ FFLAGS		 =
 CPPFLAGS         =
 FPPFLAGS         =
 MANSEC           = Mat
-LOCDIR		 = src/vec/vec/examples/tutorials/
+LOCDIR		 = 
 MYLIB = solver.o fem.o smale.o feti.o structures.o
 include ${PETSC_DIR}/conf/variables
 include ${PETSC_DIR}/conf/rules

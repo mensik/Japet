@@ -1,5 +1,5 @@
 #include "structures.h"
-
+ 
 /**
 	@param[in] nodeList List of all nodes (referenced by element, for example)
 	@return Centroid of this element
@@ -42,7 +42,7 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 	RectGrid **subMesh = new RectGrid *[subMeshCount];
 
 	for (int i = 0; i < subMeshCount; i++) {
-		PetscInt xCoords, yCoords;
+		PetscInt xCoords = 0, yCoords = 0;
 		layout->getMyCoords(i, xCoords, yCoords);
 		
 		PetscReal xStart = m + xCoords*xWidth;
@@ -64,7 +64,7 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 		PetscInt startElemIndexes[subMeshCount];
 		
 		for (int i = 0; i < subMeshCount; i++) {
-			PetscInt xCoords, yCoords;
+			PetscInt xCoords = 0, yCoords = 0;
 			layout->getMyCoords(i, xCoords, yCoords);
 			startIndexes[i] = totalNodesCount;
 			totalNodesCount += subMesh[i]->numPoints;
@@ -102,7 +102,7 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 		//Construction of dual bounding pairs, corners, dirchlet bound
 		PetscInt counter = 0;
 		for (int i = 0; i < subMeshCount; i++) {
-			PetscInt xCoords, yCoords;
+			PetscInt xCoords = 0, yCoords = 0;
 			layout->getMyCoords(i, xCoords, yCoords);
 			PetscInt SI = startIndexes[i];
 
@@ -220,8 +220,8 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 		MPI_Scatter(NULL, 5, MPI_INT, rcvBuf, 5, MPI_INT, 0, PETSC_COMM_WORLD);
 		MPI_Status status;
 		*mesh = new Mesh(rcvBuf[0], rcvBuf[1], rcvBuf[2]);
-		(*mesh)->numElements = rcvBuf[4];
-		(*mesh)->numPoints = rcvBuf[5];
+		(*mesh)->numElements = rcvBuf[3];
+		(*mesh)->numPoints = rcvBuf[4];
 		
 		{
 			PetscInt startElementIndex;
