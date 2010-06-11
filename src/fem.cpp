@@ -93,13 +93,15 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, P
 		}
 		
 		R[0]=vetrices[1].x - vetrices[0].x ;
-		R[1]=vetrices[1].y - vetrices[0].y ;
-		R[2]=vetrices[2].x - vetrices[0].x ;
+		R[2]=vetrices[1].y - vetrices[0].y ;
+		R[1]=vetrices[2].x - vetrices[0].x ;
 		R[3]=vetrices[2].y - vetrices[0].y ;
 		
 		Point center = getCenterOfSet(vetrices, elSize);
 		bLoc(R, bl,f(center));
 		ALoc(R, Al,K(center));
+
+
 		
 		//Enforce Dirchlet condition
 		for (int j = 0; j < 3; j++) {
@@ -112,7 +114,7 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, P
 				bl[j] = 0;
 			}
 		}
-
+		
 		ierr = VecSetValues(b, elSize, ixs, bl, ADD_VALUES);CHKERRQ(ierr);
 		ierr = MatSetValues(A, elSize, ixs, elSize, ixs, Al, ADD_VALUES);CHKERRQ(ierr);	
 	}	
@@ -121,7 +123,6 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, P
 	
 	ierr = MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
 	ierr = MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
-	
 	return ierr;
 
 }
