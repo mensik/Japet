@@ -49,8 +49,6 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 		PetscReal xEnd = m + (xCoords+1)*xWidth;
 		PetscReal yStart = k + yCoords*yWidth;
 		PetscReal yEnd = k + (yCoords+1)*yWidth;
-
-		PetscPrintf(PETSC_COMM_WORLD, "Dom. num. %d: <%f-%f>x<%f-%f>\n", i, xStart,xEnd, yStart,yEnd);
 		
 		subMesh[i] = new RectGrid(xStart,xEnd,yStart,yEnd,h);
 	}
