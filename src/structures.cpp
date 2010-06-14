@@ -160,12 +160,8 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 			///TODO 
 			///@todo Cornering
 			if (xCoords > 0 && yCoords > 0) {
-				
 			}
-		
-			
 		}
-
 		for (int i = 0; i < subMesh[rank]->numElements; i++) {
 			(*mesh)->elements[i] = subMesh[rank]->elements[i];
 			Element el;
