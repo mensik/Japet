@@ -1,2 +1,0 @@
-clear
-mpiexec -n 16 ./testFeti -test_x 4 -test_y 4 -test_h 0.1 -test_mi 0.5 -test_ro 5 -test_M 3 -test_beta 1.5 -test_f 0 -log_summary
