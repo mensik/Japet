@@ -27,8 +27,8 @@ x = ["Number of domain x","grid","x","-test_x", int]
 y = ["Number of domain y","grid","y","-test_y", int]
 h = ["Grid step","grid","h","-test_h", float]
 d_count = ["Number of Dirchlet bounds","conditions","dirchlet_side_count","-test_bounded_side_count", int]
-
-args = [x,y,h,d_count]
+f = ["Select force function","conditions","force_function","-test_f", int]
+args = [x,y,h,f,d_count]
 
 for arg in args:
 	try:
