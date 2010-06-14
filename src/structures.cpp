@@ -103,34 +103,7 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 			PetscInt xCoords = 0, yCoords = 0;
 			layout->getMyCoords(i, xCoords, yCoords);
 			PetscInt SI = startIndexes[i];
-
-			//L-R dual pairing
-			if (xCoords < xSize - 1) {
-				PetscInt neibDomain = layout->getSub(xCoords+1, yCoords);
-				PetscInt neibSI = startIndexes[neibDomain];
-				for (int j = (yCoords > 0)?1:0; j < subMesh[i]->yPoints; j++) {
-					(*mesh)->pointPairings[counter++] = subMesh[i]->iR[j] + SI;
-					(*mesh)->indDual.insert(subMesh[i]->iR[j] + SI);
-					(*mesh)->pointPairings[counter++] = subMesh[neibDomain]->iL[j] + neibSI;
-					(*mesh)->indDual.insert(subMesh[neibDomain]->iL[j] + neibSI);
-				}
-			}
-			//T-B dual pairing
-			if (yCoords < ySize - 1) {
-				PetscInt neibDomain = layout->getSub(xCoords, yCoords+1);
-				PetscInt neibSI = startIndexes[neibDomain];
-				for (int j = 0; j < subMesh[i]->xPoints; j++) {
-					(*mesh)->pointPairings[counter++] = subMesh[i]->iT[j] + SI;
-					(*mesh)->indDual.insert(subMesh[i]->iT[j] + SI);
-					(*mesh)->pointPairings[counter++] = subMesh[neibDomain]->iB[j] + neibSI;
-					(*mesh)->indDual.insert(subMesh[i]->iB[j] + neibSI);
-				}
-			}
-			///TODO 
-			///@todo Cornering
-			if (xCoords > 0 && yCoords > 0) {
-				
-			}
+		
 			//Dirchlet
 			for (int j = 0; j < n_dirchletSides; j++) {
 				BoundSide side = dirchletBounds[j];
@@ -152,6 +125,44 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 				}
 			}
 
+			//L-R dual pairing
+			if (xCoords < xSize - 1) {
+				PetscInt neibDomain = layout->getSub(xCoords+1, yCoords);
+				PetscInt neibSI = startIndexes[neibDomain];
+				for (int j = (yCoords > 0)?1:0; j < subMesh[i]->yPoints; j++) {
+					PetscInt tempIndexOne = subMesh[i]->iR[j] + SI;
+					PetscInt tempIndexTwo = subMesh[neibDomain]->iL[j] + neibSI;
+
+					if (!(*mesh)->indDirchlet.count(tempIndexOne) && !(*mesh)->indDirchlet.count(tempIndexTwo)) {
+						(*mesh)->pointPairings[counter++] = tempIndexOne;
+						(*mesh)->indDual.insert(tempIndexOne);
+						(*mesh)->pointPairings[counter++] = tempIndexTwo;
+						(*mesh)->indDual.insert(tempIndexTwo);
+					}
+				}
+			}
+			//T-B dual pairing
+			if (yCoords < ySize - 1) {
+				PetscInt neibDomain = layout->getSub(xCoords, yCoords+1);
+				PetscInt neibSI = startIndexes[neibDomain];
+				for (int j = 0; j < subMesh[i]->xPoints; j++) {
+					PetscInt tempIndexOne = subMesh[i]->iT[j] + SI;
+					PetscInt tempIndexTwo = subMesh[neibDomain]->iB[j] + neibSI;
+
+					if (!(*mesh)->indDirchlet.count(tempIndexOne) && !(*mesh)->indDirchlet.count(tempIndexTwo)) {
+						(*mesh)->pointPairings[counter++] = tempIndexOne;
+						(*mesh)->indDual.insert(tempIndexOne);
+						(*mesh)->pointPairings[counter++] = tempIndexTwo;
+						(*mesh)->indDual.insert(tempIndexTwo);
+					}
+				}
+			}
+			///TODO 
+			///@todo Cornering
+			if (xCoords > 0 && yCoords > 0) {
+				
+			}
+		
 			
 		}
 
