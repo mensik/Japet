@@ -160,6 +160,27 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 			///TODO 
 			///@todo Cornering
 			if (xCoords > 0 && yCoords > 0) {
+				PetscInt dom1 = layout->getSub(xCoords - 1, yCoords - 1);
+				PetscInt dom2 = layout->getSub(xCoords, yCoords - 1);
+				PetscInt dom3 = layout->getSub(xCoords - 1, yCoords);
+				PetscInt dom4 = i;
+
+				PetscInt corner1 = subMesh[dom1]->iT[subMesh[dom1]->xPoints-1] + startIndexes[dom1];
+				PetscInt corner2 = subMesh[dom2]->iT[0] + startIndexes[dom2];
+				PetscInt corner3 = subMesh[dom3]->iB[subMesh[dom3]->xPoints-1] + startIndexes[dom3];
+				PetscInt corner4 = subMesh[dom4]->iB[0] + startIndexes[dom4];
+
+				(*mesh)->indPrimal.insert(corner1);
+				(*mesh)->indPrimal.insert(corner2);
+				(*mesh)->indPrimal.insert(corner3);
+				(*mesh)->indPrimal.insert(corner4);
+			
+				std::set<PetscInt> thisCorner;
+				thisCorner.insert(corner1);
+				thisCorner.insert(corner2);
+				thisCorner.insert(corner3);
+				thisCorner.insert(corner4);
+				(*mesh)->primalBounding.insert(thisCorner);
 			}
 		}
 		for (int i = 0; i < subMesh[rank]->numElements; i++) {
@@ -267,6 +288,7 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 	Mat e;
 	Vec dirch;
 	Vec dual;
+	Vec primal;
 
 	PetscInt rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -316,15 +338,25 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 				VecSetValue(dual, counter++, *i, INSERT_VALUES);
 			}
 
+			VecCreateMPI(PETSC_COMM_WORLD, indPrimal.size(), PETSC_DECIDE, &primal);
+
+			counter = 0;
+			for (std::set<PetscInt>::iterator i = indPrimal.begin(); i != indPrimal.end(); i++) {
+				VecSetValue(primal, counter++, *i, INSERT_VALUES);
+			}
+
 		} else {
 			VecCreateMPI(PETSC_COMM_WORLD, 0, PETSC_DECIDE, &dirch);
 			VecCreateMPI(PETSC_COMM_WORLD, 0, PETSC_DECIDE, &dual);
+			VecCreateMPI(PETSC_COMM_WORLD, 0, PETSC_DECIDE, &primal);
 		}
 		
 		VecAssemblyBegin(dirch);
 		VecAssemblyEnd(dirch);
 		VecAssemblyBegin(dual);
 		VecAssemblyEnd(dual);
+		VecAssemblyBegin(primal);
+		VecAssemblyEnd(primal);
 
 	}
 
@@ -332,11 +364,13 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 	MatView(e,v);	
 	VecView(dirch,v);
 	VecView(dual,v);
+	VecView(primal,v);
 
 	MatDestroy(x);
 	MatDestroy(e);
 	VecDestroy(dirch);
 	VecDestroy(dual);
+	VecDestroy(primal);
 }
 
 RectMesh::~RectMesh() {

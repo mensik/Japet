@@ -83,7 +83,7 @@ class Mesh {
 	std::set<PetscInt> indDirchlet;
 	std::set<PetscInt> indDual;
 	std::set<PetscInt> indPrimal;
-	std::multimap<PetscInt, PetscInt>	indPrimalBound;
+	std::set<std::set<PetscInt> > primalBounding;
 		
 	Mesh(PetscInt mlocal_elements, PetscInt mlocal_nodes); ///<Basic constructor, only allocate memory
 	Mesh(PetscInt mlocal_elements, PetscInt mlocal_nodes, PetscInt num_pairings); ///<Basic constructor, only allocate memory
