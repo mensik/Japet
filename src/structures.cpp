@@ -157,8 +157,6 @@ void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 					}
 				}
 			}
-			///TODO 
-			///@todo Cornering
 			if (xCoords > 0 && yCoords > 0) {
 				PetscInt dom1 = layout->getSub(xCoords - 1, yCoords - 1);
 				PetscInt dom2 = layout->getSub(xCoords, yCoords - 1);
