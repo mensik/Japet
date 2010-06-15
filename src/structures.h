@@ -10,29 +10,10 @@
 #include <math.h>
 #include <set>
 #include <map>
+#include <cstdio>
 #include "petscmat.h"
 
-/// Struct representing 2D Point
-
-enum PointType {
-	INTERMAL,
-	BOUNDING,
-	CORNER,
-	BORDER
-};
-
-/**
-	@brief Describes sides of boundary, used for example in SDRectSystem::setDirchletBound
-*/
-enum BoundSide {
-	LEFT, 
-	RIGHT,
-	TOP,
-	BOTTOM,
-	ALL
-};
-
-
+/// Struct representing Point
 struct Point {
 	PetscScalar x;									///< X coordinate of the node
 	PetscScalar y;									///< Y coordinate of the node
@@ -72,18 +53,18 @@ struct Element {
 **/
 
 class Mesh {
-	public:
-	std::map<PetscInt, Point>	vetrices;		///< Map of vetrices on this processor. TODO Should replace *nodes 
+	std::map<PetscInt, Point>	vetrices;		///< Map of vetrices 
 	std::map<PetscInt, Edge> edges;				///< Mat of edges
-	std::map<PetscInt, Element> elements;	///< Map of elements on this processor. TODO Should repplace *nodes
-	
+	std::map<PetscInt, Element> elements;	///< Map of elements 
 	std::set<PetscInt> borderEdges;	///< set of border edges
-
+public:
 	void generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h); ///< generate rectangular mesh
-	void regenerateEdges();	///< Regenerates edges according to vetrices and elements. <b>Destroys previusly generated edges!!! Use with caution</b>
+	void regenerateEdges();	///< Regenerates edges according to vetrices and elements
 	void findBorders();
 	PetscInt getEdge(PetscInt nodeA, PetscInt nodeB); ///< -1 if it doesn't exist. 
 	void dumpForMatlab(PetscViewer v);
+	void save(const char *filename, bool withEdges);
+	void load(const char *filename, bool withEdges);
 };
 
 /**

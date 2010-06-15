@@ -1,37 +1,36 @@
 #include "structures.h"
  
 void Mesh::dumpForMatlab(PetscViewer v) {
-/*	Mat x;
+	Mat x;
 	Mat e;
-	Vec dirch;
-	Vec dual;
-	Vec primal;
 
 	PetscInt rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 
-	{
+	if (!rank) {
 		PetscInt indexes[] = {0,1,2,3};
-		MatCreateMPIAIJ(PETSC_COMM_WORLD, mlocal_nodes, PETSC_DECIDE, PETSC_DECIDE, 4, 4,PETSC_NULL, 4,PETSC_NULL, &x);
+		PetscInt numVetrices = vetrices.size();
+
+		MatCreateMPIAIJ(PETSC_COMM_WORLD, numVetrices, PETSC_DECIDE, PETSC_DECIDE, 4, 4,PETSC_NULL, 4,PETSC_NULL, &x);
 		
 		std::map<PetscInt, Point>::iterator point = vetrices.begin();
-		for (int i = 0; i < mlocal_nodes;i++) {
+		for (int i = 0; i < numVetrices;i++) {
 			PetscInt rowNumber = point->first;
 			PetscScalar	data[] = {point->second.x, point->second.y, point->second.z, rank};
 			MatSetValues(x,1, &rowNumber,4, indexes ,data,INSERT_VALUES);
 			point++;
 		}
 		MatAssemblyBegin(x,MAT_FINAL_ASSEMBLY);
-	
-		MatCreateMPIAIJ(PETSC_COMM_WORLD, mlocal_elements, PETSC_DECIDE, PETSC_DECIDE, 4,4,PETSC_NULL, 4, PETSC_NULL, &e);	
+		PetscInt numElements = elements.size();
+		MatCreateMPIAIJ(PETSC_COMM_WORLD, numElements, PETSC_DECIDE, PETSC_DECIDE, 4,4,PETSC_NULL, 4, PETSC_NULL, &e);	
 		
-		std::map<PetscInt, Element>::iterator el = element.begin();
-		for (int i = 0; i < mlocal_elements;i++) {
+		std::map<PetscInt, Element>::iterator el = elements.begin();
+		for (int i = 0; i < numElements;i++) {
 			PetscInt rowNumber = el->first;
 			PetscScalar data[4];
 			PetscInt counter = 0;
-			for (std::set<PetscInt>::iterator j = el->second.vetrices.begin(); j != el->second.vetrices.end(); j++)
-				data[counter++] = *j;
+			for (int j = 0; j < el->second.numVetrices; j++)
+				data[counter++] = el->second.vetrices[j];
 			data[3] = rank;
 			MatSetValues(e,1, &rowNumber,4, indexes ,data,INSERT_VALUES);
 			el++;
@@ -39,57 +38,19 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 		MatAssemblyBegin(e,MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(e, MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(x, MAT_FINAL_ASSEMBLY);
-
-		if (!rank) {
-			VecCreateMPI(PETSC_COMM_WORLD, indDirchlet.size(), PETSC_DECIDE, &dirch);
-
-			PetscInt counter = 0;
-			for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i != indDirchlet.end(); i++) {
-				VecSetValue(dirch, counter++, *i, INSERT_VALUES);
-			}
-
-			VecCreateMPI(PETSC_COMM_WORLD, indDual.size(), PETSC_DECIDE, &dual);
-
-			counter = 0;
-			for (std::set<PetscInt>::iterator i = indDual.begin(); i != indDual.end(); i++) {
-				VecSetValue(dual, counter++, *i, INSERT_VALUES);
-			}
-
-			VecCreateMPI(PETSC_COMM_WORLD, indPrimal.size(), PETSC_DECIDE, &primal);
-
-			counter = 0;
-			for (std::set<PetscInt>::iterator i = indPrimal.begin(); i != indPrimal.end(); i++) {
-				VecSetValue(primal, counter++, *i, INSERT_VALUES);
-			}
-
-		} else {
-			VecCreateMPI(PETSC_COMM_WORLD, 0, PETSC_DECIDE, &dirch);
-			VecCreateMPI(PETSC_COMM_WORLD, 0, PETSC_DECIDE, &dual);
-			VecCreateMPI(PETSC_COMM_WORLD, 0, PETSC_DECIDE, &primal);
-		}
-		
-		VecAssemblyBegin(dirch);
-		VecAssemblyEnd(dirch);
-		VecAssemblyBegin(dual);
-		VecAssemblyEnd(dual);
-		VecAssemblyBegin(primal);
-		VecAssemblyEnd(primal);
-
+	} else {
+		MatCreateMPIAIJ(PETSC_COMM_WORLD, 0, PETSC_DECIDE, PETSC_DECIDE, 4, 4,PETSC_NULL, 4,PETSC_NULL, &x);
+		MatAssemblyBegin(x,MAT_FINAL_ASSEMBLY);
+		MatCreateMPIAIJ(PETSC_COMM_WORLD, 0, PETSC_DECIDE, PETSC_DECIDE, 4,4,PETSC_NULL, 4, PETSC_NULL, &e);	
+		MatAssemblyBegin(e,MAT_FINAL_ASSEMBLY);
+		MatAssemblyEnd(e, MAT_FINAL_ASSEMBLY);
+		MatAssemblyEnd(x, MAT_FINAL_ASSEMBLY);
 	}
-
-
 	MatView(x,v);
 	MatView(e,v);	
-	VecView(dirch,v);
-	VecView(dual,v);
-	VecView(primal,v);
 
 	MatDestroy(x);
 	MatDestroy(e);
-	VecDestroy(dirch);
-	VecDestroy(dual);
-	VecDestroy(primal);
-*/
 }
 
 void Mesh::generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h) {
@@ -174,13 +135,111 @@ PetscInt Mesh::getEdge(PetscInt nodeA, PetscInt nodeB) {
 
 	PetscInt resultIndex = -1;
 	for (std::set<PetscInt>::iterator i = vetrices[nodeA].edges.begin(); i != vetrices[nodeA].edges.end(); i++) {
-		if (edges[*i].vetrices[0] == nodeB || edges[*i].vetrices[1] == nodeB) {
+		Edge e = edges[*i];
+		if (e.vetrices[0] == nodeB || e.vetrices[1] == nodeB) {
 			resultIndex = *i;
 			break;
 		}
 	}
 
 	return resultIndex;
+}
+
+void Mesh::save(const char *filename, bool withEdges) {
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+
+	if (!rank) {
+		FILE *f;
+		f = fopen(filename, "w");
+	
+		if (f != NULL) {
+			fprintf(f, "Vetrices (id:x y z)\n");
+			fprintf(f, "Num: %d\n", (int)vetrices.size());
+			for (std::map<PetscInt, Point>::iterator i = vetrices.begin(); i != vetrices.end(); i++)
+				fprintf(f, "%d:%lf %lf %lf\n", i->first, i->second.x, i->second.y, i->second.z);
+			fprintf(f, "Elements (id:numVetrices [vetrices])\n");
+			fprintf(f, "Num: %d\n", (int)elements.size());
+			for (std::map<PetscInt, Element>::iterator i = elements.begin(); i != elements.end(); i++) {
+				fprintf(f, "%d:%d", i->first, i->second.numVetrices);
+				for (int j = 0; j < i->second.numVetrices; j++)
+					fprintf(f, " %d", i->second.vetrices[j]);
+				fprintf(f, "\n");
+			}
+			if (withEdges) {
+				fprintf(f, "Edges (id:vetriceA vetriceB)\n");
+				fprintf(f, "Num: %d\n", (int)edges.size());
+				for (std::map<PetscInt, Edge>::iterator i = edges.begin(); i != edges.end(); i++)
+					fprintf(f,"%d:%d %d\n", i->first, i->second.vetrices[0], i->second.vetrices[1]);
+			}
+			fclose(f);
+		}
+	}
+}
+
+void Mesh::load(const char *filename, bool withEdges) {
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+
+	if (!rank) {
+		FILE *f;
+		f = fopen(filename, "r");
+		
+
+		if (f != NULL) {
+			char msg[128];
+			
+			PetscInt numVetrices;
+			fgets(msg, 128, f);
+			fscanf(f, "Num: %d\n", &numVetrices);
+			for (int i = 0; i < numVetrices; i++) {
+				PetscInt id;
+				PetscReal x,y,z;
+				fscanf(f, "%d:%lf %lf %lf\n",&id, &x, &y,&z);
+				Point newPoint(x,y,z);
+				vetrices.insert(std::pair<PetscInt, Point>(id, newPoint));
+			}
+			PetscInt numElements;
+			fgets(msg, 128, f);
+			fscanf(f, "Num: %d\n", &numElements);
+			for (int i = 0; i < numElements; i++) {
+				PetscInt id, size;
+				fscanf(f, "%d:%d",&id, &size);
+				Element newElement;
+				newElement.numVetrices = size;
+				for (int j = 0; j < size-1; j++)
+					fscanf(f," %d",newElement.vetrices + j);
+				fscanf(f," %d\n", newElement.vetrices + size-1);
+				elements.insert(std::pair<PetscInt, Element>(id, newElement));	
+			}
+			if (withEdges) {
+				PetscInt numEdges;
+				fgets(msg, 128, f);
+				fscanf(f, "Num: %d\n", &numEdges);
+				for (int i = 0; i < numEdges; i++) {
+					PetscInt id;
+					Edge newEdge;
+					fscanf(f, "%d: %d %d\n", &id, newEdge.vetrices, newEdge.vetrices + 1);
+					
+					vetrices[newEdge.vetrices[0]].edges.insert(id);
+					vetrices[newEdge.vetrices[1]].edges.insert(id);
+					
+					edges.insert(std::pair<PetscInt, Edge>(id, newEdge));
+				}
+				for (std::map<PetscInt, Element>::iterator i = elements.begin(); i != elements.end(); i++) {
+					for (PetscInt j = 0; j < i->second.numVetrices; j++) {
+						PetscInt v1 = i->second.vetrices[j];
+						PetscInt v2 = i->second.vetrices[(j+1) % (i->second.numVetrices)];
+			
+						PetscInt edgeInd = getEdge(v1,v2);
+						i->second.edges[i->second.numEdges] = edgeInd;
+						edges[edgeInd].elements.insert(i->first);
+					}
+				}
+			}
+			fclose(f);
+		}
+	}
 }
 
 
