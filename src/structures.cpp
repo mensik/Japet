@@ -1,288 +1,7 @@
 #include "structures.h"
  
-/**
-	@param[in] nodeList List of all nodes (referenced by element, for example)
-	@return Centroid of this element
-*/
-Point Element2D::getCentroid(Point *nodeList) {
-	return Point((nodeList[nodes[0]].x + nodeList[nodes[1]].x + nodeList[nodes[2]].x)/3.0,
-							 (nodeList[nodes[0]].y + nodeList[nodes[1]].y + nodeList[nodes[2]].y)/3.0);
-}
-
-Mesh::Mesh(PetscInt nPoints, PetscInt nElements) {
-	numPoints = nPoints;
-	numElements = nElements;
-	nodes = new Point[numPoints];
-	elements = new Element2D[numElements];
-	keepPairing = false;
-	//pointPairings = new PetscInt[1];
-}
-
-Mesh::Mesh(PetscInt mlocal_elements, PetscInt mlocal_nodes, PetscInt num_pairings){
-	this->mlocal_elements = mlocal_elements;
-	this->mlocal_nodes = mlocal_nodes;
-	n_pairings = num_pairings;
-	nodes = new Point[mlocal_nodes];
-	elements = new Element2D[mlocal_elements];
-	keepPairing = false;
-	//pointPairings = new PetscInt[num_pairings * 2];
-}
-
-void generateRectangularTearedMesh(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h, PetscInt xSize, PetscInt ySize,PetscInt n_dirchletSides, BoundSide dirchletBounds[], Mesh **mesh) {
-	PetscInt rank;
-	MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
-
-	if (!rank) {
-	PetscInt subMeshCount = xSize * ySize;
-	DomainRectLayout *layout = new DomainRectLayout(xSize,ySize);
-
-	PetscReal xWidth = (n - m) / (PetscReal)xSize;
-	PetscReal yWidth = (l - k) / (PetscReal)ySize;
-	
-	RectGrid **subMesh = new RectGrid *[subMeshCount];
-
-	for (int i = 0; i < subMeshCount; i++) {
-		PetscInt xCoords = 0, yCoords = 0;
-		layout->getMyCoords(i, xCoords, yCoords);
-		
-		PetscReal xStart = m + xCoords*xWidth;
-		PetscReal xEnd = m + (xCoords+1)*xWidth;
-		PetscReal yStart = k + yCoords*yWidth;
-		PetscReal yEnd = k + (yCoords+1)*yWidth;
-		
-		subMesh[i] = new RectGrid(xStart,xEnd,yStart,yEnd,h);
-	}
-	
-
-		//Determination of starting indexes for subdomains and 
-		PetscInt totalNodesCount = 0;
-		PetscInt totalElementsCount = 0;
-		PetscInt nodeBoundsCount = 0;
-		PetscInt startIndexes[subMeshCount];
-		PetscInt startElemIndexes[subMeshCount];
-		
-		for (int i = 0; i < subMeshCount; i++) {
-			PetscInt xCoords = 0, yCoords = 0;
-			layout->getMyCoords(i, xCoords, yCoords);
-			startIndexes[i] = totalNodesCount;
-			totalNodesCount += subMesh[i]->numPoints;
-			startElemIndexes[i] = totalElementsCount;
-			totalElementsCount += subMesh[i]->numElements;
-			if (xCoords < xSize - 1) {
-				nodeBoundsCount+=subMesh[i]->yPoints;	
-				if (yCoords > 0) nodeBoundsCount--; //Vynechani nadbytecne vazby ve ctverci
-			}
-	
-			if (yCoords < ySize - 1) {
-				nodeBoundsCount+=subMesh[i]->xPoints;
-			}
-		}
-		
-
-		PetscInt sendBuf[subMeshCount*5];
-		for (int i = 0; i < subMeshCount; i++) {
-			sendBuf[i*5] = subMesh[rank]->numElements;
-			sendBuf[i*5+1] = subMesh[rank]->numPoints;
-			sendBuf[i*5+2] = nodeBoundsCount;
-			sendBuf[i*5+3] = totalElementsCount;
-			sendBuf[i*5+4] = totalNodesCount;
-		}
-
-		PetscInt rcvBuf[5];
-		MPI_Scatter(sendBuf, 5, MPI_INT, rcvBuf, 5, MPI_INT, 0, PETSC_COMM_WORLD);
-
-		*mesh = new Mesh(subMesh[rank]->numElements, subMesh[rank]->numPoints, nodeBoundsCount);
-		(*mesh)->numElements = totalElementsCount;
-		(*mesh)->numPoints = totalNodesCount;
-		(*mesh)->keepPairing = true;
-		(*mesh)->pointPairings = new PetscInt[nodeBoundsCount * 2];
-
-		//Construction of dual bounding pairs, corners, dirchlet bound
-		PetscInt counter = 0;
-		for (int i = 0; i < subMeshCount; i++) {
-			PetscInt xCoords = 0, yCoords = 0;
-			layout->getMyCoords(i, xCoords, yCoords);
-			PetscInt SI = startIndexes[i];
-		
-			//Dirchlet
-			for (int j = 0; j < n_dirchletSides; j++) {
-				BoundSide side = dirchletBounds[j];
-				if ((side == ALL || side == LEFT) && xCoords == 0) {
-					for (int k = 0; k < subMesh[i]->yPoints; k++)
-						(*mesh)->indDirchlet.insert(subMesh[i]->iL[k] + SI);
-				}
-				if ((side == ALL || side == RIGHT) && xCoords == xSize - 1) {
-					for (int k = 0; k < subMesh[i]->yPoints; k++)
-						(*mesh)->indDirchlet.insert(subMesh[i]->iR[k] + SI);
-				}
-				if ((side == ALL || side == BOTTOM) && yCoords == 0) {
-					for (int k = 0; k < subMesh[i]->xPoints; k++)
-						(*mesh)->indDirchlet.insert(subMesh[i]->iB[k] + SI);
-				}
-				if ((side == ALL || side == TOP) && yCoords == ySize - 1) {
-					for (int k = 0; k < subMesh[i]->xPoints; k++)
-						(*mesh)->indDirchlet.insert(subMesh[i]->iT[k] + SI);
-				}
-			}
-
-			//L-R dual pairing
-			if (xCoords < xSize - 1) {
-				PetscInt neibDomain = layout->getSub(xCoords+1, yCoords);
-				PetscInt neibSI = startIndexes[neibDomain];
-				for (int j = (yCoords > 0)?1:0; j < subMesh[i]->yPoints; j++) {
-					PetscInt tempIndexOne = subMesh[i]->iR[j] + SI;
-					PetscInt tempIndexTwo = subMesh[neibDomain]->iL[j] + neibSI;
-
-					if (!(*mesh)->indDirchlet.count(tempIndexOne) && !(*mesh)->indDirchlet.count(tempIndexTwo)) {
-						(*mesh)->pointPairings[counter++] = tempIndexOne;
-						(*mesh)->indDual.insert(tempIndexOne);
-						(*mesh)->pointPairings[counter++] = tempIndexTwo;
-						(*mesh)->indDual.insert(tempIndexTwo);
-					}
-				}
-			}
-			//T-B dual pairing
-			if (yCoords < ySize - 1) {
-				PetscInt neibDomain = layout->getSub(xCoords, yCoords+1);
-				PetscInt neibSI = startIndexes[neibDomain];
-				for (int j = 0; j < subMesh[i]->xPoints; j++) {
-					PetscInt tempIndexOne = subMesh[i]->iT[j] + SI;
-					PetscInt tempIndexTwo = subMesh[neibDomain]->iB[j] + neibSI;
-
-					if (!(*mesh)->indDirchlet.count(tempIndexOne) && !(*mesh)->indDirchlet.count(tempIndexTwo)) {
-						(*mesh)->pointPairings[counter++] = tempIndexOne;
-						(*mesh)->indDual.insert(tempIndexOne);
-						(*mesh)->pointPairings[counter++] = tempIndexTwo;
-						(*mesh)->indDual.insert(tempIndexTwo);
-					}
-				}
-			}
-			if (xCoords > 0 && yCoords > 0) {
-				PetscInt dom1 = layout->getSub(xCoords - 1, yCoords - 1);
-				PetscInt dom2 = layout->getSub(xCoords, yCoords - 1);
-				PetscInt dom3 = layout->getSub(xCoords - 1, yCoords);
-				PetscInt dom4 = i;
-
-				PetscInt corner1 = subMesh[dom1]->iT[subMesh[dom1]->xPoints-1] + startIndexes[dom1];
-				PetscInt corner2 = subMesh[dom2]->iT[0] + startIndexes[dom2];
-				PetscInt corner3 = subMesh[dom3]->iB[subMesh[dom3]->xPoints-1] + startIndexes[dom3];
-				PetscInt corner4 = subMesh[dom4]->iB[0] + startIndexes[dom4];
-
-				(*mesh)->indPrimal.insert(corner1);
-				(*mesh)->indPrimal.insert(corner2);
-				(*mesh)->indPrimal.insert(corner3);
-				(*mesh)->indPrimal.insert(corner4);
-			
-				std::set<PetscInt> thisCorner;
-				thisCorner.insert(corner1);
-				thisCorner.insert(corner2);
-				thisCorner.insert(corner3);
-				thisCorner.insert(corner4);
-				(*mesh)->primalBounding.insert(thisCorner);
-			}
-		}
-		for (int i = 0; i < subMesh[rank]->numElements; i++) {
-			(*mesh)->elements[i] = subMesh[rank]->elements[i];
-			Element el;
-			for (int j = 0; j < 3; j++) {
-				el.vetrices.insert(subMesh[rank]->elements[i].nodes[j] + startIndexes[rank]);
-				(*mesh)->localVetricesSet.insert(subMesh[rank]->elements[i].nodes[j] + startIndexes[rank]);
-			}
-
-			(*mesh)->element[i + startElemIndexes[rank]] = el;
-		}
-		for (int i = 0; i < subMesh[rank]->numPoints; i++) {
-			Point p = subMesh[rank]->nodes[i];
-			(*mesh)->vetrices[i+startIndexes[rank]] = p;
-		}
-
-		for (int smIndex = 1; smIndex < subMeshCount; smIndex++) {
-			{
-				PetscInt sendElements[subMesh[smIndex]->numElements * 3];
-				for (int i = 0; i < subMesh[smIndex]->numElements; i++) {
-					for (int j = 0; j < 3; j++)
-						sendElements[i*3 + j] = subMesh[smIndex]->elements[i].nodes[j] + startIndexes[smIndex];
-				}
-				MPI_Send(&startElemIndexes[smIndex],1,MPI_INT, smIndex, 0,PETSC_COMM_WORLD);
-				MPI_Send(sendElements, subMesh[smIndex]->numElements * 3, MPI_INT, smIndex, 0, PETSC_COMM_WORLD);
-			}
-
-			{
-				PetscInt sendPointIndex[subMesh[smIndex]->numPoints];
-				PetscScalar sendPointCoords[subMesh[smIndex]->numPoints*3];
-				
-				for (int i = 0; i < subMesh[smIndex]->numPoints; i++) {
-					Point p = subMesh[smIndex]->nodes[i];
-					sendPointIndex[i] = i+startIndexes[smIndex];
-					sendPointCoords[i*3] = p.x;
-					sendPointCoords[i*3+1] = p.y;
-					sendPointCoords[i*3+2] = p.z;
-				}
-
-				MPI_Send(sendPointIndex, subMesh[smIndex]->numPoints, MPI_INT, smIndex, 1, PETSC_COMM_WORLD);
-				MPI_Send(sendPointCoords, subMesh[smIndex]->numPoints * 3, MPIU_SCALAR, smIndex, 0, PETSC_COMM_WORLD);
-			}
-		}
-			
-		PetscInt dirchletSize = (*mesh)->indDirchlet.size();
-		PetscInt sndDirchlet[dirchletSize];
-		PetscInt c = 0;
-		for (std::set<PetscInt>::iterator i = (*mesh)->indDirchlet.begin();
-				i != (*mesh)->indDirchlet.end(); i++) {
-			sndDirchlet[c++] = *i;
-		}
-		MPI_Bcast(&dirchletSize, 1, MPI_INT, 0, PETSC_COMM_WORLD);
-		MPI_Bcast(sndDirchlet, dirchletSize, MPI_INT, 0, PETSC_COMM_WORLD);
-
-		for (int i = 0; i < subMeshCount; i++)
-			delete subMesh[i];
-		delete[] subMesh;
-		delete layout;
-	
-	} else {
-		PetscInt rcvBuf[5];
-		MPI_Scatter(NULL, 5, MPI_INT, rcvBuf, 5, MPI_INT, 0, PETSC_COMM_WORLD);
-		MPI_Status status;
-		*mesh = new Mesh(rcvBuf[0], rcvBuf[1], rcvBuf[2]);
-		(*mesh)->numElements = rcvBuf[3];
-		(*mesh)->numPoints = rcvBuf[4];
-		
-		{
-			PetscInt startElementIndex;
-			PetscInt rcvElements[rcvBuf[0]*3];
-			MPI_Recv(&startElementIndex,1,MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, PETSC_COMM_WORLD, &status);
-			MPI_Recv(rcvElements, rcvBuf[0]*3, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG,PETSC_COMM_WORLD, &status);
-			for (int i = 0; i < rcvBuf[0]; i++) {
-				Element el;
-				el.vetrices.insert(rcvElements + i*3, rcvElements + i*3 + 3);
-				(*mesh)->element[i + startElementIndex] = el;
-				(*mesh)->localVetricesSet.insert(rcvElements + i*3, rcvElements + i*3 + 3);
-			}
-		}
-
-
-		PetscInt rcvPointIndexes[(*mesh)->mlocal_nodes];
-		PetscScalar rcvPointCoords[rcvBuf[1]*3];
-	
-				
-		MPI_Recv(rcvPointIndexes, (*mesh)->mlocal_nodes, MPI_INT, MPI_ANY_SOURCE, 1, PETSC_COMM_WORLD, &status);
-		MPI_Recv(rcvPointCoords, rcvBuf[1]*3, MPIU_SCALAR, MPI_ANY_SOURCE, MPI_ANY_TAG, PETSC_COMM_WORLD, &status);
-		
-		for (int i = 0; i < (*mesh)->mlocal_nodes; i++) {
-			Point p(rcvPointCoords[i*3], rcvPointCoords[i*3+1], rcvPointCoords[i*3+2]);
-			(*mesh)->vetrices[rcvPointIndexes[i]]=p;
-		}
-
-		PetscInt dirchletSize;
-		MPI_Bcast(&dirchletSize, 1, MPI_INT, 0, PETSC_COMM_WORLD);
-		PetscInt rcvDirchletInd[dirchletSize];
-		MPI_Bcast(rcvDirchletInd, dirchletSize, MPI_INT, 0, PETSC_COMM_WORLD);
-		(*mesh)->indDirchlet.insert(rcvDirchletInd, rcvDirchletInd + dirchletSize);
-	}
-}
-
 void Mesh::dumpForMatlab(PetscViewer v) {
-	Mat x;
+/*	Mat x;
 	Mat e;
 	Vec dirch;
 	Vec dual;
@@ -358,6 +77,7 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 
 	}
 
+
 	MatView(x,v);
 	MatView(e,v);	
 	VecView(dirch,v);
@@ -369,86 +89,100 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 	VecDestroy(dirch);
 	VecDestroy(dual);
 	VecDestroy(primal);
+*/
 }
 
-RectMesh::~RectMesh() {
-	delete [] iT;
-	delete [] iB;
-	delete [] iL;
-	delete [] iR;
-}
-
-RectMesh::RectMesh(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h) : Mesh(nPoints(m,n,k,l,h), nElements(m,n,k,l,h)) {
+void Mesh::generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h) {
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
 	PetscInt xEdges = (PetscInt)ceil((n - m) / h);
 	PetscInt yEdges = (PetscInt)ceil((l - k) / h);
 
-	xPoints = xEdges + 1;
-	yPoints = yEdges + 1;
+	PetscInt xPoints = xEdges + 1;
+	PetscInt yPoints = yEdges + 1;
 
 	PetscReal hx = (n - m) / xEdges;
 	PetscReal hy = (l - k) / yEdges;
 
-	PetscInt iLc=0,iRc=0,iTc=0,iBc=0,nodeC=0, elementC=0; //Counters
-
-	iT = new PetscInt[xPoints];
-	iB = new PetscInt[xPoints];
-	iL = new PetscInt[yPoints];
-	iR = new PetscInt[yPoints];
-	
 	//Discretization
-	
+	PetscInt nodeIndex = 0;
+	PetscInt elementIndex = 0;
 	for (PetscInt j = 0; j < yPoints; j++)
 		for (PetscInt i = 0; i < xPoints; i++) {
 				PetscReal xPos = m + i*hx;
 				PetscReal yPos = k + j*hy;			
 
-				nodes[nodeC].x = xPos;
-				nodes[nodeC].y = yPos;
+				Point node(xPos,yPos);
+				vetrices.insert(std::pair<PetscInt, Point>(nodeIndex, node));
 				
 				//Element creation
 				if (j < yPoints - 1 && i < xPoints - 1) {
-					elements[elementC].nodes[0] = nodeC;
-					elements[elementC].nodes[1] = nodeC + xPoints + 1;
-					elements[elementC].nodes[2] = nodeC + 1;
-					elementC++;
-					elements[elementC].nodes[0] = nodeC;
-					elements[elementC].nodes[1] = nodeC + xPoints;
-					elements[elementC].nodes[2] = nodeC + xPoints + 1;
-					elementC++;				
+					Element el1, el2;
+
+					el1.numVetrices = 3;
+					el1.numEdges = 0;
+					el1.vetrices[0] = nodeIndex;
+					el1.vetrices[1] = nodeIndex + xPoints + 1;
+					el1.vetrices[2] = nodeIndex + 1;
+					
+					el2.numVetrices = 3;
+					el2.numEdges = 0;
+					el2.vetrices[0] = nodeIndex;
+					el2.vetrices[1] = nodeIndex + xPoints;
+					el2.vetrices[2] = nodeIndex + xPoints +	 1;
+
+					elements.insert(std::pair<PetscInt, Element>(elementIndex++, el1));
+					elements.insert(std::pair<PetscInt, Element>(elementIndex++, el2));
 				}
-
-				//Defining boundaries
-				if (yPos == k) iB[iBc++]=nodeC;
-				if (yPos >= l) iT[iTc++]=nodeC;
-				if (xPos == m) iL[iLc++]=nodeC;
-				if (xPos >= n) iR[iRc++]=nodeC;
-				
-				nodeC++;
+				nodeIndex++;
 		}
- 
+	regenerateEdges();
+	findBorders();
 }
 
-DomainRectLayout::DomainRectLayout(PetscInt xSize, PetscInt ySize) {
-	this->xSize = xSize;
-	this->ySize = ySize;
-	subDomains = new PetscInt[xSize * ySize];
-
-	for (int j = 0; j < ySize; j++)
-		for (int i = 0; i < xSize; i++) {
-			subDomains[j*xSize + i] = j*xSize + i;
-		}
-}
-
-void DomainRectLayout::getMyCoords(PetscInt ind, PetscInt &x, PetscInt &y) {
-	for (int j = 0; j < ySize; j++)
-		for (int i = 0; i < xSize; i++) {
-			if (subDomains[j*xSize + i] == ind) {
-				x = i;
-				y = j;
-				return;
+void Mesh::regenerateEdges() {
+	PetscInt edgeIndex = 0;
+	for (std::map<PetscInt, Element>::iterator i = elements.begin(); i != elements.end(); i++) {
+		for (PetscInt j = 0; j < i->second.numVetrices; j++) {
+			PetscInt v1 = i->second.vetrices[j];
+			PetscInt v2 = i->second.vetrices[(j+1) % (i->second.numVetrices)];
+			
+			PetscInt edgeInd = getEdge(v1,v2);
+			if (edgeInd == -1) { // Edge doesn't exist yet
+				Edge newEdge;
+				edgeInd = edgeIndex++;
+				newEdge.vetrices[0] = v1;
+				newEdge.vetrices[1] = v2;
+				newEdge.elements.insert(i->first);
+				vetrices[v1].edges.insert(edgeInd);
+				vetrices[v2].edges.insert(edgeInd);
+				edges.insert(std::pair<PetscInt, Edge>(edgeInd, newEdge));
 			}
+			i->second.edges[i->second.numEdges] = edgeInd;
+			edges[edgeInd].elements.insert(i->first);
 		}
+	}
 }
+
+void Mesh::findBorders() {
+	for (std::map<PetscInt, Edge>::iterator i = edges.begin(); i != edges.end(); i++) {
+		if (i->second.elements.size() == 1) borderEdges.insert(i->first);
+	}
+}
+
+PetscInt Mesh::getEdge(PetscInt nodeA, PetscInt nodeB) {
+
+	PetscInt resultIndex = -1;
+	for (std::set<PetscInt>::iterator i = vetrices[nodeA].edges.begin(); i != vetrices[nodeA].edges.end(); i++) {
+		if (edges[*i].vetrices[0] == nodeB || edges[*i].vetrices[1] == nodeB) {
+			resultIndex = *i;
+			break;
+		}
+	}
+
+	return resultIndex;
+}
+
 
 void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc) {
 	PetscInt localIndexes[vetrices.size()];
@@ -464,69 +198,3 @@ void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc) {
 	*Aloc = *sm;
 }
 
-
-RectGrid::RectGrid(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h) {
-	PetscInt xEdges = (PetscInt)ceil((n - m) / h);
-	PetscInt yEdges = (PetscInt)ceil((l - k) / h);
-
-	xPoints = xEdges + 1;
-	yPoints = yEdges + 1;
-
-	PetscReal hx = (n - m) / xEdges;
-	PetscReal hy = (l - k) / yEdges;
-
-	numPoints = xPoints * yPoints;
-	numElements = xEdges * yEdges * 2;
-
-	nodes = new Point[numPoints];
-	elements = new Element2D[numElements];
-	
-	PetscInt iLc=0,iRc=0,iTc=0,iBc=0,nodeC=0, elementC=0; //Counters
-
-	iT = new PetscInt[xPoints];
-	iB = new PetscInt[xPoints];
-	iL = new PetscInt[yPoints];
-	iR = new PetscInt[yPoints];
-	
-	//Discretization
-	
-	for (PetscInt j = 0; j < yPoints; j++)
-		for (PetscInt i = 0; i < xPoints; i++) {
-				PetscReal xPos = m + i*hx;
-				PetscReal yPos = k + j*hy;			
-
-				nodes[nodeC].x = xPos;
-				nodes[nodeC].y = yPos;
-				
-				//Element creation
-				if (j < yPoints - 1 && i < xPoints - 1) {
-					elements[elementC].nodes[0] = nodeC;
-					elements[elementC].nodes[1] = nodeC + xPoints + 1;
-					elements[elementC].nodes[2] = nodeC + 1;
-					elementC++;
-					elements[elementC].nodes[0] = nodeC;
-					elements[elementC].nodes[1] = nodeC + xPoints;
-					elements[elementC].nodes[2] = nodeC + xPoints + 1;
-					elementC++;				
-				}
-
-				//Defining boundaries
-				if (yPos == k) iB[iBc++]=nodeC;
-				if (yPos >= l) iT[iTc++]=nodeC;
-				if (xPos == m) iL[iLc++]=nodeC;
-				if (xPos >= n) iR[iRc++]=nodeC;
-				
-				nodeC++;
-		}
- 
-}
-
-RectGrid::~RectGrid() {
-	delete [] elements;
-	delete [] nodes;
-
-	delete [] iT;
-	delete [] iB;
-	delete [] iL;
-	delete [] iR;
-}

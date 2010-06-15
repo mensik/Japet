@@ -1,73 +1,34 @@
 static char help[] = "My first own testing utility for PETSc\n\n";
 
 #include <iostream>
-#include "petscksp.h"
-#include "petscmat.h"
-#include "petscmg.h"
 #include "structures.h"
-#include "fem.h"
-#include "solver.h"
-#include "feti.h"
-
-
-PetscScalar funConst(Point n) {
-	return 1;
-}
-
-PetscScalar funSin(Point n) {
-	return sin(n.x + n.y);
-}
-
-void applyMat(Vec x) {
-	VecSet(x, 13);
-}
 
 int main(int argc, char *argv[]) {
-	PetscScalar (*fList[])(Point) = {funConst, funSin};
-	PetscInt			f=0,K=0;
-	PetscErrorCode 	ierr;
-	Mesh			*mesh;
-	PetscReal				m=0.0,n=4.0,k=0.0,l=4.0,h=0.5;
-	Mat							A;
-	Vec							b;
-  Vec 						x;
+	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.001;
 
 	PetscInitialize(&argc,&argv,(char *)0,help);
 		
-	BoundSide dirchlet[] = {LEFT,TOP,RIGHT,BOTTOM};
+	Mesh mesh;
+	mesh.generateRectangularMesh(m, n, k, l, h); 
+/*
+	PetscPrintf(PETSC_COMM_WORLD, "%d, %d\n", mesh.elements.size(), mesh.vetrices.size());
 	
-	generateRectangularTearedMesh(m,n,k,l,h,2,1,1,dirchlet, &mesh);
-	FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh,A,b,fList[f],fList[K]);
+	PetscPrintf(PETSC_COMM_WORLD, "*Elements*\n");
+	for (std::map<PetscInt, Element>::iterator i = mesh.elements.begin(); i != mesh.elements.end(); i++) {
+		PetscPrintf(PETSC_COMM_WORLD, "%d: %d-%d-%d\n", i->first, i->second.vetrices[0], i->second.vetrices[1], i->second.vetrices[2]);
+	}
+	
+	PetscPrintf(PETSC_COMM_WORLD, "*Edges*\n");
+	for (std::map<PetscInt, Edge>::iterator i = mesh.edges.begin(); i != mesh.edges.end(); i++) {
+		PetscPrintf(PETSC_COMM_WORLD, "%d: %d-%d\n", i->first, i->second.vetrices[0], i->second.vetrices[1]);
+	}
 
-	PetscInt n_rows, n_cols;
-	MatGetSize(A, &n_rows, &n_cols);
-	VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, n_rows, &x);
-
-	KSP ksp;
-	KSPCreate(PETSC_COMM_WORLD, &ksp);
-	KSPSetOperators(ksp, A, A, SAME_PRECONDITIONER);
-
-	MatNullSpace ns;
-	MatNullSpaceCreate(PETSC_COMM_WORLD, PETSC_TRUE, 0, PETSC_NULL, &ns);
-	//MatNullSpaceRemove(ns, b, PETSC_NULL);
-
-	KSPSetNullSpace(ksp, ns);
-
-	KSPSolve(ksp, b, x);
-
-	PetscViewer v;
-	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/out.m" , FILE_MODE_WRITE, &v);
-
-	MatView(A,v);
-	VecView(b,v);
-	VecView(x,v);
-
-	PetscViewerDestroy(v);
-	MatDestroy(A);
-	VecDestroy(b);
-	VecDestroy(x);
-	KSPDestroy(ksp);
-
-	ierr = PetscFinalize();CHKERRQ(ierr);
+	PetscPrintf(PETSC_COMM_WORLD, "*Border*\n");
+	for (std::set<PetscInt>::iterator i = mesh.borderEdges.begin(); i != mesh.borderEdges.end(); i++) {
+		PetscPrintf(PETSC_COMM_WORLD, "%d ", *i);
+	}
+	PetscPrintf(PETSC_COMM_WORLD, "\n");
+*/
+	PetscFinalize();
   return 0;
 }

@@ -16,8 +16,8 @@ testFeti: testFeti.o chkopts $(MYLIB)
 	-${CLINKER} -o testFeti testFeti.o $(MYLIB) ${PETSC_KSP_LIB}
 #	rm $(MYLIB) testFeti.o 
 
-test: test.o chkopts $(MYLIB)
-	-${CLINKER} -o test test.o $(MYLIB) ${PETSC_KSP_LIB}
+test: test.o chkopts structures.o 
+	-${CLINKER} -o test test.o structures.o ${PETSC_KSP_LIB}
 	${RM} test.o 
 
 testSmale: testSmale.o chkopts $(MYLIB)
