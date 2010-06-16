@@ -13,24 +13,9 @@
 #include <cstdio>
 #include "petscmat.h"
 
-/// Struct representing Point
-struct Point {
-	PetscScalar x;									///< X coordinate of the node
-	PetscScalar y;									///< Y coordinate of the node
-	PetscScalar z;								///< Z coordinate of the node
-	
-	std::set<PetscInt> edges;
-	
-	Point(PetscScalar xx = 0, PetscScalar yy = 0, PetscScalar zz = 0) {x = xx; y = yy; z = zz;};
-	Point(const Point &p) {x = p.x; y = p.y; z = p.z;};
-	~Point() {};
-};
-
-///Struct representing edge
-struct Edge {
-	PetscInt vetrices[2];
-	std::set<PetscInt> elements;
-};
+extern "C" {
+	#include "metis.h"
+}
 
 static const int MAX_VETRICES = 3;
 /// Struct representing general elements of mesh
@@ -41,15 +26,40 @@ struct Element {
 	PetscInt edges[MAX_VETRICES];
 };
 
+///Struct representing edge
+struct Edge {
+	PetscInt id;
+	PetscInt vetrices[2];
+	std::set<PetscInt> elements;
+};
+
+/// Struct representing Point
+struct Point {
+	PetscScalar x;									///< X coordinate of the node
+	PetscScalar y;									///< Y coordinate of the node
+	PetscScalar z;								///< Z coordinate of the node
+	
+	std::set<Element*> elements;
+	std::set<Edge*> edges;
+
+	PetscInt domainInd;
+	
+	Point(PetscScalar xx = 0, PetscScalar yy = 0, PetscScalar zz = 0) {x = xx; y = yy; z = zz; domainInd = 0; };
+	Point(const Point &p) {x = p.x; y = p.y; z = p.z;};
+	~Point() {};
+};
+
+struct SubDomain {
+	std::map<PetscInt, Point> vetrices;
+	std::map<PetscInt, Element> elements;
+	std::set<PetscInt>	dirchletBorder;
+};
 
 /**
 	@brief	Complex system to keep information of mesh topology and its distribution
 					on proceses.
 
 	@note		There is open way to implementation of ParMetis system to tearing domain.
-
-	@todo		TODO there is some "duality" of this object. Inherited object RectMesh uses 
-					former parts of this strcture and it should be unitize.
 **/
 
 class Mesh {
@@ -57,15 +67,27 @@ class Mesh {
 	std::map<PetscInt, Edge> edges;				///< Mat of edges
 	std::map<PetscInt, Element> elements;	///< Map of elements 
 	std::set<PetscInt> borderEdges;	///< set of border edges
-public:
-	void generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h); ///< generate rectangular mesh
+	void linkPointsToElements(); ///<Add element pointer to points
 	void regenerateEdges();	///< Regenerates edges according to vetrices and elements
 	void findBorders();
-	PetscInt getEdge(PetscInt nodeA, PetscInt nodeB); ///< -1 if it doesn't exist. 
+	PetscInt getEdge(PetscInt nodeA, PetscInt nodeB); ///< -1 if it doesn't exist.
+
+	bool isPartitioned;
+	idxtype *epart;
+public:
+	Mesh() { isPartitioned = false; }
+	~Mesh() {if (isPartitioned) delete [] epart; }
+	int getNumElements() { return elements.size(); }
+	int getNumNodes() { return vetrices.size(); }
+
+	void generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h); ///< generate rectangular mesh
 	void dumpForMatlab(PetscViewer v);
 	void save(const char *filename, bool withEdges);
 	void load(const char *filename, bool withEdges);
+	void partition(int numDomains);
 };
+
+
 
 /**
 	@brief	Extract local part from global matrix A. Most likely mesh.localVetriceSet will work best for

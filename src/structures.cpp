@@ -16,7 +16,9 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 		std::map<PetscInt, Point>::iterator point = vetrices.begin();
 		for (int i = 0; i < numVetrices;i++) {
 			PetscInt rowNumber = point->first;
-			PetscScalar	data[] = {point->second.x, point->second.y, point->second.z, rank};
+			
+			
+			PetscScalar	data[] = {point->second.x, point->second.y, point->second.z, isPartitioned?point->second.domainInd:0};
 			MatSetValues(x,1, &rowNumber,4, indexes ,data,INSERT_VALUES);
 			point++;
 		}
@@ -31,7 +33,9 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 			PetscInt counter = 0;
 			for (int j = 0; j < el->second.numVetrices; j++)
 				data[counter++] = el->second.vetrices[j];
-			data[3] = rank;
+			
+			data[3] = 0;
+			if (isPartitioned) data[3] = epart[el->first];
 			MatSetValues(e,1, &rowNumber,4, indexes ,data,INSERT_VALUES);
 			el++;
 		}
@@ -97,6 +101,7 @@ void Mesh::generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 				}
 				nodeIndex++;
 		}
+	linkPointsToElements();
 	regenerateEdges();
 	findBorders();
 }
@@ -112,11 +117,12 @@ void Mesh::regenerateEdges() {
 			if (edgeInd == -1) { // Edge doesn't exist yet
 				Edge newEdge;
 				edgeInd = edgeIndex++;
+				newEdge.id = edgeInd;
 				newEdge.vetrices[0] = v1;
 				newEdge.vetrices[1] = v2;
 				newEdge.elements.insert(i->first);
-				vetrices[v1].edges.insert(edgeInd);
-				vetrices[v2].edges.insert(edgeInd);
+				vetrices[v1].edges.insert(&newEdge);
+				vetrices[v2].edges.insert(&newEdge);
 				edges.insert(std::pair<PetscInt, Edge>(edgeInd, newEdge));
 			}
 			i->second.edges[i->second.numEdges] = edgeInd;
@@ -134,10 +140,9 @@ void Mesh::findBorders() {
 PetscInt Mesh::getEdge(PetscInt nodeA, PetscInt nodeB) {
 
 	PetscInt resultIndex = -1;
-	for (std::set<PetscInt>::iterator i = vetrices[nodeA].edges.begin(); i != vetrices[nodeA].edges.end(); i++) {
-		Edge e = edges[*i];
-		if (e.vetrices[0] == nodeB || e.vetrices[1] == nodeB) {
-			resultIndex = *i;
+	for (std::set<Edge*>::iterator i = vetrices[nodeA].edges.begin(); i != vetrices[nodeA].edges.end(); i++) {
+		if ((*i)->vetrices[0] == nodeB || (*i)->vetrices[1] == nodeB) {
+			resultIndex = (*i)->id;
 			break;
 		}
 	}
@@ -217,14 +222,13 @@ void Mesh::load(const char *filename, bool withEdges) {
 				fgets(msg, 128, f);
 				fscanf(f, "Num: %d\n", &numEdges);
 				for (int i = 0; i < numEdges; i++) {
-					PetscInt id;
 					Edge newEdge;
-					fscanf(f, "%d: %d %d\n", &id, newEdge.vetrices, newEdge.vetrices + 1);
+					fscanf(f, "%d: %d %d\n", &newEdge.id, newEdge.vetrices, newEdge.vetrices + 1);
 					
-					vetrices[newEdge.vetrices[0]].edges.insert(id);
-					vetrices[newEdge.vetrices[1]].edges.insert(id);
+					vetrices[newEdge.vetrices[0]].edges.insert(&newEdge);
+					vetrices[newEdge.vetrices[1]].edges.insert(&newEdge);
 					
-					edges.insert(std::pair<PetscInt, Edge>(id, newEdge));
+					edges.insert(std::pair<PetscInt, Edge>(newEdge.id, newEdge));
 				}
 				for (std::map<PetscInt, Element>::iterator i = elements.begin(); i != elements.end(); i++) {
 					for (PetscInt j = 0; j < i->second.numVetrices; j++) {
@@ -236,12 +240,53 @@ void Mesh::load(const char *filename, bool withEdges) {
 						edges[edgeInd].elements.insert(i->first);
 					}
 				}
+				findBorders();		
+			} else {
+				regenerateEdges();
+				findBorders();
 			}
+			linkPointsToElements();
 			fclose(f);
 		}
 	}
 }
 
+void Mesh::linkPointsToElements() {
+	for (std::map<PetscInt, Element>::iterator i = elements.begin(); i != elements.end(); i++) {
+		for (int j = 0; j < i->second.numVetrices; j++) {
+			vetrices[i->second.vetrices[j]].elements.insert(&i->second);
+		}
+	}
+}
+
+void Mesh::partition(int numDomains) {
+	//TODO now only for triangles
+
+	isPartitioned = true;
+
+
+	int eType = 1;
+	int numFlag = 0;
+	int nn = vetrices.size();
+	int ne = elements.size();
+	int edgeCut;
+	idxtype npart[nn];
+	idxtype elmnts[ne * 3];
+	
+	epart = new idxtype[ne];
+	int i = 0;
+	for (std::map<PetscInt, Element>::iterator el = elements.begin(); el != elements.end(); el++) {
+		elmnts[i++] = el->second.vetrices[0];
+		elmnts[i++] = el->second.vetrices[1];
+		elmnts[i++] = el->second.vetrices[2];
+	}
+
+	METIS_PartMeshDual(&ne, &nn, elmnts, &eType, &numFlag, &numDomains, &edgeCut, epart, npart);
+
+	for (std::map<PetscInt, Point>::iterator v = vetrices.begin(); v != vetrices.end(); v++) {
+		v->second.domainInd = npart[v->first];
+	}
+}
 
 void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc) {
 	PetscInt localIndexes[vetrices.size()];
@@ -256,4 +301,3 @@ void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc) {
 	MatGetSubMatrices(A, 1, &ISlocal, &ISlocal, MAT_INITIAL_MATRIX, &sm);
 	*Aloc = *sm;
 }
-
