@@ -288,6 +288,10 @@ void Mesh::partition(int numDomains) {
 	}
 }
 
+//void Mesh::tear() {
+//	for (std::map<PetscInt, Edge>::iterator 	
+//}
+
 void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc) {
 	PetscInt localIndexes[vetrices.size()];
 	PetscInt counter = 0;

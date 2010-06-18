@@ -85,6 +85,7 @@ public:
 	void save(const char *filename, bool withEdges);
 	void load(const char *filename, bool withEdges);
 	void partition(int numDomains);
+	void tear();
 };
 
 
