@@ -1,5 +1,13 @@
 #include "structures.h"
  
+Mesh::~Mesh() {
+	for (std::map<PetscInt,Edge*>::iterator i = edges.begin(); i != edges.end(); i++) {
+		delete i->second;
+	}
+
+	if (isPartitioned) delete [] epart; 
+}
+
 void Mesh::dumpForMatlab(PetscViewer v) {
 	Mat x;
 	Mat e;
@@ -115,30 +123,29 @@ void Mesh::regenerateEdges() {
 			
 			PetscInt edgeInd = getEdge(v1,v2);
 			if (edgeInd == -1) { // Edge doesn't exist yet
-				Edge newEdge;
+				Edge *newEdge = new Edge();
 				edgeInd = edgeIndex++;
-				newEdge.id = edgeInd;
-				newEdge.vetrices[0] = v1;
-				newEdge.vetrices[1] = v2;
-				newEdge.elements.insert(i->first);
-				vetrices[v1].edges.insert(&newEdge);
-				vetrices[v2].edges.insert(&newEdge);
-				edges.insert(std::pair<PetscInt, Edge>(edgeInd, newEdge));
+				newEdge->id = edgeInd;
+				newEdge->vetrices[0] = v1;
+				newEdge->vetrices[1] = v2;
+				newEdge->elements.insert(i->first);
+				vetrices[v1].edges.insert(newEdge);
+				vetrices[v2].edges.insert(newEdge);
+				edges.insert(std::pair<PetscInt, Edge*>(edgeInd, newEdge));
 			}
 			i->second.edges[i->second.numEdges] = edgeInd;
-			edges[edgeInd].elements.insert(i->first);
+			edges[edgeInd]->elements.insert(i->first);
 		}
 	}
 }
 
 void Mesh::findBorders() {
-	for (std::map<PetscInt, Edge>::iterator i = edges.begin(); i != edges.end(); i++) {
-		if (i->second.elements.size() == 1) borderEdges.insert(i->first);
+	for (std::map<PetscInt, Edge*>::iterator i = edges.begin(); i != edges.end(); i++) {
+		if (i->second->elements.size() == 1) borderEdges.insert(i->first);
 	}
 }
 
 PetscInt Mesh::getEdge(PetscInt nodeA, PetscInt nodeB) {
-
 	PetscInt resultIndex = -1;
 	for (std::set<Edge*>::iterator i = vetrices[nodeA].edges.begin(); i != vetrices[nodeA].edges.end(); i++) {
 		if ((*i)->vetrices[0] == nodeB || (*i)->vetrices[1] == nodeB) {
@@ -146,7 +153,6 @@ PetscInt Mesh::getEdge(PetscInt nodeA, PetscInt nodeB) {
 			break;
 		}
 	}
-
 	return resultIndex;
 }
 
@@ -174,8 +180,8 @@ void Mesh::save(const char *filename, bool withEdges) {
 			if (withEdges) {
 				fprintf(f, "Edges (id:vetriceA vetriceB)\n");
 				fprintf(f, "Num: %d\n", (int)edges.size());
-				for (std::map<PetscInt, Edge>::iterator i = edges.begin(); i != edges.end(); i++)
-					fprintf(f,"%d:%d %d\n", i->first, i->second.vetrices[0], i->second.vetrices[1]);
+				for (std::map<PetscInt, Edge*>::iterator i = edges.begin(); i != edges.end(); i++)
+					fprintf(f,"%d:%d %d\n", i->first, i->second->vetrices[0], i->second->vetrices[1]);
 			}
 			fclose(f);
 		}
@@ -222,13 +228,13 @@ void Mesh::load(const char *filename, bool withEdges) {
 				fgets(msg, 128, f);
 				fscanf(f, "Num: %d\n", &numEdges);
 				for (int i = 0; i < numEdges; i++) {
-					Edge newEdge;
-					fscanf(f, "%d: %d %d\n", &newEdge.id, newEdge.vetrices, newEdge.vetrices + 1);
+					Edge *newEdge = new Edge();
+					fscanf(f, "%d: %d %d\n", &(newEdge->id), newEdge->vetrices, newEdge->vetrices + 1);
 					
-					vetrices[newEdge.vetrices[0]].edges.insert(&newEdge);
-					vetrices[newEdge.vetrices[1]].edges.insert(&newEdge);
+					vetrices[newEdge->vetrices[0]].edges.insert(newEdge);
+					vetrices[newEdge->vetrices[1]].edges.insert(newEdge);
 					
-					edges.insert(std::pair<PetscInt, Edge>(newEdge.id, newEdge));
+					edges.insert(std::pair<PetscInt, Edge*>(newEdge->id, newEdge));
 				}
 				for (std::map<PetscInt, Element>::iterator i = elements.begin(); i != elements.end(); i++) {
 					for (PetscInt j = 0; j < i->second.numVetrices; j++) {
@@ -237,7 +243,7 @@ void Mesh::load(const char *filename, bool withEdges) {
 			
 						PetscInt edgeInd = getEdge(v1,v2);
 						i->second.edges[i->second.numEdges] = edgeInd;
-						edges[edgeInd].elements.insert(i->first);
+						edges[edgeInd]->elements.insert(i->first);
 					}
 				}
 				findBorders();		
@@ -288,9 +294,23 @@ void Mesh::partition(int numDomains) {
 	}
 }
 
-//void Mesh::tear() {
-//	for (std::map<PetscInt, Edge>::iterator 	
-//}
+void Mesh::tear() {
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	if (!rank) {
+		PetscPrintf(PETSC_COMM_SELF, "-- Dualni hrany --\n");
+		for (std::map<PetscInt, Edge*>::iterator e = edges.begin(); e != edges.end(); e++) {
+			if (e->second->elements.size() == 2) { // Edge is internal
+				std::set<PetscInt>::iterator el = e->second->elements.begin();
+				PetscInt idEl1 = *(el++);
+				PetscInt idEl2 = *(el);
+				if (epart[idEl1] != epart[idEl2]) { //Edge lies on the border of two domaines
+					PetscPrintf(PETSC_COMM_SELF, "%d \n", e->first);
+				}
+			}
+		}
+	}
+}
 
 void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc) {
 	PetscInt localIndexes[vetrices.size()];

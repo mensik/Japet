@@ -64,7 +64,7 @@ struct SubDomain {
 
 class Mesh {
 	std::map<PetscInt, Point>	vetrices;		///< Map of vetrices 
-	std::map<PetscInt, Edge> edges;				///< Mat of edges
+	std::map<PetscInt, Edge*> edges;				///< Mat of edges
 	std::map<PetscInt, Element> elements;	///< Map of elements 
 	std::set<PetscInt> borderEdges;	///< set of border edges
 	void linkPointsToElements(); ///<Add element pointer to points
@@ -76,7 +76,7 @@ class Mesh {
 	idxtype *epart;
 public:
 	Mesh() { isPartitioned = false; }
-	~Mesh() {if (isPartitioned) delete [] epart; }
+	~Mesh();
 	int getNumElements() { return elements.size(); }
 	int getNumNodes() { return vetrices.size(); }
 
