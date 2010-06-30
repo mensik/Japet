@@ -17,9 +17,17 @@ extern "C" {
 	#include "metis.h"
 }
 
+class MyMultiMap {
+	std::map<PetscInt, std::map<PetscInt, PetscInt> > data;
+public:
+	PetscInt getNewPointId(PetscInt oldPointId,PetscInt domainId);
+	void saveNewPoint(PetscInt oldPoint, PetscInt domainId, PetscInt newPoint);
+};
+
 static const int MAX_VETRICES = 3;
 /// Struct representing general elements of mesh
 struct Element {
+	PetscInt id;
 	PetscInt numVetrices;
 	PetscInt vetrices[MAX_VETRICES];
 	PetscInt numEdges;
@@ -63,9 +71,9 @@ struct SubDomain {
 **/
 
 class Mesh {
-	std::map<PetscInt, Point>	vetrices;		///< Map of vetrices 
+	std::map<PetscInt, Point*>	vetrices;		///< Map of vetrices 
 	std::map<PetscInt, Edge*> edges;				///< Mat of edges
-	std::map<PetscInt, Element> elements;	///< Map of elements 
+	std::map<PetscInt, Element*> elements;	///< Map of elements 
 	std::set<PetscInt> borderEdges;	///< set of border edges
 	void linkPointsToElements(); ///<Add element pointer to points
 	void regenerateEdges();	///< Regenerates edges according to vetrices and elements
