@@ -6,6 +6,7 @@ PetscInt MyMultiMap::getNewPointId(PetscInt oldPointId,PetscInt domainId) {
 }
 
 void MyMultiMap::saveNewPoint(PetscInt oldPointId, PetscInt domainId, PetscInt newPointId) {
+	numOfPoints++;
 	data[oldPointId].insert(std::pair<PetscInt, PetscInt>(domainId, newPointId));
 }
  
@@ -315,14 +316,14 @@ void Mesh::partition(int numDomains) {
 	}
 
 	METIS_PartMeshDual(&ne, &nn, elmnts, &eType, &numFlag, &numDomains, &edgeCut, epart, npart);
-
-	for (std::map<PetscInt, Point*>::iterator v = vetrices.begin(); v != vetrices.end(); v++) {
-		v->second->domainInd = npart[v->first];
-	}
+	
+	//for (std::map<PetscInt, Point*>::iterator v = vetrices.begin(); v != vetrices.end(); v++) {
+	//	v->second->domainInd = npart[v->first];
+	//}
 	}
 }
 
-void Mesh::tear() {
+void Mesh::tear(DistributedMesh *dm) {
 	PetscInt rank, commSize;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &commSize);
@@ -355,14 +356,13 @@ void Mesh::tear() {
 					PetscInt tearedSDIndex = epart[idEl2];
 					PetscInt notTearedSDIndex = epart[idEl1];
 				
-					e->second->domainInd = notTearedSDIndex;
+					//e->second->domainInd = notTearedSDIndex;
 					
 					PetscInt idNewPoint[2];
 					for (int i = 0; i < 2; i++) {
 						idNewPoint[i] = pointMap.getNewPointId(idPoint[i],tearedSDIndex);
 						if (idNewPoint[i] == -1) { // create NEW POINT
 							Point *newPoint = new Point(*(vetrices[idPoint[i]]));
-							newPoint->domainInd = tearedSDIndex;
 							idNewPoint[i] = pointIDCounter++;
 							vetrices.insert(std::pair<PetscInt, Point*>(idNewPoint[i], newPoint));
 							pointMap.saveNewPoint(idPoint[i], tearedSDIndex, idNewPoint[i]);
@@ -429,36 +429,100 @@ void Mesh::tear() {
 
 
 				}
-			} else {
-				e->second->domainInd = epart[*(e->second->elements.begin())]; 
 			}
 		}
 		
 
 		// Count vetrices a edges per domain
-		PetscInt nodesPerDom[numOfPartitions];
-		PetscInt edgesPerDom[numOfPartitions];
+		std::set<PetscInt> vetSetPerDom[numOfPartitions];
 		PetscInt elementPerDom[numOfPartitions];
+		for (int i = 0; i < numOfPartitions; i++) elementPerDom[i] = 0;
 
-		for (int i = 0; i < numOfPartitions; i++){
-			nodesPerDom[i] = 0;
-			edgesPerDom[i] = 0;
-			elementPerDom[i] = 0;
-		}
-
-		for (std::map<PetscInt, Point*>::iterator p = vetrices.begin(); p != vetrices.end(); p++) {
-			int domIndex = p->second->domainInd;
-			nodesPerDom[domIndex]++;
-		}
-		for (std::map<PetscInt, Edge*>::iterator e = edges.begin(); e != edges.end(); e++) {
-			int domIndex = e->second->domainInd;
-			edgesPerDom[domIndex]++;
-		}
 		for (std::map<PetscInt, Element*>::iterator e = elements.begin(); e != elements.end(); e++) {
-			edgesPerDom[epart[e->first]]++;
+			elementPerDom[epart[e->first]]++;
+			for (int i = 0; i < e->second->numVetrices; i++) {
+				vetSetPerDom[epart[e->first]].insert(e->second->vetrices[i]);
+				vetrices[e->second->vetrices[i]]->domainInd = epart[e->first];
+			}
 		}
 
-		/*  Print out
+		//Distribution to master
+		dm->nVetrices = vetSetPerDom[0].size();
+		dm->nElements = elementPerDom[0];
+		dm->vetrices = new Point[dm->nVetrices];
+		dm->elements = new Element[dm->nElements];
+		PetscInt glIndices[dm->nVetrices];
+		dm->startIndex = 0;
+		
+		PetscInt indexCounter = vetSetPerDom[0].size();
+		for (int i = 1; i < numOfPartitions; i++) {
+			int nv = vetSetPerDom[i].size();
+			MPI_Send(&nv, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);
+			MPI_Send(elementPerDom + i, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);
+			MPI_Send(&indexCounter, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);		
+			indexCounter += nv;
+		}
+  	int vCounter = 0;
+		for (std::map<PetscInt, Point*>::iterator p = vetrices.begin(); p != vetrices.end(); p++) {
+			if (p->second->domainInd == 0) {
+				dm->vetrices[vCounter] = Point(p->second->x, p->second->y, p->second->z);
+				glIndices[vCounter] = p->first;
+				vCounter++;						
+			} else {
+				int id = p->first;
+				MPI_Send(&id, 1, MPI_INT, p->second->domainInd, 0, PETSC_COMM_WORLD); 
+				PetscScalar coords[] = {p->second->x, p->second->y, p->second->z};
+				MPI_Send(coords, 3, MPI_DOUBLE, p->second->domainInd, 0, PETSC_COMM_WORLD);
+			}
+		}
+		
+		IS oldIS, newIS;
+		ISCreateGeneral(PETSC_COMM_WORLD, dm->nVetrices, glIndices, &oldIS);
+		ISCreateStride(PETSC_COMM_WORLD, dm->nVetrices, dm->startIndex,1,&newIS);
+		AOCreateBasicIS(oldIS, newIS, &(dm->procesOrdering));
+
+		int eCounter = 0;
+		for (std::map<PetscInt, Element*>::iterator e = elements.begin(); e != elements.end(); e++) {
+			if (epart[e->first] == 0) {
+				dm->elements[eCounter].numVetrices = e->second->numVetrices;
+				for (int i = 0; i < dm->elements[eCounter].numVetrices; i++) dm->elements[eCounter].vetrices[i] = e->second->vetrices[i];
+				AOApplicationToPetsc(dm->procesOrdering, dm->elements[eCounter].numVetrices, dm->elements[eCounter].vetrices);
+				eCounter++;
+			} else {
+				MPI_Send(&(e->second->numVetrices), 1, MPI_INT, epart[e->first], 0, PETSC_COMM_WORLD);
+				MPI_Send(e->second->vetrices, e->second->numVetrices, MPI_INT, epart[e->first], 0, PETSC_COMM_WORLD);	
+			}
+		}
+		for (std::set<PetscInt>::iterator i = borderEdges.begin(); i != borderEdges.end(); i++) {
+			for (int j = 0; j < 2; j++) {
+				int idBorder = edges[*i]->vetrices[j];
+				int dInd = vetrices[idBorder]->domainInd;
+				if (dInd == 0) {
+					AOApplicationToPetsc(dm->procesOrdering, 1, &idBorder);
+					dm->indDirchlet.insert(idBorder);
+				} else {
+					MPI_Send(&idBorder, 1, MPI_INT, dInd, 0, PETSC_COMM_WORLD);
+				}
+			}
+		}
+		for (int i = 1; i < numOfPartitions; i++) {
+			int END = -1;
+			MPI_Send(&END, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);
+		}
+
+		dm->nPairs = pointMap.getNumOfPoints();
+		dm->pointPairing = new PetscInt[dm->nPairs * 2];
+		int counter = 0;
+		for (std::map<PetscInt, std::map<PetscInt,PetscInt> >::iterator i = pointMap.data.begin(); i != pointMap.data.end(); i++) {
+			for (std::map<PetscInt,PetscInt>::iterator j = i->second.begin(); j != i->second.end(); j++) {
+					dm->pointPairing[counter++] = i->first;
+					dm->pointPairing[counter++] = j->second;
+			}
+		}
+
+		AOApplicationToPetsc(dm->procesOrdering, dm->nPairs * 2, dm->pointPairing);
+
+		/*  Print 
 
 		for (std::map<PetscInt, Point*>::iterator p = vetrices.begin(); p != vetrices.end(); p++) {
 			PetscPrintf(PETSC_COMM_SELF, "Point %d (%d) - edges: ", p->first, p->second->domainInd);
@@ -486,11 +550,43 @@ void Mesh::tear() {
 		}
 	*/
 
-	/// Distribution		
+	} else { // Receiving of distributed mesh
+		MPI_Status stats;
+		MPI_Recv(&(dm->nVetrices), 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stats);
+		MPI_Recv(&(dm->nElements), 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stats);
+		MPI_Recv(&(dm->startIndex), 1, MPI_INT, 0,0, PETSC_COMM_WORLD, &stats);
+
+		dm->vetrices = new Point[dm->nVetrices];
+		dm->elements = new Element[dm->nElements];
+		PetscInt glIndices[dm->nVetrices];
+
+		for (int i = 0; i < dm->nVetrices; i++) {
+			MPI_Recv(glIndices + i, 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stats); // RCV ID
+			PetscScalar coords[3];
+			MPI_Recv(coords, 3, MPI_DOUBLE, 0, 0, PETSC_COMM_WORLD, &stats); // RCV COORDINATES
+			dm->vetrices[i].x = coords[0];
+			dm->vetrices[i].y = coords[1];
+			dm->vetrices[i].z = coords[2];
+		}
+		IS oldIS, newIS;
+		ISCreateGeneral(PETSC_COMM_WORLD, dm->nVetrices, glIndices, &oldIS);
+		ISCreateStride(PETSC_COMM_WORLD, dm->nVetrices, dm->startIndex,1,&newIS);
+		AOCreateBasicIS(oldIS, newIS, &(dm->procesOrdering));
+
+		for (int i = 0; i < dm->nElements; i++) {
+			MPI_Recv(&(dm->elements[i].numVetrices), 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stats);
+			MPI_Recv(&(dm->elements[i].vetrices), dm->elements[i].numVetrices, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stats);
+			AOApplicationToPetsc(dm->procesOrdering, dm->elements[i].numVetrices, dm->elements[i].vetrices);
+		}
+
+		while (true) {
+			int borderId;
+			MPI_Recv(&borderId, 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stats);
+			if (borderId == -1) break;
+			AOApplicationToPetsc(dm->procesOrdering, 1, &borderId);
+			dm->indDirchlet.insert(borderId);
+		}
 	}
-	
-
-
 }
 
 void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc) {

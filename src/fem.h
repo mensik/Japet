@@ -43,6 +43,7 @@ PetscErrorCode FEMAssemble2D(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscSca
 */
 PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
 
+PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, DistributedMesh *mesh, Mat &A, Vec &b, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
 
 /**
 	@brief Alter (zeros) some members of A and b to enforce Dirchlets boundary

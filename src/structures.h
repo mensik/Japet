@@ -12,14 +12,18 @@
 #include <map>
 #include <cstdio>
 #include "petscmat.h"
+#include "petscao.h"
 
 extern "C" {
 	#include "metis.h"
 }
 
 class MyMultiMap {
-	std::map<PetscInt, std::map<PetscInt, PetscInt> > data;
 public:
+	PetscInt numOfPoints;
+	std::map<PetscInt, std::map<PetscInt, PetscInt> > data;
+	MyMultiMap() { numOfPoints = 0; };
+	PetscInt getNumOfPoints() { return numOfPoints; };
 	PetscInt getNewPointId(PetscInt oldPointId,PetscInt domainId);
 	void saveNewPoint(PetscInt oldPoint, PetscInt domainId, PetscInt newPoint);
 };
@@ -58,10 +62,19 @@ struct Point {
 	~Point() {};
 };
 
-struct SubDomain {
-	std::map<PetscInt, Point> vetrices;
-	std::map<PetscInt, Element> elements;
-	std::set<PetscInt>	dirchletBorder;
+struct DistributedMesh {
+	PetscInt nVetrices;
+	Point *vetrices;
+	PetscInt nElements;
+	Element *elements;
+	std::set<PetscInt> indDirchlet;
+
+	PetscInt startIndex;
+	AO procesOrdering;
+	
+	//Root only
+	PetscInt nPairs;
+	PetscInt *pointPairing;
 };
 
 /**
@@ -95,7 +108,7 @@ public:
 	void save(const char *filename, bool withEdges);
 	void load(const char *filename, bool withEdges);
 	void partition(int numDomains);
-	void tear();
+	void tear(DistributedMesh *dm);
 };
 
 
