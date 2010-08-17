@@ -13,16 +13,16 @@ int main(int argc, char *argv[]) {
 	mesh.generateRectangularMesh(m, n, k, l, h);
 	mesh.partition(3);
 	mesh.tear();
-	mesh.save("domain.jpm", true);
+	//mesh.save("domain.jpm", true);
 	
 	//Mesh mesh2;
 	//mesh2.load("domain.jpm", false);
 
-	//PetscViewer v;
+	PetscViewer v;
 	
-	//PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
-	//mesh.dumpForMatlab(v);
-	//PetscViewerDestroy(v);
+	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
+	mesh.dumpForMatlab(v);
+	PetscViewerDestroy(v);
 
 	PetscFinalize();
   return 0;

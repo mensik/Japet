@@ -20,10 +20,10 @@ for i = 1:numEl
     b = x(e(i,2)+1,:);
     c = x(e(i,3)+1,:);
     
-    colors=['b', 'r', 'm'];
+    colors=['b', 'r', 'm','g','y'];
     smIndex = e(i,4) + 1;
     
-    color = colors(mod(smIndex,3) + 1);
+    color = colors(mod(smIndex,5) + 1);
     %color = [colorA(smIndex) 0 colorB(smIndex)];
     line([a(1) b(1)], [a(2) b(2)], [a(3) b(3)], 'Color', color);
     line([a(1) c(1)], [a(2) c(2)], [a(3) c(3)], 'Color', color);

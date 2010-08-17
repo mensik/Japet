@@ -82,6 +82,8 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 void Mesh::generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h) {
 	PetscInt rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
+
+	if (!rank) {
 	PetscInt xEdges = (PetscInt)ceil((n - m) / h);
 	PetscInt yEdges = (PetscInt)ceil((l - k) / h);
 
@@ -127,12 +129,14 @@ void Mesh::generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 				}
 				nodeIndex++;
 		}
-	linkPointsToElements();
-	regenerateEdges();
-	findBorders();
+		linkPointsToElements();
+		regenerateEdges();
+		findBorders();
+	}
 }
 
 void Mesh::regenerateEdges() {
+
 	PetscInt edgeIndex = 0;
 	for (std::map<PetscInt, Element*>::iterator i = elements.begin(); i != elements.end(); i++) {
 		for (PetscInt j = 0; j < i->second->numVetrices; j++) {
@@ -151,7 +155,7 @@ void Mesh::regenerateEdges() {
 				vetrices[v2]->edges.insert(newEdge);
 				edges.insert(std::pair<PetscInt, Edge*>(edgeInd, newEdge));
 			}
-			i->second->edges[i->second->numEdges] = edgeInd;
+			i->second->edges[i->second->numEdges++] = edgeInd;
 			edges[edgeInd]->elements.insert(i->first);
 		}
 	}
@@ -287,8 +291,12 @@ void Mesh::linkPointsToElements() {
 void Mesh::partition(int numDomains) {
 	//TODO now only for triangles
 
-	isPartitioned = true;
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 
+	if (!rank) {	
+	isPartitioned = true;
+	numOfPartitions = numDomains;
 
 	int eType = 1;
 	int numFlag = 0;
@@ -311,14 +319,15 @@ void Mesh::partition(int numDomains) {
 	for (std::map<PetscInt, Point*>::iterator v = vetrices.begin(); v != vetrices.end(); v++) {
 		v->second->domainInd = npart[v->first];
 	}
+	}
 }
 
-
-
 void Mesh::tear() {
-	PetscInt rank;
+	PetscInt rank, commSize;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_size(PETSC_COMM_WORLD, &commSize);
 
+	if (!rank) {
 	MyMultiMap pointMap; // Maps original point to its image in other domain
 																									//  int origPointID -> { int newDomain, int newPointID }
 	std::map<PetscInt, PetscInt> borderPairings; //Pair borders together
@@ -326,32 +335,34 @@ void Mesh::tear() {
 	PetscInt edgeIDCounter = edges.size();
 	PetscInt pointIDCounter = vetrices.size();
 	
-	if (!rank) {
-		PetscPrintf(PETSC_COMM_SELF, "-- Dualni hrany --\n");
+		// Algorithm goes over edges between new subdomains and performs tearing steps
+		
 		for (std::map<PetscInt, Edge*>::iterator e = edges.begin(); e != edges.end(); e++) {
 			if (e->second->elements.size() == 2) { // Edge is internal
 				std::set<PetscInt>::iterator el = e->second->elements.begin();
 				PetscInt idEl1 = *(el++);
 				PetscInt idEl2 = *(el);
-				if (epart[idEl1] != epart[idEl2]) { //Edge lies on the border of two domaines
+				if (epart[idEl1] != epart[idEl2]) { //Edge lies on the border of two subdomaines
 					PetscInt idPoint[2];
 					idPoint[0] = e->second->vetrices[0];
 					idPoint[1] = e->second->vetrices[1];
 
-					if (epart[idEl1]>epart[idEl2]) {
+					if (epart[idEl1]>epart[idEl2]) { //Subdomain with higher index is about to be teared
 						PetscInt swap = idEl1;
 						idEl1 = idEl2;
 						idEl2 = swap;					
 					}
 					PetscInt tearedSDIndex = epart[idEl2];
-
+					PetscInt notTearedSDIndex = epart[idEl1];
 				
+					e->second->domainInd = notTearedSDIndex;
 					
 					PetscInt idNewPoint[2];
 					for (int i = 0; i < 2; i++) {
 						idNewPoint[i] = pointMap.getNewPointId(idPoint[i],tearedSDIndex);
 						if (idNewPoint[i] == -1) { // create NEW POINT
 							Point *newPoint = new Point(*(vetrices[idPoint[i]]));
+							newPoint->domainInd = tearedSDIndex;
 							idNewPoint[i] = pointIDCounter++;
 							vetrices.insert(std::pair<PetscInt, Point*>(idNewPoint[i], newPoint));
 							pointMap.saveNewPoint(idPoint[i], tearedSDIndex, idNewPoint[i]);
@@ -364,15 +375,24 @@ void Mesh::tear() {
 										if ((*pEl)->vetrices[iii] == idPoint[i])
 											(*pEl)->vetrices[iii] = idNewPoint[i];
 
+									newPoint->elements.insert(*pEl);
+									originalPoint->elements.erase(*pEl);
+
 								}
 							}
-
+							//New point <-> edges
 							for (std::set<Edge*>::iterator pEdge = originalPoint->edges.begin(); pEdge != originalPoint->edges.end(); pEdge++) {
 										std::set<PetscInt>::iterator pel = (*pEdge)->elements.begin();
-										PetscInt pEdgeEl1 = *(pel++);
-										if (epart[pEdgeEl1] == tearedSDIndex && ((*pEdge)->elements.size() == 1 || epart[*(pel)] == tearedSDIndex)) { // Edge lies in new domain	(inside or on the outer border)	
+										
+										PetscInt sdIdEl1 = epart[*(pel++)];
+										PetscInt sdIdEl2 = epart[*(pel)];
+
+										if (sdIdEl1 == tearedSDIndex && ((*pEdge)->elements.size() == 1 || sdIdEl2 == tearedSDIndex)) { // Edge lies in new domain	(inside or on the outer border)	
 											for (int iii = 0; iii < 2; iii++)
 												if ((*pEdge)->vetrices[iii] == idPoint[i]) (*pEdge)->vetrices[iii] = idNewPoint[i];
+								
+										newPoint->edges.insert(*pEdge);
+										originalPoint->edges.erase(*pEdge);
 								}
 							}
 						}
@@ -382,19 +402,95 @@ void Mesh::tear() {
 					newBorderEdge->id = edgeIDCounter++;
 					newBorderEdge->vetrices[0] = idNewPoint[0];
 					newBorderEdge->vetrices[1] = idNewPoint[1];
-					
+					newBorderEdge->domainInd = tearedSDIndex;
+
+					vetrices[idNewPoint[0]]->edges.insert(newBorderEdge);
+					vetrices[idNewPoint[1]]->edges.insert(newBorderEdge);
+
+					newBorderEdge->elements.insert(idEl2);
+					e->second->elements.erase(idEl2);
+
+					for (int iii = 0; iii < 2; iii++) { //If any points in not taered edges was already replicated...
+						PetscInt npID = pointMap.getNewPointId(idPoint[iii], notTearedSDIndex);
+						if (npID != -1) {
+							e->second->vetrices[iii] = npID;
+							vetrices[npID]->edges.insert(e->second);
+							vetrices[idPoint[iii]]->edges.erase(e->second);
+						}
+					}
+
 					edges.insert(std::pair<PetscInt, Edge*>(newBorderEdge->id, newBorderEdge));
 					borderPairings.insert(std::pair<PetscInt,PetscInt>(e->first, newBorderEdge->id));			
 					
-					PetscPrintf(PETSC_COMM_WORLD, "Edge %d (%d >> %d) \n", e->first, idEl1, idEl2);
 					Element* element2 = elements[idEl2];
 					for (int iii = 0; iii < element2->numEdges; iii++)
 						if (element2->edges[iii] == e->first) element2->edges[iii] = newBorderEdge->id;
 
+
+
 				}
+			} else {
+				e->second->domainInd = epart[*(e->second->elements.begin())]; 
 			}
 		}
+		
+
+		// Count vetrices a edges per domain
+		PetscInt nodesPerDom[numOfPartitions];
+		PetscInt edgesPerDom[numOfPartitions];
+		PetscInt elementPerDom[numOfPartitions];
+
+		for (int i = 0; i < numOfPartitions; i++){
+			nodesPerDom[i] = 0;
+			edgesPerDom[i] = 0;
+			elementPerDom[i] = 0;
+		}
+
+		for (std::map<PetscInt, Point*>::iterator p = vetrices.begin(); p != vetrices.end(); p++) {
+			int domIndex = p->second->domainInd;
+			nodesPerDom[domIndex]++;
+		}
+		for (std::map<PetscInt, Edge*>::iterator e = edges.begin(); e != edges.end(); e++) {
+			int domIndex = e->second->domainInd;
+			edgesPerDom[domIndex]++;
+		}
+		for (std::map<PetscInt, Element*>::iterator e = elements.begin(); e != elements.end(); e++) {
+			edgesPerDom[epart[e->first]]++;
+		}
+
+		/*  Print out
+
+		for (std::map<PetscInt, Point*>::iterator p = vetrices.begin(); p != vetrices.end(); p++) {
+			PetscPrintf(PETSC_COMM_SELF, "Point %d (%d) - edges: ", p->first, p->second->domainInd);
+			for (std::set<Edge*>::iterator e = p->second->edges.begin(); e != p->second->edges.end(); e++) {
+				PetscPrintf(PETSC_COMM_SELF, "%d ", (*e)->id);
+			}
+			PetscPrintf(PETSC_COMM_SELF, "  \t elements: ");
+			for (std::set<Element*>::iterator e = p->second->elements.begin(); e != p->second->elements.end();e++) {
+				PetscPrintf(PETSC_COMM_SELF, "%d ", (*e)->id);
+			}
+			PetscPrintf(PETSC_COMM_SELF, "\n");
+		}
+
+		for (std::map<PetscInt, Edge*>::iterator e = edges.begin(); e != edges.end(); e++) {
+			PetscPrintf(PETSC_COMM_SELF, "Edge %d (%d-%d) ", e->first, e->second->vetrices[0], e->second->vetrices[1]);
+			PetscPrintf(PETSC_COMM_SELF, " \t elements: ");
+			for (std::set<PetscInt>::iterator el = e->second->elements.begin(); el != e->second->elements.end(); el++) {
+				PetscPrintf(PETSC_COMM_SELF, "%d ", *el);
+			}
+			PetscPrintf(PETSC_COMM_SELF, "\n");
+		}
+
+		for (std::map<PetscInt, Element*>::iterator e = elements.begin(); e != elements.end(); e++) {
+			PetscPrintf(PETSC_COMM_SELF, "Element %d - (%d, %d, %d) edges %d %d %d\n", e->first, e->second->vetrices[0],  e->second->vetrices[1],  e->second->vetrices[2],  e->second->edges[0],  e->second->edges[1],  e->second->edges[2] );
+		}
+	*/
+
+	/// Distribution		
 	}
+	
+
+
 }
 
 void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc) {

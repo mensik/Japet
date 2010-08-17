@@ -37,6 +37,7 @@ struct Element {
 ///Struct representing edge
 struct Edge {
 	PetscInt id;
+	PetscInt domainInd;
 	PetscInt vetrices[2];
 	std::set<PetscInt> elements;
 };
@@ -81,6 +82,7 @@ class Mesh {
 	PetscInt getEdge(PetscInt nodeA, PetscInt nodeB); ///< -1 if it doesn't exist.
 
 	bool isPartitioned;
+	PetscInt numOfPartitions;
 	idxtype *epart;
 public:
 	Mesh() { isPartitioned = false; }
