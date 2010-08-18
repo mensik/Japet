@@ -1,2 +1,2 @@
 clear
-mpiexec -n 64 ./testFeti -test_x 8 -test_y 8 -test_h 0.1 -test_f 2 -test_bounded_side_count 2
+mpiexec -n 10 ./testFeti -test_m 0 -test_n 1 -test_k 0 -test_l 1 -test_h 0.05 -test_f 1

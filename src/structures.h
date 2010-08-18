@@ -70,11 +70,15 @@ struct DistributedMesh {
 	std::set<PetscInt> indDirchlet;
 
 	PetscInt startIndex;
+	PetscInt elStartIndex;
 	AO procesOrdering;
 	
-	//Root only
 	PetscInt nPairs;
+	
+	//Root only
 	PetscInt *pointPairing;
+
+	void dumpForMatlab(PetscViewer v);
 };
 
 /**
@@ -121,6 +125,6 @@ public:
 	@param[in] vetrices set of matrix rows x cols to extract on this procesor
 	@param[out] Aloc local matrix (user is responsible for destroy) 
 **/
-void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc); 
+void extractLocalAPart(Mat A, Mat *Aloc); 
 
 #endif

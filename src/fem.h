@@ -31,18 +31,6 @@
 	@param[in] f 	"force" function
 	@param[in] K	"material" function  	
 */
-PetscErrorCode FEMAssemble2D(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
-/**
-	@brief Assemble mass matrix A and right side vector b
-	@param[in] comm set of proceses to share matrix A and vector b
-	@param[in] mesh pointer to mesh
-	@param[out] A reference to mass matrix 
-	@param[out] b reference to reight side vector
-	@param[in] f 	"force" function
-	@param[in] K	"material" function  	
-*/
-PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
-
 PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, DistributedMesh *mesh, Mat &A, Vec &b, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
 
 /**

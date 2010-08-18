@@ -1,13 +1,13 @@
 #include "feti.h"
 
-Feti1::Feti1(Mesh *mesh,PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
+Feti1::Feti1(DistributedMesh *mesh,PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
 	
 	FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh,A,b,f,K);
 	GenerateJumpOperator(mesh,B,lmb);
 	Generate2DLaplaceNullSpace(mesh, isSingular, isLocalSingular, &R);
 
 	//Extrakce lokalni casti matice tuhosti A
-	extractLocalAPart(A, mesh->localVetricesSet, &Aloc);
+	extractLocalAPart(A, &Aloc);
 	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
 	if (isLocalSingular) {
 		MatNullSpaceCreate(PETSC_COMM_SELF, PETSC_TRUE, 0, PETSC_NULL, &locNS);
@@ -67,16 +67,16 @@ Feti1::Feti1(Mesh *mesh,PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
 		VecDuplicate(tgA, &tgB);
 	}
 	//Priprava ghostovaneho vektoru TEMP a kopie vektoru b do lokalnich casti bloc	
-	VecCreateGhost(PETSC_COMM_WORLD, mesh->localVetricesSet.size(), PETSC_DECIDE, 0, PETSC_NULL, &temp);
+	VecCreateGhost(PETSC_COMM_WORLD, mesh->nVetrices, PETSC_DECIDE, 0, PETSC_NULL, &temp);
 	VecCopy(b,temp);
 	VecGhostGetLocalForm(temp, &tempLoc);
 	VecDuplicate(tempLoc, &tempLocB);
 
-	VecCreateSeq(PETSC_COMM_SELF, mesh->localVetricesSet.size(), &bloc);
+	VecCreateSeq(PETSC_COMM_SELF, mesh->nVetrices, &bloc);
 	VecCopy(tempLoc, bloc);
 
 	//Ghostovany vektor reseni
-	VecCreateGhost(PETSC_COMM_WORLD, mesh->localVetricesSet.size(), PETSC_DECIDE, 0, PETSC_NULL,  &u);
+	VecCreateGhost(PETSC_COMM_WORLD, mesh->nVetrices, PETSC_DECIDE, 0, PETSC_NULL,  &u);
 	VecSet(u,0);
 	
 	VecGhostGetLocalForm(u, &uloc);
@@ -214,16 +214,16 @@ void Feti1::dumpSystem(PetscViewer v) {
 	MatView(B,v);
 }
 
-void GenerateJumpOperator(Mesh *mesh,Mat &B, Vec &lmb) {
+void GenerateJumpOperator(DistributedMesh *mesh,Mat &B, Vec &lmb) {
 	PetscInt rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
-
-	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE,mesh->mlocal_nodes,mesh->n_pairings,PETSC_DECIDE,2,PETSC_NULL, 2, PETSC_NULL, &B);
+	///TODO Make jump operator only local? There so need for paralelization here (so far)
+	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE,mesh->nVetrices,mesh->nPairs,PETSC_DECIDE,2,PETSC_NULL, 2, PETSC_NULL, &B);
 	
 	if (!rank) {
-		for (int i = 0; i < mesh->n_pairings; i++) {
-			MatSetValue(B,i, mesh->pointPairings[i*2],1,INSERT_VALUES);
-			MatSetValue(B,i, mesh->pointPairings[i*2 + 1],-1,INSERT_VALUES);
+		for (int i = 0; i < mesh->nPairs; i++) {
+			MatSetValue(B,i, mesh->pointPairing[i*2],1,INSERT_VALUES);
+			MatSetValue(B,i, mesh->pointPairing[i*2 + 1],-1,INSERT_VALUES);
 		}
 	}
 
@@ -231,12 +231,12 @@ void GenerateJumpOperator(Mesh *mesh,Mat &B, Vec &lmb) {
 	MatAssemblyEnd(B,MAT_FINAL_ASSEMBLY);
 
 	VecCreate(PETSC_COMM_WORLD,&lmb);
-	VecSetSizes(lmb, PETSC_DECIDE, mesh->n_pairings);	
+	VecSetSizes(lmb, PETSC_DECIDE, mesh->nPairs);	
 	VecSetFromOptions(lmb);
 	VecSet(lmb,0);
 }
 
-void Generate2DLaplaceNullSpace(Mesh *mesh,bool &isSingular, bool &isLocalSingular, Mat *R) {
+void Generate2DLaplaceNullSpace(DistributedMesh *mesh,bool &isSingular, bool &isLocalSingular, Mat *R) {
 	PetscInt rank, size;
 	MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
 	MPI_Comm_size(PETSC_COMM_WORLD,&size);
@@ -244,9 +244,8 @@ void Generate2DLaplaceNullSpace(Mesh *mesh,bool &isSingular, bool &isLocalSingul
 	//Zjisti, zda ma subdomena na tomto procesoru dirchletovu hranici (zda je regularni)
 	PetscInt hasDirchBound = 0;
 	isLocalSingular = true;
-	for (std::set<PetscInt>::iterator i = mesh->localVetricesSet.begin();
-				i != mesh->localVetricesSet.end(); i++) {
-		if (mesh->indDirchlet.count(*i) > 0) {
+	for (int i = 0; i < mesh->nVetrices; i++) {
+		if (mesh->indDirchlet.count(i + mesh->startIndex) > 0) {
 			hasDirchBound = 1;
 			isLocalSingular = false;
 			break;
@@ -275,13 +274,11 @@ void Generate2DLaplaceNullSpace(Mesh *mesh,bool &isSingular, bool &isLocalSingul
 		MPI_Bcast(nsDomInd, nullSpaceDim, MPI_INT, 0, PETSC_COMM_WORLD);
 		
 		//Creating of matrix R - null space basis
-		MatCreateMPIDense(PETSC_COMM_WORLD, mesh->mlocal_nodes, PETSC_DECIDE, PETSC_DECIDE, nullSpaceDim, PETSC_NULL, R);
+		MatCreateMPIDense(PETSC_COMM_WORLD, mesh->nVetrices, PETSC_DECIDE, PETSC_DECIDE, nullSpaceDim, PETSC_NULL, R);
 		for (int i = 0; i < nullSpaceDim; i++) {
 			if (nsDomInd[i] == rank) {
-				std::set<PetscInt>::iterator it = mesh->localVetricesSet.begin();
-				for (int j = 0; j < mesh->mlocal_nodes; j++) {
-					MatSetValue(*R, *it,i, 1, INSERT_VALUES);  
-					it++;
+				for (int j = 0; j < mesh->nVetrices; j++) {
+					MatSetValue(*R, j + mesh->startIndex,i, 1, INSERT_VALUES);  
 				}
 			}
 		}

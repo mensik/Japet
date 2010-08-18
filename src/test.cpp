@@ -1,11 +1,17 @@
 static char help[] = "My first own testing utility for PETSc\n\n";
 
 #include <iostream>
+#include "fem.h"
 #include "structures.h"
 #include "petscmat.h"
 
+PetscScalar funConst(Point n) {
+	return 1;
+}
+
 int main(int argc, char *argv[]) {
-	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.5;
+	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.05;
+	PetscScalar (*fList[])(Point) = {funConst};
 
 	PetscInitialize(&argc,&argv,(char *)0,help);
 	PetscInt size,rank;
@@ -19,16 +25,11 @@ int main(int argc, char *argv[]) {
 	DistributedMesh dm;
 	mesh.tear(&dm);
 	
-	PetscSynchronizedPrintf(PETSC_COMM_WORLD, "[%d] Nodes on this proces: %d \n", rank, dm.nVetrices);
-	for (std::set<PetscInt>::iterator i = dm.indDirchlet.begin(); i != dm.indDirchlet.end(); i++) {
-		PetscSynchronizedPrintf(PETSC_COMM_WORLD, "\t%d\n", *i);
-	}
-	PetscSynchronizedFlush(PETSC_COMM_WORLD);
-	
-	//ISView(dm.oldOrdering, PETSC_VIEWER_STDOUT_WORLD);
-	//ISView(dm.newOrdering, PETSC_VIEWER_STDOUT_WORLD);
-	AOView(dm.procesOrdering, PETSC_VIEWER_STDOUT_WORLD);
-	
+	Mat A;
+	Vec b;
+
+	FEMAssemble2DLaplace(PETSC_COMM_WORLD, &dm, A, b, fList[0], fList[0]);
+
 	//mesh.save("domain.jpm", true);
 	
 	//Mesh mesh2;
@@ -37,7 +38,10 @@ int main(int argc, char *argv[]) {
 	PetscViewer v;
 	
 	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
-	mesh.dumpForMatlab(v);
+	//mesh.dumpForMatlab(v);
+	
+	MatView(A, v);
+	
 	PetscViewerDestroy(v);
 
 	PetscFinalize();

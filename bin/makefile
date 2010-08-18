@@ -5,7 +5,7 @@ CPPFLAGS         = -Imetis/ -Wno-unused-result
 FPPFLAGS         =
 MANSEC           = Mat
 LOCDIR		 = 
-MYLIB = solver.o fem.o smale.o feti.o structures.o
+MYLIB = solver.o fem.o feti.o structures.o
 include ${PETSC_DIR}/conf/variables
 include ${PETSC_DIR}/conf/rules
 
@@ -16,8 +16,8 @@ testFeti: testFeti.o chkopts $(MYLIB)
 	-${CLINKER} -o testFeti testFeti.o $(MYLIB) ${PETSC_KSP_LIB}
 #	rm $(MYLIB) testFeti.o 
 
-test: test.o chkopts structures.o 
-	-${CLINKER} -o test test.o structures.o metis/libmetis.a ${PETSC_KSP_LIB}
+test: test.o chkopts structures.o fem.o feti.o solver.o 
+	-${CLINKER} -o test test.o fem.o structures.o feti.o solver.o metis/libmetis.a ${PETSC_KSP_LIB}
 	${RM} test.o 
 
 testSmale: testSmale.o chkopts $(MYLIB)

@@ -23,6 +23,45 @@ Mesh::~Mesh() {
 	if (isPartitioned) delete [] epart; 
 }
 
+void DistributedMesh::dumpForMatlab(PetscViewer v) {
+	Mat x;
+	Mat e;
+
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+
+	PetscInt indexes[] = {0,1,2,3};
+
+	MatCreateMPIAIJ(PETSC_COMM_WORLD, nVetrices, PETSC_DECIDE, PETSC_DECIDE, 4, 4,PETSC_NULL, 4,PETSC_NULL, &x);
+	for (int i = 0; i < nVetrices;i++) {
+		PetscInt rowNumber = i + startIndex;
+		PetscScalar	data[] = {vetrices[i].x, vetrices[i].y, vetrices[i].z, rank};
+		MatSetValues(x,1, &rowNumber,4, indexes ,data,INSERT_VALUES);
+	}
+	MatAssemblyBegin(x,MAT_FINAL_ASSEMBLY);
+	MatCreateMPIAIJ(PETSC_COMM_WORLD, nElements, PETSC_DECIDE, PETSC_DECIDE, 4,4,PETSC_NULL, 4, PETSC_NULL, &e);	
+	
+	for (int i = 0; i < nElements;i++) {
+		PetscScalar data[4];
+		for (int j = 0; j < elements[i].numVetrices; j++) {
+			data[j] = elements[i].vetrices[j];
+		}
+		data[3] = rank;	
+		//PetscPrintf(PETSC_COMM_SELF, "[%f] %f %f %f\n", data[3], data[0], data[1], data[2]);
+		PetscInt rowNumber = i + elStartIndex;
+		MatSetValues(e, 1,&rowNumber,4, indexes ,data,INSERT_VALUES);
+	}
+	MatAssemblyBegin(e,MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(e, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(x, MAT_FINAL_ASSEMBLY);
+	
+	MatView(x,v);
+	MatView(e,v);	
+
+	MatDestroy(x);
+	MatDestroy(e);
+}
+
 void Mesh::dumpForMatlab(PetscViewer v) {
 	Mat x;
 	Mat e;
@@ -453,14 +492,18 @@ void Mesh::tear(DistributedMesh *dm) {
 		dm->elements = new Element[dm->nElements];
 		PetscInt glIndices[dm->nVetrices];
 		dm->startIndex = 0;
+		dm->elStartIndex = 0;
 		
 		PetscInt indexCounter = vetSetPerDom[0].size();
+		PetscInt elIndexCounter = elementPerDom[0];
 		for (int i = 1; i < numOfPartitions; i++) {
 			int nv = vetSetPerDom[i].size();
 			MPI_Send(&nv, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);
 			MPI_Send(elementPerDom + i, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);
-			MPI_Send(&indexCounter, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);		
+			MPI_Send(&indexCounter, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);
+			MPI_Send(&elIndexCounter, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);
 			indexCounter += nv;
+			elIndexCounter += elementPerDom[i];
 		}
   	int vCounter = 0;
 		for (std::map<PetscInt, Point*>::iterator p = vetrices.begin(); p != vetrices.end(); p++) {
@@ -508,6 +551,7 @@ void Mesh::tear(DistributedMesh *dm) {
 		for (int i = 1; i < numOfPartitions; i++) {
 			int END = -1;
 			MPI_Send(&END, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);
+
 		}
 
 		dm->nPairs = pointMap.getNumOfPoints();
@@ -519,8 +563,8 @@ void Mesh::tear(DistributedMesh *dm) {
 					dm->pointPairing[counter++] = j->second;
 			}
 		}
-
 		AOApplicationToPetsc(dm->procesOrdering, dm->nPairs * 2, dm->pointPairing);
+		MPI_Bcast(&(dm->nPairs), 1, MPI_INT, 0, PETSC_COMM_WORLD);
 
 		/*  Print 
 
@@ -555,6 +599,7 @@ void Mesh::tear(DistributedMesh *dm) {
 		MPI_Recv(&(dm->nVetrices), 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stats);
 		MPI_Recv(&(dm->nElements), 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stats);
 		MPI_Recv(&(dm->startIndex), 1, MPI_INT, 0,0, PETSC_COMM_WORLD, &stats);
+		MPI_Recv(&(dm->elStartIndex), 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stats);
 
 		dm->vetrices = new Point[dm->nVetrices];
 		dm->elements = new Element[dm->nElements];
@@ -586,18 +631,20 @@ void Mesh::tear(DistributedMesh *dm) {
 			AOApplicationToPetsc(dm->procesOrdering, 1, &borderId);
 			dm->indDirchlet.insert(borderId);
 		}
+
+		MPI_Bcast(&(dm->nPairs), 1, MPI_INT, 0, PETSC_COMM_WORLD);
 	}
 }
 
-void extractLocalAPart(Mat A, std::set<PetscInt> vetrices, Mat *Aloc) {
-	PetscInt localIndexes[vetrices.size()];
-	PetscInt counter = 0;
-	for (std::set<PetscInt>::iterator i = vetrices.begin();
-		i != vetrices.end(); i++) {
-		localIndexes[counter++] = *i;
-	}
+void extractLocalAPart(Mat A, Mat *Aloc) {
+
+	PetscInt m,n;
+	MatGetOwnershipRange(A, &m, &n);
+	PetscInt size = n - m;
+
+
 	IS ISlocal;
-	ISCreateGeneral(PETSC_COMM_SELF, vetrices.size(), localIndexes, &ISlocal);
+	ISCreateStride(PETSC_COMM_SELF, size, m , 1, &ISlocal);
 	Mat *sm;
 	MatGetSubMatrices(A, 1, &ISlocal, &ISlocal, MAT_INITIAL_MATRIX, &sm);
 	*Aloc = *sm;

@@ -15,137 +15,22 @@ void ALoc(PetscScalar *R, PetscScalar *Al, PetscScalar K);
 
 Point getCenterOfSet(Point points[], PetscInt size);
 
-PetscErrorCode FEMAssemble2D(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
-
-	PetscErrorCode ierr;
-	PetscMPIInt rank,numProc;
-	PetscInt numOfPoints = mesh->numPoints;
-	PetscInt localOwnBegin, localOwnEnd, localPointsSize;
-
-	ierr = MatCreateMPIAIJ(comm, PETSC_DECIDE, PETSC_DECIDE, numOfPoints, numOfPoints,7,PETSC_NULL, 7, PETSC_NULL, &A);CHKERRQ(ierr);
-	
-	ierr = MatGetOwnershipRange(A, &localOwnBegin, &localOwnEnd); CHKERRQ(ierr);
-	localPointsSize = localOwnEnd - localOwnBegin;
-	ierr = VecCreate(comm, &b);CHKERRQ(ierr);
-//	printf("Local size: %d\n", localPointsSize);
-	ierr = VecSetSizes(b,localPointsSize, PETSC_DECIDE);CHKERRQ(ierr);
-	ierr = VecSetFromOptions(b);CHKERRQ(ierr);
-  ierr = MPI_Comm_rank(comm,&rank);CHKERRQ(ierr);
-	ierr = MPI_Comm_size(comm,&numProc);CHKERRQ(ierr);
-
-	//:TODO:
-	/// @todo Velmi amaterske rozdeleni sestaveni matice tuhosti mezi procesory
-	///  Rad bych se pokusil casem najit reseni s vyuzitim distribuovanych
-	///	poli a kazdy procesor by si sestavoval elementy podle nodu, ktere
-	///	mu budou patrit => omezeni komunikace pouze na presahujici (okrajove)
-	///	elementy.
-		
-	PetscInt elementStride = (PetscInt)floor((PetscReal)mesh->numElements / (PetscReal)numProc);
-	PetscInt elStart = elementStride * rank;
-	PetscInt elEnd = elStart + elementStride;
-	if (elEnd > mesh->numElements) elEnd = mesh->numElements;
-	
-	for (PetscInt i = elStart; i < elEnd; i++) {	
-		PetscScalar bl[3];
-		PetscScalar Al[9];
-		PetscScalar R[4];
-	
-		const PetscInt ixs[] = {mesh->elements[i].nodes[0],mesh->elements[i].nodes[1],mesh->elements[i].nodes[2]};
-		R[0]=mesh->nodes[ixs[1]].x - mesh->nodes[ixs[0]].x ;
-		R[1]=mesh->nodes[ixs[1]].y - mesh->nodes[ixs[0]].y ;
-		R[2]=mesh->nodes[ixs[2]].x - mesh->nodes[ixs[0]].x ;
-		R[3]=mesh->nodes[ixs[2]].y - mesh->nodes[ixs[0]].y ;
-		
-		bLoc(R, bl,f(mesh->elements[i].getCentroid(mesh->nodes)));
-		ALoc(R, Al,K(mesh->elements[i].getCentroid(mesh->nodes)));
-		
-		ierr = VecSetValues(b, 3, ixs, bl, ADD_VALUES);CHKERRQ(ierr);
-		ierr = MatSetValues(A, 3, ixs, 3, ixs, Al, ADD_VALUES);CHKERRQ(ierr);	
-	}	
-	ierr = VecAssemblyBegin(b);CHKERRQ(ierr);
-	ierr = VecAssemblyEnd(b);CHKERRQ(ierr);
-	
-	ierr = MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
-	ierr = MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
-	return ierr;
-
-}
-
-PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
-	PetscErrorCode ierr;
-	ierr = MatCreateMPIAIJ(comm, mesh->mlocal_nodes, mesh->mlocal_nodes,PETSC_DECIDE, PETSC_DECIDE, 7,PETSC_NULL, 7, PETSC_NULL, &A);CHKERRQ(ierr);
-	ierr = VecCreateMPI(comm, mesh->mlocal_nodes, PETSC_DECIDE, &b);CHKERRQ(ierr);
-	
-	for (std::map<PetscInt, Element>::iterator i = mesh->element.begin(); i != mesh->element.end(); i++) {	
-		PetscScalar bl[3];
-		PetscScalar Al[9];
-		PetscScalar R[4];
-
-		PetscInt elSize = i->second.vetrices.size();
-		Point vetrices[elSize];
-		PetscInt ixs[elSize];
-		int c = 0;
-		for (std::set<PetscInt>::iterator j = i->second.vetrices.begin();
-					j != i->second.vetrices.end(); j++) {
-			vetrices[c] = mesh->vetrices[*j];
-			ixs[c] = *j;
-			c++;
-		}
-		
-		R[0]=vetrices[1].x - vetrices[0].x ;
-		R[2]=vetrices[1].y - vetrices[0].y ;
-		R[1]=vetrices[2].x - vetrices[0].x ;
-		R[3]=vetrices[2].y - vetrices[0].y ;
-		
-		Point center = getCenterOfSet(vetrices, elSize);
-		bLoc(R, bl,f(center));
-		ALoc(R, Al,K(center));
-
-
-		
-		//Enforce Dirchlet condition
-		for (int j = 0; j < 3; j++) {
-			if (mesh->indDirchlet.count(ixs[j]) > 0) {
-				for (int k = 0; k < 3;k++) {
-					Al[j*3 + k] = 0;
-					Al[k*3 + j] = 0;
-				}
-				Al[j*3 + j] = 1;
-				bl[j] = 0;
-			}
-		}
-		
-		ierr = VecSetValues(b, elSize, ixs, bl, ADD_VALUES);CHKERRQ(ierr);
-		ierr = MatSetValues(A, elSize, ixs, elSize, ixs, Al, ADD_VALUES);CHKERRQ(ierr);	
-	}	
-	ierr = VecAssemblyBegin(b);CHKERRQ(ierr);
-	ierr = VecAssemblyEnd(b);CHKERRQ(ierr);
-	
-	ierr = MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
-	ierr = MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
-	return ierr;
-
-}
-
 PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, DistributedMesh *mesh, Mat &A, Vec &b, PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
 	PetscErrorCode ierr;
-	ierr = MatCreateMPIAIJ(comm, mesh->mlocal_nodes, mesh->mlocal_nodes,PETSC_DECIDE, PETSC_DECIDE, 7,PETSC_NULL, 7, PETSC_NULL, &A);CHKERRQ(ierr);
-	ierr = VecCreateMPI(comm, mesh->mlocal_nodes, PETSC_DECIDE, &b);CHKERRQ(ierr);
+	ierr = MatCreateMPIAIJ(comm, mesh->nVetrices, mesh->nVetrices,PETSC_DECIDE, PETSC_DECIDE, 7,PETSC_NULL, 7, PETSC_NULL, &A);CHKERRQ(ierr);
+	ierr = VecCreateMPI(comm, mesh->nVetrices, PETSC_DECIDE, &b);CHKERRQ(ierr);
 	
-	for (std::map<PetscInt, Element>::iterator i = mesh->element.begin(); i != mesh->element.end(); i++) {	
+	for (int i = 0; i < mesh->nElements; i++) {	
 		PetscScalar bl[3];
 		PetscScalar Al[9];
 		PetscScalar R[4];
 
-		PetscInt elSize = i->second.vetrices.size();
+		PetscInt elSize = mesh->elements[i].numVetrices;
 		Point vetrices[elSize];
 		PetscInt ixs[elSize];
-		int c = 0;
-		for (std::set<PetscInt>::iterator j = i->second.vetrices.begin();
-					j != i->second.vetrices.end(); j++) {
-			vetrices[c] = mesh->vetrices[*j];
-			ixs[c] = *j;
-			c++;
+		for (int j = 0; j < elSize; j++) {
+			ixs[j] = mesh->elements[i].vetrices[j];
+			vetrices[j] = mesh->vetrices[ixs[j] - mesh->startIndex];
 		}
 		
 		R[0]=vetrices[1].x - vetrices[0].x ;

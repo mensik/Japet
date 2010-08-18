@@ -53,7 +53,7 @@ class Feti1 : public SolverApp, public SolverCtr {
 	Vec tgA;
 	Vec tgB;
 public:
-	Feti1(Mesh *mesh,PetscScalar (*f)(Point), PetscScalar (*K)(Point));
+	Feti1(DistributedMesh *mesh,PetscScalar (*f)(Point), PetscScalar (*K)(Point));
 	~Feti1();
 	void solve(); ///< solve the syste ;-)
 	void dumpSolution(PetscViewer v);
@@ -63,7 +63,7 @@ public:
 	bool isConverged(PetscInt itNumber, PetscScalar norm, Vec *vec);
 };
 
-void GenerateJumpOperator(Mesh *mesh,Mat &B, Vec &lmb);
-void Generate2DLaplaceNullSpace(Mesh *mesh,bool &isSingular,bool &isLocalSingular, Mat *Rmat);
+void GenerateJumpOperator(DistributedMesh *mesh,Mat &B, Vec &lmb);
+void Generate2DLaplaceNullSpace(DistributedMesh *mesh,bool &isSingular,bool &isLocalSingular, Mat *Rmat);
 
 #endif
