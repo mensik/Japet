@@ -20,7 +20,16 @@ Mesh::~Mesh() {
 	for (std::map<PetscInt,Point*>::iterator i = vetrices.begin(); i != vetrices.end(); i++) {
 		delete i->second;
 	}
-	if (isPartitioned) delete [] epart; 
+	if (isPartitioned) PetscFree(epart); 
+}
+
+DistributedMesh::~DistributedMesh() {
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	
+	delete [] elements;
+	delete [] vetrices;
+	if (!rank) delete [] pointPairing;
 }
 
 void DistributedMesh::dumpForMatlab(PetscViewer v) {
@@ -343,19 +352,21 @@ void Mesh::partition(int numDomains) {
 	int nn = vetrices.size();
 	int ne = elements.size();
 	int edgeCut;
-	idxtype npart[nn];
-	idxtype elmnts[ne * 3];
 	
-	epart = new idxtype[ne];
+	idxtype *npart, *elmnts;
+	PetscMalloc(nn * sizeof(idxtype), &npart);
+	PetscMalloc(ne * 3 * sizeof(idxtype), &elmnts);
+	PetscMalloc(ne * sizeof(idxtype), &epart);
 	int i = 0;
 	for (std::map<PetscInt, Element*>::iterator el = elements.begin(); el != elements.end(); el++) {
 		elmnts[i++] = el->second->vetrices[0];
 		elmnts[i++] = el->second->vetrices[1];
 		elmnts[i++] = el->second->vetrices[2];
 	}
-
 	METIS_PartMeshDual(&ne, &nn, elmnts, &eType, &numFlag, &numDomains, &edgeCut, epart, npart);
 	
+	PetscFree(npart);
+	PetscFree(elmnts);
 	//for (std::map<PetscInt, Point*>::iterator v = vetrices.begin(); v != vetrices.end(); v++) {
 	//	v->second->domainInd = npart[v->first];
 	//}

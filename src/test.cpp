@@ -17,16 +17,18 @@ int main(int argc, char *argv[]) {
 	PetscInt size,rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
-	Mesh mesh;
-	mesh.generateRectangularMesh(m, n, k, l, h);
-	mesh.partition(size);
-
-
-	DistributedMesh dm;
-	mesh.tear(&dm);
 	
+	Mesh *mesh = new Mesh();
+	mesh->generateRectangularMesh(m, n, k, l, h);
+	mesh->partition(size);
+	
+	PetscPrintf(PETSC_COMM_WORLD, "Mesh was partitioned\n");
+	DistributedMesh dm;
+	mesh->tear(&dm);
+	delete mesh;
 	Mat A;
 	Vec b;
+	PetscPrintf(PETSC_COMM_WORLD, "Mesh was distributed - generation A...\n");
 
 	FEMAssemble2DLaplace(PETSC_COMM_WORLD, &dm, A, b, fList[0], fList[0]);
 
@@ -36,6 +38,7 @@ int main(int argc, char *argv[]) {
 	//mesh2.load("domain.jpm", false);
 
 	PetscViewer v;
+	PetscPrintf(PETSC_COMM_WORLD, "Saving...\n");
 	
 	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
 	//mesh.dumpForMatlab(v);

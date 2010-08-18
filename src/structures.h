@@ -79,6 +79,7 @@ struct DistributedMesh {
 	PetscInt *pointPairing;
 
 	void dumpForMatlab(PetscViewer v);
+	~DistributedMesh();
 };
 
 /**

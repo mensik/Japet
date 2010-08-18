@@ -51,24 +51,26 @@ int main(int argc, char *argv[]) {
 		ierr = MPI_Comm_rank(PETSC_COMM_WORLD,&rank);CHKERRQ(ierr);
 		MPI_Comm_size(PETSC_COMM_WORLD, &size);
 		PetscViewer v;
-		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
-		Mesh mesh;
-		mesh.generateRectangularMesh(m, n, k, l, h);
-		mesh.partition(size);
+		Mesh *mesh = new Mesh();
+		mesh->generateRectangularMesh(m, n, k, l, h);
+		mesh->partition(size);
 		
-		DistributedMesh dm;
-		mesh.tear(&dm);
-	
-		Feti1 feti(&dm,fList[f], fList[0]);
+		DistributedMesh *dm = new DistributedMesh();
+		mesh->tear(dm);
+		delete mesh;
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
+		dm->dumpForMatlab(v);
+		PetscViewerDestroy(v);
 
+		Feti1 feti(dm,fList[f], fList[0]);
+		delete dm;
+
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 		feti.dumpSystem(v);
 		feti.solve();
 		feti.dumpSolution(v);
 		PetscViewerDestroy(v);
 
-		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
-		dm.dumpForMatlab(v);
-		PetscViewerDestroy(v);
 	  
 	//	delete mesh;
 	}
