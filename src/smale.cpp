@@ -1,120 +1,12 @@
 #include "smale.h"
 
-SDRectSystem::SDRectSystem(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h, PetscInt xSize, PetscInt ySize, PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
-	subMeshCount = xSize * ySize;
-  MPI_Comm_rank(PETSC_COMM_WORLD,&localIndex);
-	layout = new DomainRectLayout(xSize,ySize);
-
-	PetscReal xWidth = (n - m) / xSize;
-	PetscReal yWidth = (l - k) / ySize;
-	
-	subMesh = new RectMesh *[subMeshCount];
-
-	//:TODO:
-	/// @todo Neni treba, aby kazdy proces generoval vsechny site. Uplne by melo
-	/// stacit, aby kazdy rozeslal indexy svych hranicnich prvku
-
-	for (int i = 0; i < subMeshCount; i++) {
-		PetscInt xCoords, yCoords;
-		layout->getMyCoords(i, xCoords, yCoords);
-		
-		PetscReal xStart = m + xCoords*xWidth;
-		PetscReal xEnd = m + (xCoords+1)*xWidth;
-		PetscReal yStart = k + yCoords*yWidth;
-		PetscReal yEnd = k + (yCoords+1)*yWidth;
-		
-		subMesh[i] = new RectMesh(xStart,xEnd,yStart,yEnd,h);
-		//PetscPrintf(PETSC_COMM_SELF, "%d: Mesh no. %d generated \n", localIndex, i);
-	}
-
-	//ierr = PetscPrintf(PETSC_COMM_SELF, "[%d,%d]: <%e,%e> x <%e,%e>\n", xCoords, yCoords, xStart, xEnd, yStart,yEnd);CHKERRQ(ierr);
-	
-	FEMAssemble2D(PETSC_COMM_SELF, subMesh[localIndex],A,b, f, K);
-	
-
-	//Urceni rozmeru matice B a vektoru c
-	//if (localIndex == 0) { // Only root's job	
-		PetscInt totalNodesCount = 0;
-		PetscInt nodeBoundsCount = 0;
-		PetscInt startIndexes[subMeshCount];
-		
-		for (int i = 0; i < subMeshCount; i++) {
-			PetscInt xCoords, yCoords;
-			layout->getMyCoords(i, xCoords, yCoords);
-			startIndexes[i] = totalNodesCount;
-			totalNodesCount += subMesh[i]->numPoints;
-			if (xCoords < xSize - 1) {
-				nodeBoundsCount+=subMesh[i]->yPoints;	
-				if (yCoords > 0) nodeBoundsCount--; //Vynechani nadbytecne vazby ve ctverci
-			}
-	
-			if (yCoords < ySize - 1) {
-				nodeBoundsCount+=subMesh[i]->xPoints;
-			}
-		}
-
-		MatCreate(PETSC_COMM_WORLD,&B);
-		MatSetType(B,MATAIJ);
-		MatSetSizes(B,PETSC_DECIDE,PETSC_DECIDE,nodeBoundsCount,totalNodesCount);
-
-		VecCreate(PETSC_COMM_WORLD,&c);
-		VecSetSizes(c, PETSC_DECIDE, nodeBoundsCount);	
-		VecSetFromOptions(c);
-		VecSet(c,0);
-		
-			
-		PetscInt counter = 0;
-		if (localIndex == 0) { //Only MASTER's work
-		for (int i = 0; i < subMeshCount; i++) {
-			PetscInt xCoords, yCoords;
-			layout->getMyCoords(i, xCoords, yCoords);
-			PetscInt SI = startIndexes[i];
-			if (xCoords < xSize - 1) {
-				PetscInt neibDomain = layout->getSub(xCoords+1, yCoords);
-				PetscInt neibSI = startIndexes[neibDomain];
-				for (int j = (yCoords > 0)?1:0; j < subMesh[i]->yPoints; j++) {
-					MatSetValue(B,counter, subMesh[i]->iR[j] + SI,1,INSERT_VALUES);
-					MatSetValue(B,counter++, subMesh[neibDomain]->iL[j] + neibSI,-1,INSERT_VALUES);
-				}
-			}
-	
-			if (yCoords < ySize - 1) {
-				PetscInt neibDomain = layout->getSub(xCoords, yCoords+1);
-				PetscInt neibSI = startIndexes[neibDomain];
-				for (int j = 0; j < subMesh[i]->xPoints; j++) {
-					MatSetValue(B,counter, subMesh[i]->iT[j] + SI,1,INSERT_VALUES);
-					MatSetValue(B,counter++, subMesh[neibDomain]->iB[j] + neibSI,-1,INSERT_VALUES);
-				}
-			}
-		}
-		}	
-		MatAssemblyBegin(B,MAT_FINAL_ASSEMBLY);
-		MatAssemblyEnd(B,MAT_FINAL_ASSEMBLY);
-	//}
-		//MatView(B,PETSC_VIEWER_DRAW_WORLD);
-}
-
-SDRectSystem::~SDRectSystem() {
-	for (int i = 0; i < subMeshCount; i++) {
-		delete subMesh[i];
-	}
-	delete layout;
-	MatDestroy(A);
-	VecDestroy(b);
-	//if (localIndex == 0) {
-		MatDestroy(B);
-		VecDestroy(c);
-	//}
-	delete [] subMesh;
-}
-
-SDSystem::SDSystem(Mesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
+SDSystem::SDSystem(DistributedMesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
 	Mat Agl;
 	Vec bgl;
 	Vec lmb;
 	FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh,Agl,bgl,f,K);
 	GenerateJumpOperator(mesh,B,lmb);
-	extractLocalAPart(Agl, mesh->localVetricesSet, &A);
+	extractLocalAPart(Agl, &A);
 
 	PetscInt mA,nA, mB, nB;
 	MatGetSize(A, &mA, &nA);
@@ -136,27 +28,6 @@ SDSystem::SDSystem(Mesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point))
 	MatDestroy(Agl);
 	VecDestroy(bgl);
 	VecDestroy(lmb);
-}
-
-void SDRectSystem::setDirchletBound(PetscInt n, BoundSide *sides) {
-	PetscInt xCoords, yCoords;
-	layout->getMyCoords(localIndex, xCoords, yCoords);
-	
-	for (int i = 0; i < n; i++) {
-		BoundSide side = sides[i];
-		if ((side == ALL || side == LEFT) && xCoords == 0) {
-			FEMSetDirchletBound(A,b,subMesh[localIndex]->xPoints, subMesh[localIndex]->iL);
-		}
-		if ((side == ALL || side == RIGHT) && xCoords == layout->getXSize() - 1) {
-			FEMSetDirchletBound(A,b,subMesh[localIndex]->yPoints, subMesh[localIndex]->iR);
-		}
-		if ((side == ALL || side == BOTTOM) && yCoords == 0) {
-			FEMSetDirchletBound(A,b,subMesh[localIndex]->xPoints, subMesh[localIndex]->iB);
-		}
-		if ((side == ALL || side == TOP) && yCoords == layout->getYSize() - 1) {
-			FEMSetDirchletBound(A,b,subMesh[localIndex]->xPoints, subMesh[localIndex]->iT);
-		}
-	}
 }
 
 Smale::Smale(SDSystem *sd, PetscReal mi, PetscReal ro, PetscReal beta, PetscReal M) {
@@ -290,7 +161,7 @@ bool Smale::isInerConverged() {
 }
 
 bool Smale::isOuterConverged() {
-	return (gNorm < lPrec);
+	return (gNorm < 1e-5);
 }
 
 PetscReal Smale::L() {
@@ -343,7 +214,7 @@ void Smale::dumpSolution(PetscViewer v) {
 	VecView(x,v);
 }
 
-
+/*
 SassiRectSystem::SassiRectSystem(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h, PetscInt xSize, PetscInt ySize, PetscScalar (*f)(Point), PetscScalar (*K)(Point), PetscReal rr) {
   
 	r = rr;
@@ -679,3 +550,4 @@ void SassiRectSystem::dumpSolution(PetscViewer v) {
 	PetscObjectSetName((PetscObject)x,"u");
 	VecView(x,v);
 }
+*/

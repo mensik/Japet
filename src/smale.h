@@ -13,42 +13,6 @@
 #include "fem.h"
 #include "solver.h"
 #include "feti.h"
-/** 
-		@brief SDRectSystem represents structure of subdomains and their mutual bounds
-		
-
-		@note Expresion "local" is used to point out structures not shared by all
-					proceses, but rather by subset (most often by only one) of them.
-*/
-class SDRectSystem {
-	PetscInt subMeshCount;///< number of subdomains in system
-	DomainRectLayout *layout; ///< layout description
-	PetscInt localIndex;	///< "local" subdomain index
-	Mat A;								///< "local" Mass matrix
-	Vec b;								///< "local" right side vector
-	
-	RectMesh **subMesh; 		///< all meshes
-	Mat B;								///< jump operator matrix
-	Vec c;								///< jump operator vector
-public:
-	SDRectSystem(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h, PetscInt xSize, PetscInt ySize, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
-	~SDRectSystem();
-
-	/**
-		@brief Defines which sides of the whole domain should have Dirchlet condition
-		@param[in] n number of sides
-		@param[in] sides array of sides
-	*/
-	void setDirchletBound(PetscInt n, BoundSide *sides);
-	/**
-		@return return index of current processes subdomain 
-	*/
-	PetscInt getLocalIndex() { return localIndex; }
-	Mat getA() { return A; }	///< @return mass matrix A of local subdomain
-	Vec getb() { return b; }	///< @return right side vector b of local subdomain
-	Vec getc() { return c; }	///< @return vector c of Jump operator
-	Mat getB() { return B; }	///< @return Jump operator B matrix
-};
 
 class SDSystem {
 	Mat A;
@@ -56,13 +20,12 @@ class SDSystem {
 	Mat B;
 	Vec c;
 public:
-	SDSystem(Mesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
+	SDSystem(DistributedMesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
 	~SDSystem() { MatDestroy(A); MatDestroy(B); VecDestroy(b); VecDestroy(c); }
 	Mat getA() { return A; }	///< @return mass matrix A of local subdomain
 	Vec getb() { return b; }	///< @return right side vector b of local subdomain
 	Vec getc() { return c; }	///< @return vector c of Jump operator
 	Mat getB() { return B; }	///< @return Jump operator B matrix
-
 };
 
 class Smale {
@@ -102,7 +65,7 @@ public:
 	Vec getx() { return x; }
 	Vec getl() { return l; }
 };
-
+/*
 class SassiRectSystem {
 	PetscInt subMeshCount;///< number of subdomains in system
 	DomainRectLayout *layout; ///< layout description
@@ -136,5 +99,5 @@ public:
 	void solve();
 	void dumpSolution(PetscViewer v);
 };
-
+*/
 #endif

@@ -379,12 +379,12 @@ void Mesh::tear(DistributedMesh *dm) {
 	MPI_Comm_size(PETSC_COMM_WORLD, &commSize);
 
 	if (!rank) {
-	MyMultiMap pointMap; // Maps original point to its image in other domain
+		MyMultiMap pointMap; // Maps original point to its image in other domain
 																									//  int origPointID -> { int newDomain, int newPointID }
-	std::map<PetscInt, PetscInt> borderPairings; //Pair borders together
+		std::map<PetscInt, PetscInt> borderPairings; //Pair borders together
 
-	PetscInt edgeIDCounter = edges.size();
-	PetscInt pointIDCounter = vetrices.size();
+		PetscInt edgeIDCounter = edges.size();
+		PetscInt pointIDCounter = vetrices.size();
 	
 		// Algorithm goes over edges between new subdomains and performs tearing steps
 		
@@ -576,34 +576,6 @@ void Mesh::tear(DistributedMesh *dm) {
 		}
 		AOApplicationToPetsc(dm->procesOrdering, dm->nPairs * 2, dm->pointPairing);
 		MPI_Bcast(&(dm->nPairs), 1, MPI_INT, 0, PETSC_COMM_WORLD);
-
-		/*  Print 
-
-		for (std::map<PetscInt, Point*>::iterator p = vetrices.begin(); p != vetrices.end(); p++) {
-			PetscPrintf(PETSC_COMM_SELF, "Point %d (%d) - edges: ", p->first, p->second->domainInd);
-			for (std::set<Edge*>::iterator e = p->second->edges.begin(); e != p->second->edges.end(); e++) {
-				PetscPrintf(PETSC_COMM_SELF, "%d ", (*e)->id);
-			}
-			PetscPrintf(PETSC_COMM_SELF, "  \t elements: ");
-			for (std::set<Element*>::iterator e = p->second->elements.begin(); e != p->second->elements.end();e++) {
-				PetscPrintf(PETSC_COMM_SELF, "%d ", (*e)->id);
-			}
-			PetscPrintf(PETSC_COMM_SELF, "\n");
-		}
-
-		for (std::map<PetscInt, Edge*>::iterator e = edges.begin(); e != edges.end(); e++) {
-			PetscPrintf(PETSC_COMM_SELF, "Edge %d (%d-%d) ", e->first, e->second->vetrices[0], e->second->vetrices[1]);
-			PetscPrintf(PETSC_COMM_SELF, " \t elements: ");
-			for (std::set<PetscInt>::iterator el = e->second->elements.begin(); el != e->second->elements.end(); el++) {
-				PetscPrintf(PETSC_COMM_SELF, "%d ", *el);
-			}
-			PetscPrintf(PETSC_COMM_SELF, "\n");
-		}
-
-		for (std::map<PetscInt, Element*>::iterator e = elements.begin(); e != elements.end(); e++) {
-			PetscPrintf(PETSC_COMM_SELF, "Element %d - (%d, %d, %d) edges %d %d %d\n", e->first, e->second->vetrices[0],  e->second->vetrices[1],  e->second->vetrices[2],  e->second->edges[0],  e->second->edges[1],  e->second->edges[2] );
-		}
-	*/
 
 	} else { // Receiving of distributed mesh
 		MPI_Status stats;

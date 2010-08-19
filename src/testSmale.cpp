@@ -32,13 +32,12 @@ bool cf(PetscInt itNumber, PetscScalar rNorm, Vec *r) {
 int main(int argc, char *argv[]) {
 	PetscScalar (*fList[])(Point) = {funConst, funSin, funStep};
 	PetscErrorCode 	ierr;
-	PetscMPIInt			rank;
+	PetscMPIInt			rank,size;
 	PetscReal				m=0.0,n=4.0,k=0.0,l=4.0,h=0.1;
 	PetscInt				xSubs = 4, ySubs = 4;
 	PetscReal				mi=1e-3,ro=4,beta=1.5,M=1;
   PetscInitialize(&argc,&argv,0,help);
 	PetscInt				f = 2;
-	PetscInt				boundedSideCount = 1;
 	PetscTruth 			flg;
 
 	PetscLogStage		assemblyStage, smaleStage;
@@ -54,7 +53,6 @@ int main(int argc, char *argv[]) {
 	PetscOptionsGetInt("-test_x", &xSubs, PETSC_NULL);
 	PetscOptionsGetInt("-test_y", &ySubs, PETSC_NULL);
 	PetscOptionsGetInt("-test_f", &f, PETSC_NULL);
-	PetscOptionsGetInt("-test_bounded_side_count", &boundedSideCount, PETSC_NULL);
 	PetscOptionsGetString(PETSC_NULL, "-test_out_file", fileName, PETSC_MAX_PATH_LEN-1, &flg);
 	//if (!flg) SETERRQ(1,"Must indicate binary file with the -test_out_file option");
 
@@ -63,16 +61,22 @@ int main(int argc, char *argv[]) {
 		//l = ySubs;
 		
 		ierr = MPI_Comm_rank(PETSC_COMM_WORLD,&rank);CHKERRQ(ierr);
-		
+		MPI_Comm_size(PETSC_COMM_WORLD, &size);
 		PetscViewer v;
-		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 
 		PetscLogStageRegister("Assembly", &assemblyStage);
 		PetscLogStagePush(assemblyStage);
-		BoundSide dirchlet[] = {LEFT,TOP,RIGHT,BOTTOM};
-		Mesh *mesh;
-		generateRectangularTearedMesh(m,n,k,l,h,xSubs,ySubs, boundedSideCount, dirchlet, &mesh);
-		SDSystem sdSystem(mesh,fList[f],fList[0]);
+		Mesh *mesh = new Mesh();
+		mesh->generateRectangularMesh(m, n, k, l, h);
+		mesh->partition(size);
+		DistributedMesh *dm = new DistributedMesh();
+		mesh->tear(dm);
+		delete mesh;
+		SDSystem sdSystem(dm,fList[f],fList[0]);
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
+		dm->dumpForMatlab(v);
+		PetscViewerDestroy(v);
+		delete dm;
 		PetscLogStagePop();
 		
 		Smale smale(&sdSystem,mi,ro,beta,M);
@@ -80,14 +84,11 @@ int main(int argc, char *argv[]) {
 		PetscLogStagePush(smaleStage);
 		smale.solve();
 		PetscLogStagePop();
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 		smale.dumpSolution(v);
 		//smale.dumpSolution(matLabView);
 		PetscViewerDestroy(v);
 
-		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
-		mesh->dumpForMatlab(v);
-		PetscViewerDestroy(v);
-		delete mesh;
 		//PetscViewerDestroy(matLabView);
 	}
 	

@@ -84,7 +84,8 @@ struct DistributedMesh {
 
 /**
 	@brief	Complex system to keep information of mesh topology and its distribution
-					on proceses.
+					on proceses. Main drag of this implementation is that whole mesh is 
+					stored and procesed by just one procesor.
 
 	@note		There is open way to implementation of ParMetis system to tearing domain.
 **/
@@ -93,15 +94,15 @@ class Mesh {
 	std::map<PetscInt, Point*>	vetrices;		///< Map of vetrices 
 	std::map<PetscInt, Edge*> edges;				///< Mat of edges
 	std::map<PetscInt, Element*> elements;	///< Map of elements 
-	std::set<PetscInt> borderEdges;	///< set of border edges
-	void linkPointsToElements(); ///<Add element pointer to points
-	void regenerateEdges();	///< Regenerates edges according to vetrices and elements
+	std::set<PetscInt> borderEdges;					///< set of border edges
+	void linkPointsToElements(); 						///<Add element pointer to points
+	void regenerateEdges();									///< Regenerates edges according to vetrices and elements
 	void findBorders();
 	PetscInt getEdge(PetscInt nodeA, PetscInt nodeB); ///< -1 if it doesn't exist.
 
 	bool isPartitioned;
-	PetscInt numOfPartitions;
-	idxtype *epart;
+	PetscInt numOfPartitions;	///< number of partitions, obviously ;-)
+	idxtype *epart;						///< elements domain indexes
 public:
 	Mesh() { isPartitioned = false; }
 	~Mesh();
@@ -112,8 +113,8 @@ public:
 	void dumpForMatlab(PetscViewer v);
 	void save(const char *filename, bool withEdges);
 	void load(const char *filename, bool withEdges);
-	void partition(int numDomains);
-	void tear(DistributedMesh *dm);
+	void partition(int numDomains);	///< call ParMetis and devide elements among proceses
+	void tear(DistributedMesh *dm);	///< actualy tear mesh to part, make new points and edges a distribute them among proceses  by MPI
 };
 
 

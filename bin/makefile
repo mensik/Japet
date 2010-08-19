@@ -5,7 +5,7 @@ CPPFLAGS         = -Imetis/ -Wno-unused-result
 FPPFLAGS         =
 MANSEC           = Mat
 LOCDIR		 = 
-MYLIB = solver.o fem.o feti.o structures.o
+MYLIB = smale.o solver.o fem.o feti.o structures.o
 include ${PETSC_DIR}/conf/variables
 include ${PETSC_DIR}/conf/rules
 
