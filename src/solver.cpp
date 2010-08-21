@@ -55,6 +55,7 @@ CGSolver::~CGSolver() {
 }
 
 void CGSolver::solve() {
+
 	while (!sCtr->isConverged(itCounter, rNorm, &r)) {
 	//	PetscPrintf(PETSC_COMM_WORLD, "%d - %e\n",itCounter, rNorm);
 		itCounter++;
@@ -88,7 +89,7 @@ MPRGP::MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
 	this->G = G;
 	this->alp = alp;
 
-	e = 1e-6;
+	e = 1e-8;
 
 	VecGetOwnershipRange(x, &localRangeStart, &localRangeEnd);
 	localRangeSize = localRangeEnd - localRangeStart;
@@ -97,9 +98,9 @@ MPRGP::MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
 	for (int i = localRangeStart; i < localRangeEnd; i++) localIndices[i - localRangeStart] = i;
 
 	VecDuplicate(b, &g);
-	VecDuplicate(b, &temp);
 	VecDuplicate(g,&p);
-	
+	VecDuplicate(g, &temp);
+
 	projectFeas(x);
 
 	VecCopy(b,g);					//g = b
@@ -113,60 +114,125 @@ MPRGP::~MPRGP() {
 
 void MPRGP::solve() {
 
-	Vec freeG, chopG;
+	Vec freeG, chopG, rFreeG, Ap;
 	VecDuplicate(g, &chopG);
 	VecDuplicate(g, &freeG);
+	VecDuplicate(g, &rFreeG);
+	VecDuplicate(g, &Ap);
 	PetscReal normFG, normCHG;
 
-	PetscInt itCounter = 0;	
-	do {
-		itCounter++;
-		VecAXPY(x, -alp, g);
-		projectFeas(x);
+	partGradient(freeG, chopG, rFreeG);
+	VecNorm(freeG, NORM_2, &normFG);
+	VecNorm(chopG, NORM_2, &normCHG);
+	PetscInt itCounter = 0;
 
-		VecCopy(b,g);					//g = b
-		MatMult(A, x, temp);
-		VecAYPX(g, -1, temp); // g = A*x - g		
-		
-		partGradient(freeG, chopG);
+	VecCopy(freeG, p);
+
+	while (normFG + normCHG > 1e-4) {
+		PetscScalar freeXrFree;
+		VecDot(freeG, rFreeG, &freeXrFree);
+
+		if (normCHG*normCHG  <= G*G*freeXrFree) {
+			//Trial conjugate gradient step
+			MatMult(A, p, Ap);
+
+			PetscReal gXp, pAp;
+			VecDot(g,p, &gXp);
+			VecDot(p,Ap,&pAp);
+
+			PetscReal alpCG = gXp/pAp;
+			PetscReal alpF = alpFeas();
+
+			if (alpCG < alpF) {
+				//CG step
+				VecAXPY(x,-alpCG, p);
+				VecAXPY(g, -alpCG, Ap);
+
+				partGradient(freeG, chopG, rFreeG);
+				PetscReal freeGAp;
+				VecDot(freeG, Ap, &freeGAp);
+				PetscReal beta = freeGAp / pAp;
+
+				VecAYPX(p, -beta, freeG);
+			} else {
+				//Expansion step
+				VecAXPY(x, -alpF, p);
+				VecAXPY(g, -alpF, Ap);
+				partGradient(freeG, chopG, rFreeG);
+
+				VecAXPY(x, -alp, freeG);
+				projectFeas(x);
+				VecCopy(b,g);
+				MatMult(A, x, temp);
+				VecAYPX(g, -1, temp);
+
+				partGradient(freeG, chopG, rFreeG);
+				VecCopy(freeG, p);
+			}
+		} else {
+			//Proportioning step
+			PetscReal dg, dAd;
+			MatMult(A,chopG, Ap);
+			VecDot(g, chopG, &dg);
+			VecDot(chopG, Ap, &dAd);
+
+			PetscReal alpCG = dg/dAd;
+
+			VecAXPY(x, -alpCG, chopG);
+			VecAXPY(g, -alpCG, Ap);
+
+			partGradient(freeG, chopG, rFreeG);
+			VecCopy(freeG, p);
+		}
+
 		VecNorm(freeG, NORM_2, &normFG);
 		VecNorm(chopG, NORM_2, &normCHG);
+		itCounter++;
+	}
 
-		PetscPrintf(PETSC_COMM_WORLD, "%d: %f\n", itCounter, normFG + normCHG);
-	} while (normFG + normCHG > 1e-3);
+	VecDestroy(chopG);
+	VecDestroy(freeG);
+	VecDestroy(rFreeG);
+	VecDestroy(Ap);
 }
 
-void MPRGP::partGradient(Vec &freeG, Vec &chopG) {
+void MPRGP::partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG) {
 	VecZeroEntries(freeG);
 	VecZeroEntries(chopG);
+	VecZeroEntries(rFreeG);
 
-	Vec difV;
-	VecDuplicate(x, &difV);
-	VecWAXPY(difV, -1, x, l);
 	
-	PetscScalar *diff, *gArr, *freeGArr, *chopGArr;
+	PetscScalar *xArr, *lArr, *gArr, *freeGArr, *chopGArr, *rFreeGArr;
 
 	VecGetArray(g, &gArr);
 	VecGetArray(freeG, &freeGArr);
 	VecGetArray(chopG, &chopGArr);
-	VecGetArray(difV, &diff);
+	VecGetArray(rFreeG, &rFreeGArr);
+	VecGetArray(x, &xArr);
+	VecGetArray(l, &lArr);
 
 	for (int i = 0; i < localRangeSize; i++) {
-		if (abs(diff[i]) < e) { //active set
+		if (fabs(xArr[i] - lArr[i]) < 1e-8) { //active set
 			if (gArr[i] < 0) {
 				chopGArr[i] = gArr[i];
 			}
-		} else { 								//free set
+		} else {		//free set
 			freeGArr[i] = gArr[i];
+			PetscScalar rG = (xArr[i] - lArr[i]) / alp;
+			if (rG < gArr[i]) {
+				rFreeGArr[i] = rG;
+			}  else {
+				rFreeGArr[i] = gArr[i];
+			}
 		}
 	}
 
 	VecRestoreArray(g, &gArr);
 	VecRestoreArray(freeG, &freeGArr);
 	VecRestoreArray(chopG, &chopGArr);
-	VecRestoreArray(difV, &diff);
-
-	VecDestroy(difV);
+	VecRestoreArray(rFreeG, &rFreeGArr);
+	VecRestoreArray(x, &xArr);
+	VecRestoreArray(l, &lArr);
 }
 
 void MPRGP::projectFeas(Vec &vec) {
@@ -175,9 +241,31 @@ void MPRGP::projectFeas(Vec &vec) {
 	VecGetArray(vec, &vecArr);
 	
 	for (int i = 0; i < localRangeSize; i++) {
-		if (lArr[i] > vecArr[i]) vecArr[i] = lArr[i];	
+		if (lArr[i] > vecArr[i]) vecArr[i] = lArr[i];
 	}
 
 	VecRestoreArray(l, &lArr);
 	VecRestoreArray(vec, &vecArr);
 }
+
+PetscReal MPRGP::alpFeas() {
+	PetscFunctionBegin;
+	PetscReal alpF;
+	PetscScalar *lArr, *xArr, *pArr;
+	VecGetArray(l, &lArr);
+	VecGetArray(x, &xArr);
+	VecGetArray(p, &pArr);
+	alpF = 1e15;
+
+	for (int i = 0; i < localRangeSize; i++) if (pArr[i] > 0){
+		PetscReal a = (xArr[i] - lArr[i]) / pArr[i];
+		if (a < alpF) alpF = a;
+	}
+
+	VecRestoreArray(l, &lArr);
+	VecRestoreArray(x, &xArr);
+	VecRestoreArray(p, &pArr);
+
+	PetscFunctionReturn(alpF);
+}
+

@@ -75,7 +75,8 @@ class MPRGP {
 	PetscInt *localIndices;
 
 	void projectFeas(Vec &v);
-	void partGradient(Vec &freeG, Vec &chopG);
+	void partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG);
+	PetscReal alpFeas();
 
 public:
 	MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
