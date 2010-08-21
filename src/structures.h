@@ -91,6 +91,7 @@ struct DistributedMesh {
 **/
 
 class Mesh {
+public:
 	std::map<PetscInt, Point*>	vetrices;		///< Map of vetrices 
 	std::map<PetscInt, Edge*> edges;				///< Mat of edges
 	std::map<PetscInt, Element*> elements;	///< Map of elements 
@@ -103,7 +104,6 @@ class Mesh {
 	bool isPartitioned;
 	PetscInt numOfPartitions;	///< number of partitions, obviously ;-)
 	idxtype *epart;						///< elements domain indexes
-public:
 	Mesh() { isPartitioned = false; }
 	~Mesh();
 	int getNumElements() { return elements.size(); }
@@ -114,7 +114,7 @@ public:
 	void save(const char *filename, bool withEdges);
 	void load(const char *filename, bool withEdges);
 	void partition(int numDomains);	///< call ParMetis and devide elements among proceses
-	void tear(DistributedMesh *dm);	///< actualy tear mesh to part, make new points and edges a distribute them among proceses  by MPI
+	void tear(DistributedMesh *dm);	///< actualy tear mesh to part, make new points and edges a distribute them among proceses  by MPI 
 };
 
 
@@ -124,8 +124,7 @@ public:
 					this purpose.
 
 	@param[in] A global matrix
-	@param[in] vetrices set of matrix rows x cols to extract on this procesor
-	@param[out] Aloc local matrix (user is responsible for destroy) 
+	@param[eclipout] Aloc local matrix (user is responsible for destroy)
 **/
 void extractLocalAPart(Mat A, Mat *Aloc); 
 

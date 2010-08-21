@@ -67,8 +67,8 @@ int main(int argc, char *argv[]) {
 
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 		feti.dumpSystem(v);
-		feti.solve();
-		feti.dumpSolution(v);
+		//feti.solve();
+		//feti.dumpSolution(v);
 		PetscViewerDestroy(v);
 
 	  

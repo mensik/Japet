@@ -53,6 +53,36 @@ public:
 
 };
 
+class MPRGP {
+	Mat A;
+	Vec x;
+	Vec b;
+	Vec l;
+
+	PetscReal G;
+	PetscReal alp;
+
+	PetscInt localRangeStart;
+	PetscInt localRangeEnd;
+	PetscInt localRangeSize;
+
+	PetscReal e;
+
+	Vec g;
+	Vec p;
+	Vec temp;
+
+	PetscInt *localIndices;
+
+	void projectFeas(Vec &v);
+	void partGradient(Vec &freeG, Vec &chopG);
+
+public:
+	MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
+	~MPRGP();
+	void solve();
+};
+
 bool isConFun(PetscInt itNumber, PetscScalar rNorm, Vec *r);
  
 #endif

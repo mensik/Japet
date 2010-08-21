@@ -68,6 +68,65 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, DistributedMesh *mesh, Mat &A
 
 }
 
+PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
+	PetscErrorCode ierr;
+	PetscInt size = mesh->vetrices.size();
+	ierr = MatCreateMPIAIJ(comm, size, size, PETSC_DECIDE, PETSC_DECIDE, 7,PETSC_NULL, 7, PETSC_NULL, &A);CHKERRQ(ierr);
+	ierr = VecCreateMPI(comm, size, PETSC_DECIDE, &b);CHKERRQ(ierr);
+	std::set<PetscInt> indDirchlet;	
+	for (std::set<PetscInt>::iterator i = mesh->borderEdges.begin(); i != mesh->borderEdges.end(); i++) {
+			for (int j = 0; j < 2; j++) {
+				indDirchlet.insert(mesh->edges[*i]->vetrices[j]);
+			}
+		}
+
+	for (int i = 0; i < mesh->elements.size(); i++) {	
+		PetscScalar bl[3];
+		PetscScalar Al[9];
+		PetscScalar R[4];
+
+		PetscInt elSize = mesh->elements[i]->numVetrices;
+		Point vetrices[elSize];
+		PetscInt ixs[elSize];
+		for (int j = 0; j < elSize; j++) {
+			ixs[j] = mesh->elements[i]->vetrices[j];
+			vetrices[j] = *(mesh->vetrices[ixs[j]]);
+		}
+		
+		R[0]=vetrices[1].x - vetrices[0].x ;
+		R[2]=vetrices[1].y - vetrices[0].y ;
+		R[1]=vetrices[2].x - vetrices[0].x ;
+		R[3]=vetrices[2].y - vetrices[0].y ;
+		
+		Point center = getCenterOfSet(vetrices, elSize);
+		bLoc(R, bl,f(center));
+		ALoc(R, Al,K(center));
+
+
+		
+		//Enforce Dirchlet condition
+		for (int j = 0; j < 3; j++) {
+			if (indDirchlet.count(ixs[j]) > 0) {
+				for (int k = 0; k < 3;k++) {
+					Al[j*3 + k] = 0;
+					Al[k*3 + j] = 0;
+				}
+				Al[j*3 + j] = 1;
+				bl[j] = 0;
+			}
+		}
+		
+		ierr = VecSetValues(b, elSize, ixs, bl, ADD_VALUES);CHKERRQ(ierr);
+		ierr = MatSetValues(A, elSize, ixs, elSize, ixs, Al, ADD_VALUES);CHKERRQ(ierr);	
+	}	
+	ierr = VecAssemblyBegin(b);CHKERRQ(ierr);
+	ierr = VecAssemblyEnd(b);CHKERRQ(ierr);
+	
+	ierr = MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
+	ierr = MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
+	return ierr;
+
+}
 
 Point getCenterOfSet(Point p[], PetscInt size) {
 	PetscScalar x = 0;
@@ -154,3 +213,14 @@ PetscErrorCode FEMSetDirchletBound(Mat &A, Vec &b, PetscInt n, PetscInt *ind) {
 	ierr = VecAssemblyEnd(b);CHKERRQ(ierr);
 
 	return ierr;}
+
+void evalInNodes(Mesh *mesh, PetscScalar (*f)(Point), Vec *fv) {
+	VecCreateMPI(PETSC_COMM_WORLD, mesh->vetrices.size(), PETSC_DECIDE, fv);
+
+	for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v != mesh->vetrices.end(); v++) {
+		VecSetValue(*fv, v->first, f(*(v->second)), INSERT_VALUES);
+	}
+
+	VecAssemblyBegin(*fv);
+	VecAssemblyEnd(*fv);
+}

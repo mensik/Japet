@@ -10,7 +10,7 @@ PetscScalar funConst(Point n) {
 }
 
 int main(int argc, char *argv[]) {
-	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.05;
+	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.2;
 	PetscScalar (*fList[])(Point) = {funConst};
 
 	PetscInitialize(&argc,&argv,(char *)0,help);
@@ -18,6 +18,7 @@ int main(int argc, char *argv[]) {
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
 	
+	PetscPrintf(PETSC_COMM_WORLD, "STARTING\n");
 	Mesh *mesh = new Mesh();
 	mesh->generateRectangularMesh(m, n, k, l, h);
 	mesh->partition(size);

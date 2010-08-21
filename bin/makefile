@@ -14,7 +14,9 @@ vpath %.cpp ../src
 
 testFeti: testFeti.o chkopts $(MYLIB)
 	-${CLINKER} -o testFeti testFeti.o $(MYLIB) ${PETSC_KSP_LIB}
-#	rm $(MYLIB) testFeti.o 
+
+testMPRGP: testMPRGP.o chkopts $(MYLIB)
+	-${CLINKER} -o testMPRGP testMPRGP.o $(MYLIB) ${PETSC_KSP_LIB}
 
 test: test.o chkopts structures.o fem.o feti.o solver.o 
 	-${CLINKER} -o test test.o fem.o structures.o feti.o solver.o metis/libmetis.a ${PETSC_KSP_LIB}
