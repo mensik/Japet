@@ -181,6 +181,18 @@ void Mesh::generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k, PetscR
 		linkPointsToElements();
 		regenerateEdges();
 		findBorders();
+
+		std::set<PetscInt> dirchBorder;
+		for (std::set<PetscInt>::iterator e = borderEdges.begin(); e != borderEdges.end(); e++) {
+			Edge *bEdge = edges[*e];
+			if (vetrices[bEdge->vetrices[0]]->x > m || vetrices[bEdge->vetrices[1]]->x > m) {
+
+			} else {
+				dirchBorder.insert(*e);
+			}
+		}
+
+		borderEdges = dirchBorder;
 	}
 }
 

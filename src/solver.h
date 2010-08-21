@@ -35,7 +35,7 @@ class CGSolver : public SolverApp, public SolverCtr{
 	SolverApp *sApp;
 	SolverCtr *sCtr;
 
-	ConvFunc isCon;	///< function to decide about confergention
+	ConvFunc isCon;	///< function to decide about convergence
 	PetscInt itCounter;		///< iteration counter
 	void initSolver(Vec b, Vec x);
 public:
@@ -74,11 +74,18 @@ class MPRGP {
 
 	PetscInt *localIndices;
 
-	void projectFeas(Vec &v);
-	void partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG);
-	PetscReal alpFeas();
+	void projectFeas(Vec &v);	//< @param[out] vector with changed infeasible parts to feasible
+	void partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG); //< divides gradient into its free, chopped and reduced parts
+	PetscReal alpFeas();		//< @return feasible step length for current gradient
 
 public:
+	/**
+	 	@param[in] A stiffness (mass) matrix
+	 	@param[in] b force vector
+	 	@param[in] l "floor" vector, any part of solution x can't be less than according part of l
+	 	@param[in] G Gamma operator, used to decide about domination of free part of gradient
+	 	@param[in] alp fixed step length - <0, 2/||A||>
+	 */
 	MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
 	~MPRGP();
 	void solve();

@@ -189,7 +189,7 @@ void MPRGP::solve() {
 		VecNorm(chopG, NORM_2, &normCHG);
 		itCounter++;
 	}
-
+	PetscPrintf(PETSC_COMM_WORLD, "Iteraci: %d\n", itCounter);
 	VecDestroy(chopG);
 	VecDestroy(freeG);
 	VecDestroy(rFreeG);
