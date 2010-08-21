@@ -80,7 +80,7 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, P
 			}
 		}
 
-	for (int i = 0; i < mesh->elements.size(); i++) {	
+	for (unsigned int i = 0; i < mesh->elements.size(); i++) {	
 		PetscScalar bl[3];
 		PetscScalar Al[9];
 		PetscScalar R[4];
