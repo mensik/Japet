@@ -1,2 +1,2 @@
 clear
-mpiexec -n 10 ./testFeti -test_m 0 -test_n 1 -test_k 0 -test_l 1 -test_h 0.002 -test_f 1
+mpiexec -n 10 ./testFeti -test_m 0 -test_n 1 -test_k 0 -test_l 1 -test_h 0.02 -test_f 1

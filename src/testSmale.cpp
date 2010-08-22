@@ -69,14 +69,13 @@ int main(int argc, char *argv[]) {
 		Mesh *mesh = new Mesh();
 		mesh->generateRectangularMesh(m, n, k, l, h);
 		mesh->partition(size);
-		DistributedMesh *dm = new DistributedMesh();
-		mesh->tear(dm);
-		delete mesh;
-		SDSystem sdSystem(dm,fList[f],fList[0]);
+		mesh->tear();
+
+		SDSystem sdSystem(mesh,fList[f],fList[0]);
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
-		dm->dumpForMatlab(v);
+		mesh->dumpForMatlab(v);
 		PetscViewerDestroy(v);
-		delete dm;
+		delete mesh;
 		PetscLogStagePop();
 		
 		Smale smale(&sdSystem,mi,ro,beta,M);

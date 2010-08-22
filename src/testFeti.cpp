@@ -55,24 +55,21 @@ int main(int argc, char *argv[]) {
 		mesh->generateRectangularMesh(m, n, k, l, h);
 		mesh->partition(size);
 		
-		DistributedMesh *dm = new DistributedMesh();
-		mesh->tear(dm);
-		delete mesh;
+		mesh->tear();
+
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
-		dm->dumpForMatlab(v);
+		mesh->dumpForMatlab(v);
 		PetscViewerDestroy(v);
 
-		Feti1 feti(dm,fList[f], fList[0]);
-		delete dm;
+		Feti1 feti(mesh,fList[f], fList[0]);
+		delete mesh;
 
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 		feti.dumpSystem(v);
-		//feti.solve();
-		//feti.dumpSolution(v);
+		feti.solve();
+		feti.dumpSolution(v);
 		PetscViewerDestroy(v);
 
-	  
-	//	delete mesh;
 	}
 	
 	ierr = PetscFinalize();CHKERRQ(ierr);

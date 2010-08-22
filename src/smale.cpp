@@ -1,6 +1,6 @@
 #include "smale.h"
 
-SDSystem::SDSystem(DistributedMesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
+SDSystem::SDSystem(Mesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
 	Mat Agl;
 	Vec bgl;
 	Vec lmb;

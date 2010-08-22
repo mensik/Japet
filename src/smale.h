@@ -20,7 +20,7 @@ class SDSystem {
 	Mat B;
 	Vec c;
 public:
-	SDSystem(DistributedMesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
+	SDSystem(Mesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
 	~SDSystem() { MatDestroy(A); MatDestroy(B); VecDestroy(b); VecDestroy(c); }
 	Mat getA() { return A; }	///< @return mass matrix A of local subdomain
 	Vec getb() { return b; }	///< @return right side vector b of local subdomain

@@ -10,7 +10,7 @@ PetscScalar funConst(Point n) {
 }
 
 int main(int argc, char *argv[]) {
-	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.2;
+	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.5;
 	PetscScalar (*fList[])(Point) = {funConst};
 
 	PetscInitialize(&argc,&argv,(char *)0,help);
@@ -24,14 +24,14 @@ int main(int argc, char *argv[]) {
 	mesh->partition(size);
 	
 	PetscPrintf(PETSC_COMM_WORLD, "Mesh was partitioned\n");
-	DistributedMesh dm;
-	mesh->tear(&dm);
-	delete mesh;
-	Mat A;
-	Vec b;
+
+	mesh->tear();
+
 	PetscPrintf(PETSC_COMM_WORLD, "Mesh was distributed - generation A...\n");
 
-	FEMAssemble2DLaplace(PETSC_COMM_WORLD, &dm, A, b, fList[0], fList[0]);
+	Mat A;
+	Vec b;
+	FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, fList[0], fList[0]);
 
 	//mesh.save("domain.jpm", true);
 	
@@ -42,10 +42,12 @@ int main(int argc, char *argv[]) {
 	PetscPrintf(PETSC_COMM_WORLD, "Saving...\n");
 	
 	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
-	//mesh.dumpForMatlab(v);
-	
+	mesh->dumpForMatlab(v);
+	PetscViewerDestroy(v);
+	delete mesh;
+	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/out.m", FILE_MODE_WRITE, &v);
 	MatView(A, v);
-	
+	VecView(b, v);
 	PetscViewerDestroy(v);
 
 	PetscFinalize();
