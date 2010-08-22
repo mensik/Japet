@@ -45,6 +45,7 @@ Mesh::~Mesh() {
 void Mesh::dumpForMatlab(PetscViewer v) {
 	Mat x;
 	Mat e;
+	Vec dirch, dual, corner;
 
 	PetscInt rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -81,17 +82,76 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 		MatSetValues(e, 1, &rowNumber, 4, indexes, data, INSERT_VALUES);
 		el++;
 	}
-	PetscSynchronizedFlush( PETSC_COMM_WORLD);
+
 	MatAssemblyBegin(e, MAT_FINAL_ASSEMBLY);
 	MatAssemblyEnd(e, MAT_FINAL_ASSEMBLY);
-
 	MatAssemblyEnd(x, MAT_FINAL_ASSEMBLY);
 
+	//Dirchlet
+	std::set<PetscInt> indDirchlet;
+	for (std::set<PetscInt>::iterator i = borderEdges.begin(); i
+			!= borderEdges.end(); i++) {
+		for (int j = 0; j < 2; j++) {
+			indDirchlet.insert(edges[*i]->vetrices[j]);
+		}
+	}
+	VecCreateMPI(PETSC_COMM_WORLD, indDirchlet.size(), PETSC_DECIDE, &dirch);
+	PetscInt localStart;
+	VecGetOwnershipRange(dirch, &localStart, PETSC_NULL);
+	for (std::set<PetscInt>::iterator d = indDirchlet.begin(); d
+			!= indDirchlet.end(); d++) {
+		VecSetValue(dirch, localStart++, *d, INSERT_VALUES);
+	}
+	VecAssemblyBegin(dirch);
+	VecAssemblyEnd(dirch);
+
+	if (!rank) {
+		std::set<PetscInt> dualIndices;
+		for (int i = 0; i < nPairs; i++) {
+			dualIndices.insert(pointPairing[2 * i]);
+			dualIndices.insert(pointPairing[2 * i + 1]);
+		}
+
+		VecCreateMPI(PETSC_COMM_WORLD, dualIndices.size(), PETSC_DECIDE, &dual);
+		int counter = 0;
+		for (std::set<PetscInt>::iterator d = dualIndices.begin(); d
+				!= dualIndices.end(); d++) {
+			VecSetValue(dual, counter++, *d, INSERT_VALUES);
+		}
+
+		std::set<PetscInt> cornerInd;
+		for (std::vector<Corner*>::iterator corn = corners.begin(); corn
+				!= corners.end(); corn++) {
+
+			for (int i = 0; i < (*corn)->cornerSize; i++)
+				cornerInd.insert((*corn)->vetrices[i]);
+		}
+
+		VecCreateMPI(PETSC_COMM_WORLD, cornerInd.size(), PETSC_DECIDE, &corner);
+		counter = 0;
+		for (std::set<PetscInt>::iterator d = cornerInd.begin(); d
+				!= cornerInd.end(); d++) {
+			VecSetValue(corner, counter++, *d, INSERT_VALUES);
+		}
+
+	} else {
+		VecCreateMPI(PETSC_COMM_WORLD, 0, PETSC_DECIDE, &dual);
+		VecCreateMPI(PETSC_COMM_WORLD, 0, PETSC_DECIDE, &corner);
+	}
+	VecAssemblyBegin(dual);
+	VecAssemblyEnd(dual);
+	VecAssemblyBegin(corner);
+	VecAssemblyEnd(corner);
 	MatView(x, v);
 	MatView(e, v);
+	VecView(dirch, v);
+	VecView(dual, v);
+	VecView(corner, v);
 
 	MatDestroy(x);
 	MatDestroy(e);
+	VecDestroy(dirch);
+	VecDestroy(dual);
 }
 
 void Mesh::generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k,
@@ -604,6 +664,7 @@ void Mesh::tear() {
 				Corner *corner = new Corner();
 				corner->cornerSize = i->second.size() + 1;
 				corner->vetrices[0] = i->first;
+				corners.push_back(corner);
 				PetscInt cCounter = 1;
 				for (std::map<PetscInt, PetscInt>::iterator j = i->second.begin(); j
 						!= i->second.end(); j++) {
