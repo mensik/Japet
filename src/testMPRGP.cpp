@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
 		FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, fList[2], fList[0]);
 		VecDuplicate(b, &l);
 		VecDuplicate(b, &x);
-		evalInNodes(mesh, funTable, &l);
+		mesh->evalInNodes(funTable, &l);
 		delete mesh;
 		//VecSet(l, -0.04);
 		VecSet(x, 0);

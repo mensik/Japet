@@ -34,8 +34,9 @@ Mesh::~Mesh() {
 					!= corners.end(); c++) {
 				delete *c;
 			}
-			for (std::vector<PetscInt*>::iterator p = borderPairs.begin(); p != borderPairs.end(); p++) {
-				delete [] *p;
+			for (std::vector<PetscInt*>::iterator p = borderPairs.begin(); p
+					!= borderPairs.end(); p++) {
+				delete[] *p;
 			}
 		}
 	}
@@ -672,6 +673,18 @@ void Mesh::tear() {
 		MPI_Bcast(&nPairs, 1, MPI_INT, 0, PETSC_COMM_WORLD);
 	}
 
+}
+
+void Mesh::evalInNodes(PetscScalar(*f)(Point), Vec *fv) {
+	VecCreateMPI(PETSC_COMM_WORLD, getNumNodes(), PETSC_DECIDE, fv);
+
+	for (std::map<PetscInt, Point*>::iterator v = vetrices.begin(); v
+			!= vetrices.end(); v++) {
+		VecSetValue(*fv, v->first, f(*(v->second)), INSERT_VALUES);
+	}
+
+	VecAssemblyBegin(*fv);
+	VecAssemblyEnd(*fv);
 }
 
 void extractLocalAPart(Mat A, Mat *Aloc) {

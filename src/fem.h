@@ -7,10 +7,10 @@
 
 /**
 	@mainpage
-	@section intro_sec Introducion
+	@section intro_sec Introduction
 	Welcome to Japet library. Main reason for development of this library is train my skills
-	in C++ programing, enhance my knowledge of PETSc library and basic optimalization algorhytms. 
-	I hope it could be used as foundation fo my future experiments as well.
+	in C++ programming, enhance my knowledge of PETSc library and basic optimalization algorhitms.
+	I hope it could be used as foundation for my future experiments as well.
 
 */
 #ifndef FEM_H
@@ -34,15 +34,4 @@
 
 PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
 
-void evalInNodes(Mesh *mesh, PetscScalar (*f)(Point), Vec *fv);
-
-/**
-	@brief Alter (zeros) some members of A and b to enforce Dirchlets boundary
-	
- @param[in,out] A 		mass matrix
- @param[in,out] b 		right side vector
- @param[in] n			number of indices
- @param[in] ind		indices of Dirchlet boundary nodes
-*/
-PetscErrorCode FEMSetDirchletBound(Mat &A, Vec &b, PetscInt n, PetscInt *ind);
 #endif

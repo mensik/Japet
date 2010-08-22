@@ -145,14 +145,20 @@ public:
 	 * 2. distribution - master keeps just his part of mesh and distribute all other parts to slaves
 	 */
 	void tear();
+
+	/**
+	 * @param[in] f function to evaluate
+	 * @param[out] fv vector with values of f in nodes
+	 */
+	void evalInNodes(PetscScalar(*f)(Point), Vec *fv);
 };
 
 /**
  @brief	Extract local part from global matrix A. Most likely will work best for
  this purpose.
 
- @param[in] A global matrix
- @param[eclipout] Aloc local matrix (user is responsible for destroy)
+ @param[in] 	A global matrix
+ @param[out] 	Aloc local matrix (user is responsible for destroy)
  **/
 void extractLocalAPart(Mat A, Mat *Aloc);
 
