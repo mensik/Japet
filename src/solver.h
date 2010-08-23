@@ -72,8 +72,6 @@ class MPRGP : public SolverApp {
 	Vec p;
 	Vec temp;
 
-	PetscInt *localIndices;
-
 	SolverApp *sApp;
 
 	void projectFeas(Vec &v);	//< @param[out] vector with changed infeasible parts to feasible

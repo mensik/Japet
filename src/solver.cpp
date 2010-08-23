@@ -93,7 +93,7 @@ MPRGP::MPRGP(SolverApp *app, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
 }
 
 MPRGP::~MPRGP() {
-	PetscFree(localIndices);
+
 }
 
 void MPRGP::initSolver(Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
@@ -108,8 +108,7 @@ void MPRGP::initSolver(Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
 	VecGetOwnershipRange(x, &localRangeStart, &localRangeEnd);
 	localRangeSize = localRangeEnd - localRangeStart;
 
-	PetscMalloc(localRangeSize*sizeof(PetscInt), &localIndices);
-	for (int i = localRangeStart; i < localRangeEnd; i++) localIndices[i - localRangeStart] = i;
+
 
 	VecDuplicate(b, &g);
 	VecDuplicate(g,&p);
