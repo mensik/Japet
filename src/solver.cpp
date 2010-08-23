@@ -83,6 +83,20 @@ void CGSolver::solve() {
 
 MPRGP::MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
 	this->A = A;
+	sApp = this;
+	initSolver(b,l,x,G,alp);
+}
+
+MPRGP::MPRGP(SolverApp *app, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
+	sApp = app;
+	initSolver(b,l,x,G,alp);
+}
+
+MPRGP::~MPRGP() {
+	PetscFree(localIndices);
+}
+
+void MPRGP::initSolver(Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
 	this->b = b;
 	this->x = x;
 	this->l = l;
@@ -104,12 +118,12 @@ MPRGP::MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
 	projectFeas(x);
 
 	VecCopy(b,g);					//g = b
-	MatMult(A, x, temp);
+	sApp->applyMult(x, temp);
 	VecAYPX(g, -1, temp); // g = A*x - g
 }
 
-MPRGP::~MPRGP() {
-	PetscFree(localIndices);
+void MPRGP::applyMult(Vec in,Vec out) {
+	MatMult(A,in, out);
 }
 
 void MPRGP::solve() {
@@ -134,7 +148,7 @@ void MPRGP::solve() {
 
 		if (normCHG*normCHG  <= G*G*freeXrFree) {
 			//Trial conjugate gradient step
-			MatMult(A, p, Ap);
+			sApp->applyMult(p,Ap);
 
 			PetscReal gXp, pAp;
 			VecDot(g,p, &gXp);
@@ -163,7 +177,7 @@ void MPRGP::solve() {
 				VecAXPY(x, -alp, freeG);
 				projectFeas(x);
 				VecCopy(b,g);
-				MatMult(A, x, temp);
+				sApp->applyMult(x, temp);
 				VecAYPX(g, -1, temp);
 
 				partGradient(freeG, chopG, rFreeG);
@@ -172,7 +186,7 @@ void MPRGP::solve() {
 		} else {
 			//Proportioning step
 			PetscReal dg, dAd;
-			MatMult(A,chopG, Ap);
+			sApp->applyMult(chopG, Ap);
 			VecDot(g, chopG, &dg);
 			VecDot(chopG, Ap, &dAd);
 
@@ -266,6 +280,9 @@ PetscReal MPRGP::alpFeas() {
 	VecRestoreArray(x, &xArr);
 	VecRestoreArray(p, &pArr);
 
-	PetscFunctionReturn(alpF);
+	PetscReal alpFGlobal;
+	MPI_Allreduce(&alpF, &alpFGlobal, 1, MPI_DOUBLE, MPI_MIN, PETSC_COMM_WORLD);
+
+	PetscFunctionReturn(alpFGlobal);
 }
 

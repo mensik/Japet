@@ -53,7 +53,7 @@ public:
 
 };
 
-class MPRGP {
+class MPRGP : public SolverApp {
 	Mat A;
 	Vec x;
 	Vec b;
@@ -74,10 +74,12 @@ class MPRGP {
 
 	PetscInt *localIndices;
 
+	SolverApp *sApp;
+
 	void projectFeas(Vec &v);	//< @param[out] vector with changed infeasible parts to feasible
 	void partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG); //< divides gradient into its free, chopped and reduced parts
 	PetscReal alpFeas();		//< @return feasible step length for current gradient
-
+	void initSolver(Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
 public:
 	/**
 	 	@param[in] A stiffness (mass) matrix
@@ -87,7 +89,9 @@ public:
 	 	@param[in] alp fixed step length - <0, 2/||A||>
 	 */
 	MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
+	MPRGP(SolverApp *app, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
 	~MPRGP();
+	void applyMult(Vec in, Vec out);
 	void solve();
 };
 
