@@ -53,7 +53,7 @@ public:
 
 };
 
-class MPRGP : public SolverApp {
+class MPRGP : public SolverApp,  SolverCtr{
 	Mat A;
 	Vec x;
 	Vec b;
@@ -72,7 +72,10 @@ class MPRGP : public SolverApp {
 	Vec p;
 	Vec temp;
 
+	int itCounter;
+
 	SolverApp *sApp;
+	SolverCtr *sCtr;
 
 	void projectFeas(Vec &v);	//< @param[out] vector with changed infeasible parts to feasible
 	void partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG); //< divides gradient into its free, chopped and reduced parts
@@ -89,8 +92,13 @@ public:
 	MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
 	MPRGP(SolverApp *app, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
 	~MPRGP();
+
+	void setCtrl(SolverCtr *ctr) { sCtr = ctr; };
 	void applyMult(Vec in, Vec out);
+	bool isConverged(PetscInt itNum, PetscScalar rNorm, Vec *vec);
 	void solve();
+
+	int getNumIterations();
 };
 
 bool isConFun(PetscInt itNumber, PetscScalar rNorm, Vec *r);

@@ -12,7 +12,7 @@
 #include "petscmat.h"
 #include "solver.h"
 
-class Smalbe : public SolverApp {
+class Smalbe : public SolverApp, SolverCtr {
 	Mat A;
 	Mat B;
 	Vec b;
@@ -30,13 +30,15 @@ class Smalbe : public SolverApp {
 	Vec tempMSize;
 	Vec temp;
 
+	PetscReal Lagrangian();
 public:
-	Smalbe(Mat A, Vec b, Mat B, Vec c, Vec L, PetscReal mi = 1e-3, PetscReal ro = 5, PetscReal beta = 1.1, PetscReal M = 0.1);
+	Smalbe(Mat A, Vec b, Mat B, Vec c, Vec L, PetscReal mi = 1e-2, PetscReal ro = 1, PetscReal beta = 1.1, PetscReal M = 3);
 	~Smalbe() ;
 
 	void solve();
 	void dumpSolution(PetscViewer v);
 	void applyMult(Vec in, Vec out);
+	bool isConverged(PetscInt itNum, PetscScalar rNorm, Vec *vec);
 
 };
 

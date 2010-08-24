@@ -38,19 +38,28 @@ int main(int argc, char *argv[]) {
 	PetscScalar (*fList[])(Point) = {funConst, funSin, funConstNeg};
 	PetscErrorCode 	ierr;
 	PetscMPIInt			rank, size;
-	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.025;
+	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.01;
+	PetscReal				mi=1e-2,ro=1,beta=1.1,M=3;
   PetscInitialize(&argc,&argv,0,help);
 	PetscInt				f = 2;
 	PetscTruth 			flg;
 	char fileName[PETSC_MAX_PATH_LEN]="matlab/out.m";			
 	
-	PetscOptionsGetReal("-test_m", &m, PETSC_NULL);
-	PetscOptionsGetReal("-test_n", &n, PETSC_NULL);
-	PetscOptionsGetReal("-test_k", &k, PETSC_NULL);
-	PetscOptionsGetReal("-test_l", &l, PETSC_NULL);
-	PetscOptionsGetReal("-test_h", &h, PETSC_NULL);
-	PetscOptionsGetInt("-test_f", &f, PETSC_NULL);
+	PetscOptionsGetReal("-jpt_m", &m, PETSC_NULL);
+	PetscOptionsGetReal("-jpt_n", &n, PETSC_NULL);
+	PetscOptionsGetReal("-jpt_k", &k, PETSC_NULL);
+	PetscOptionsGetReal("-jpt_l", &l, PETSC_NULL);
+	PetscOptionsGetReal("-jpt_h", &h, PETSC_NULL);
+
+	PetscOptionsGetInt("-jpt_f", &f, PETSC_NULL);
+
+	PetscOptionsGetReal("-jpt_mi", &mi, PETSC_NULL);
+	PetscOptionsGetReal("-jpt_ro", &ro, PETSC_NULL);
+	PetscOptionsGetReal("-jpt_beta", &beta, PETSC_NULL);
+	PetscOptionsGetReal("-jpt_sM", &M, PETSC_NULL);
+
 	PetscOptionsGetString(PETSC_NULL, "-test_out_file", fileName, PETSC_MAX_PATH_LEN-1, &flg);
+
 	//if (!flg) SETERRQ(1,"Must indicate binary file with the -test_out_file option");
 
 	{
@@ -83,8 +92,10 @@ int main(int argc, char *argv[]) {
 		VecSet(c, 0);
 		delete mesh;
 
-		Smalbe smalbe(A,b,B,c,L);
+		Smalbe smalbe(A,b,B,c,L,mi, ro, beta, M);
 		smalbe.solve();
+
+
 
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 		smalbe.dumpSolution(v);

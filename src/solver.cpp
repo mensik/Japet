@@ -93,7 +93,9 @@ MPRGP::MPRGP(SolverApp *app, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
 }
 
 MPRGP::~MPRGP() {
-
+	VecDestroy(g);
+	VecDestroy(p);
+	VecDestroy(temp);
 }
 
 void MPRGP::initSolver(Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
@@ -108,7 +110,7 @@ void MPRGP::initSolver(Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
 	VecGetOwnershipRange(x, &localRangeStart, &localRangeEnd);
 	localRangeSize = localRangeEnd - localRangeStart;
 
-
+	sCtr = this;
 
 	VecDuplicate(b, &g);
 	VecDuplicate(g,&p);
@@ -125,23 +127,32 @@ void MPRGP::applyMult(Vec in,Vec out) {
 	MatMult(A,in, out);
 }
 
+bool MPRGP::isConverged(PetscInt itNum, PetscScalar rNorm, Vec *vec) {
+	return rNorm < 1e-3;
+}
+
 void MPRGP::solve() {
 
-	Vec freeG, chopG, rFreeG, Ap;
+	Vec freeG, chopG, rFreeG, Ap, gp;
 	VecDuplicate(g, &chopG);
 	VecDuplicate(g, &freeG);
 	VecDuplicate(g, &rFreeG);
 	VecDuplicate(g, &Ap);
-	PetscReal normFG, normCHG;
-
+	VecDuplicate(g, &gp);
+	PetscReal normGP;
+	PetscReal normCHG;
 	partGradient(freeG, chopG, rFreeG);
-	VecNorm(freeG, NORM_2, &normFG);
+	VecCopy(freeG, gp);
+	VecAYPX(gp, 1, chopG);
+
+	VecNorm(gp, NORM_2, &normGP);
 	VecNorm(chopG, NORM_2, &normCHG);
-	PetscInt itCounter = 0;
+
+	itCounter = 0;
 
 	VecCopy(freeG, p);
 
-	while (normFG + normCHG > 1e-4) {
+	while (!sCtr->isConverged(itCounter, normGP, &x)) {
 		PetscScalar freeXrFree;
 		VecDot(freeG, rFreeG, &freeXrFree);
 
@@ -197,15 +208,17 @@ void MPRGP::solve() {
 			partGradient(freeG, chopG, rFreeG);
 			VecCopy(freeG, p);
 		}
-
-		VecNorm(freeG, NORM_2, &normFG);
+		VecCopy(freeG, gp);
+		VecAYPX(gp, 1, chopG);
+		VecNorm(gp, NORM_2, &normGP);
 		VecNorm(chopG, NORM_2, &normCHG);
 		itCounter++;
 	}
-	PetscPrintf(PETSC_COMM_WORLD, "Iteraci: %d\n", itCounter);
+
 	VecDestroy(chopG);
 	VecDestroy(freeG);
 	VecDestroy(rFreeG);
+	VecDestroy(gp);
 	VecDestroy(Ap);
 }
 
@@ -284,4 +297,10 @@ PetscReal MPRGP::alpFeas() {
 
 	PetscFunctionReturn(alpFGlobal);
 }
+
+int MPRGP::getNumIterations() {
+	return itCounter;
+}
+
+
 
