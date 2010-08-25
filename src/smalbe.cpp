@@ -13,26 +13,38 @@ Smalbe::Smalbe(Mat A, Vec b, Mat B, Vec c, Vec L, PetscReal mi, PetscReal ro,
 	this->M = M;
 
 	VecDuplicate(b, &x);
+	extractLocalAPart(A, &(this->A));
 
+	PetscInt nA;
+	MatGetSize(this->A, &nA, PETSC_NULL);
+
+	VecCreateGhost(PETSC_COMM_WORLD, nA, PETSC_DECIDE, 0, PETSC_NULL, &temp);
+	VecCreateGhost(PETSC_COMM_WORLD, nA, PETSC_DECIDE, 0, PETSC_NULL, &temp2);
+	VecGhostGetLocalForm(temp, &tempGh);
+	VecGhostGetLocalForm(temp2, &temp2Gh);
 	VecDuplicate(c, &tempMSize);
 	VecDuplicate(c, &lmb);
-	VecDuplicate(b, &temp);
 
 }
 
 Smalbe::~Smalbe() {
 	VecDestroy(tempMSize);
+	VecDestroy(tempGh);
+	VecDestroy(temp2Gh);
 	VecDestroy(temp);
+	VecDestroy(temp2);
+	MatDestroy(A);
 	VecDestroy(x);
 	VecDestroy(lmb);
 }
 
 void Smalbe::applyMult(Vec in, Vec out) {
 	MatMult(B, in, tempMSize);
-	MatMultTranspose(B, tempMSize, temp);
-	MatMult(A, in, out);
+	MatMultTranspose(B, tempMSize, out);
+	VecCopy(in, temp);
+	MatMult(A, tempGh, temp2Gh);
 
-	VecAXPY(out, ro, temp);
+	VecAYPX(out, ro, temp2);
 }
 
 bool Smalbe::isConverged(PetscInt itNum, PetscScalar gpNorm, Vec *x) {
@@ -51,14 +63,15 @@ void Smalbe::solve() {
 	VecCopy(b, bCopy);
 
 	PetscReal actualL = 0, previousL = -1;
-	PetscReal ANorm;
-	MatNorm(A, NORM_1, &ANorm);
+	PetscReal ANorm, ANormLoc;
 
-	PetscReal normBx = 1, normB;
-	VecNorm(b, NORM_2, &normB);
+	MatNorm(A, NORM_1, &ANormLoc);
+	MPI_Allreduce(&ANormLoc, &ANorm, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+
+	PetscReal normBx = 1;
 	int outerIterations = 0;
 	int innnerIterations = 0;
-	while (normBx / normB > 1e-3) {
+	while (normBx > 1e-3) {
 		outerIterations++;
 
 		MatMultTranspose(B, lmb, bCopy);
@@ -96,8 +109,8 @@ void Smalbe::solve() {
 				PetscPrintf(PETSC_COMM_WORLD, "ro = %e\n", ro);
 			}
 		}
-
-		PetscPrintf(PETSC_COMM_WORLD, "|Bx|/|b| = %f \t\tL = %f\n", normBx/normB, actualL);
+		VecNorm(tempMSize, NORM_1, &normBx);
+		PetscPrintf(PETSC_COMM_WORLD, "|Bx|_max = %f \t\tL = %f\n", normBx, actualL);
 
 		previousL = actualL;
 	}
@@ -109,7 +122,8 @@ PetscReal Smalbe::Lagrangian() {
 	PetscReal L = 0;
 
 	PetscReal xAx;
-	MatMultAdd(A, x, temp);
+	VecCopy(x, temp2);
+	MatMultAdd(A, temp2Gh, tempGh);
 	VecDot(x, temp, &xAx);
 
 	PetscReal bx;

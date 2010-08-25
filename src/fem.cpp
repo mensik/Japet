@@ -24,7 +24,7 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
 	PetscInt size = mesh->vetrices.size();
 
 	ierr
-			= MatCreateMPIAIJ(comm, size, size, PETSC_DECIDE, PETSC_DECIDE, 7, PETSC_NULL, 7, PETSC_NULL, &A);
+			= MatCreateMPIAIJ(comm, size, size, PETSC_DECIDE, PETSC_DECIDE, 7, PETSC_NULL, 0, PETSC_NULL, &A);
 	CHKERRQ(ierr);
 	ierr = VecCreateMPI(comm, size, PETSC_DECIDE, &b);
 	CHKERRQ(ierr);

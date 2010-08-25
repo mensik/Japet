@@ -11,6 +11,7 @@
 #include <math.h>
 #include "petscmat.h"
 #include "solver.h"
+#include "structures.h"
 
 class Smalbe : public SolverApp, SolverCtr {
 	Mat A;
@@ -21,6 +22,8 @@ class Smalbe : public SolverApp, SolverCtr {
 	Vec c;
 	Vec L;
 
+
+
 	PetscReal mi;
 	PetscReal ro;
 	PetscReal beta;
@@ -28,7 +31,8 @@ class Smalbe : public SolverApp, SolverCtr {
 
 	//TEMPS
 	Vec tempMSize;
-	Vec temp;
+	Vec temp, tempGh;
+	Vec temp2, temp2Gh;
 
 	PetscReal Lagrangian();
 public:

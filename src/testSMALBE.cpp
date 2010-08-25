@@ -4,6 +4,7 @@ static char help[] = "My first own testing utility for PETSc\n\n";
 #include "petscksp.h"
 #include "petscmat.h"
 #include "petscmg.h"
+#include "petsclog.h"
 #include "fem.h"
 #include "solver.h"
 #include "feti.h"
@@ -65,18 +66,22 @@ int main(int argc, char *argv[]) {
 	{
 		ierr = MPI_Comm_rank(PETSC_COMM_WORLD,&rank);CHKERRQ(ierr);
 		MPI_Comm_size(PETSC_COMM_WORLD, &size);
-		PetscViewer v;
+		//PetscViewer v;
+		PetscLogStage meshStage, femStage, smalbeStage;
+		PetscLogStageRegister("Meshing",&meshStage);
+		PetscLogStageRegister("FEM",&femStage);
+		PetscLogStageRegister("Smalbe",&smalbeStage);
+	
+		PetscLogStagePush(meshStage);
 		Mesh *mesh = new Mesh();
 		mesh->generateRectangularMesh(m, n, k, l, h);
 		mesh->partition(size);
 		mesh->tear();
+		PetscLogStagePop();
 
-
-		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
-
-
-		mesh->dumpForMatlab(v);
-		PetscViewerDestroy(v);
+		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
+		//mesh->dumpForMatlab(v);
+		//PetscViewerDestroy(v);
 	
 		Mat A;
 		Vec b;
@@ -84,22 +89,28 @@ int main(int argc, char *argv[]) {
 		Vec c;
 		Vec L;
 		Vec lmb;
-
+		PetscLogStagePush(femStage);
 		FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, fList[2], fList[0]);
 		mesh->evalInNodes(funTable, &L);
 		GenerateJumpOperator(mesh, B, lmb);
 		VecDuplicate(lmb, &c);
 		VecSet(c, 0);
+		PetscLogStagePop();
 		delete mesh;
 
+		PetscInt mA,nA,mB,nB;
+		MatGetSize(A, &mA, &nA);
+		MatGetSize(B, &mB, &nB);
+		PetscPrintf(PETSC_COMM_WORLD, "DOF: %d, Dual: %d \n\n",mA, mB);
+		PetscLogStagePush(smalbeStage);
 		Smalbe smalbe(A,b,B,c,L,mi, ro, beta, M);
 		smalbe.solve();
+		PetscLogStagePop();
 
 
-
-		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
-		smalbe.dumpSolution(v);
-		PetscViewerDestroy(v);
+		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
+		//smalbe.dumpSolution(v);
+		//PetscViewerDestroy(v);
 
 	
 		MatDestroy(A);
