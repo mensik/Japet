@@ -47,7 +47,7 @@ void Smalbe::applyMult(Vec in, Vec out) {
 	VecAYPX(out, ro, temp2);
 }
 
-bool Smalbe::isConverged(PetscInt itNum, PetscScalar gpNorm, Vec *x) {
+bool Smalbe::isConverged(PetscInt itNum, PetscReal gpNorm, Vec *x) {
 	MatMult(B, *x, tempMSize);
 	PetscReal normBx;
 	VecNorm(tempMSize, &normBx);

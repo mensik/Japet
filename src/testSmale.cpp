@@ -9,28 +9,28 @@ static char help[] = "My first own testing utility for PETSc\n\n";
 #include "smale.h"
 #include "feti.h"
 
-PetscScalar funConst(Point n) {
+PetscReal funConst(Point n) {
 	return 1;
 }
 
-PetscScalar funSin(Point n) {
+PetscReal funSin(Point n) {
 	return sin(n.x + n.y);
 }
 
-PetscScalar funStep(Point n) {
+PetscReal funStep(Point n) {
 
-	PetscScalar c =  n.x>2?-1:1;
+	PetscReal c =  n.x>2?-1:1;
 	c *=  n.y>2?-1:1;
 	return c;
 }
 
-bool cf(PetscInt itNumber, PetscScalar rNorm, Vec *r) {
+bool cf(PetscInt itNumber, PetscReal rNorm, Vec *r) {
 	PetscPrintf(PETSC_COMM_SELF, "%d - %e\n", itNumber, rNorm);
 	return itNumber > 	5; 
 }
 
 int main(int argc, char *argv[]) {
-	PetscScalar (*fList[])(Point) = {funConst, funSin, funStep};
+	PetscReal (*fList[])(Point) = {funConst, funSin, funStep};
 	PetscErrorCode 	ierr;
 	PetscMPIInt			rank,size;
 	PetscReal				m=0.0,n=4.0,k=0.0,l=4.0,h=0.1;

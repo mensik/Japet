@@ -42,7 +42,7 @@ public:
 	void solve();
 	void dumpSolution(PetscViewer v);
 	void applyMult(Vec in, Vec out);
-	bool isConverged(PetscInt itNum, PetscScalar rNorm, Vec *vec);
+	bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec);
 
 };
 

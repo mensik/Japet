@@ -15,9 +15,8 @@
 #include "petscmat.h"
 #include "petscao.h"
 
-extern "C" {
-#include "metis.h"
-}
+#include "parmetis.h"
+
 
 class MyMultiMap {
 public:
@@ -56,16 +55,16 @@ struct Edge {
 
 /// Struct representing Point
 struct Point {
-	PetscScalar x; ///< X coordinate of the node
-	PetscScalar y; ///< Y coordinate of the node
-	PetscScalar z; ///< Z coordinate of the node
+	PetscReal x; ///< X coordinate of the node
+	PetscReal y; ///< Y coordinate of the node
+	PetscReal z; ///< Z coordinate of the node
 
 	std::set<Element*> elements;
 	std::set<Edge*> edges;
 
 	PetscInt domainInd;
 
-	Point(PetscScalar xx = 0, PetscScalar yy = 0, PetscScalar zz = 0) {
+	Point(PetscReal xx = 0, PetscReal yy = 0, PetscReal zz = 0) {
 		x = xx;
 		y = yy;
 		z = zz;
@@ -150,7 +149,7 @@ public:
 	 * @param[in] f function to evaluate
 	 * @param[out] fv vector with values of f in nodes
 	 */
-	void evalInNodes(PetscScalar(*f)(Point), Vec *fv);
+	void evalInNodes(PetscReal(*f)(Point), Vec *fv);
 };
 
 /**

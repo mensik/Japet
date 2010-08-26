@@ -1,6 +1,6 @@
 #include "solver.h"
 
-bool isConFun(PetscInt itNumber, PetscScalar rNorm, Vec *r) {
+bool isConFun(PetscInt itNumber, PetscReal rNorm, Vec *r) {
 	return rNorm < 1e-6; 
 }
 
@@ -33,7 +33,7 @@ void CGSolver::initSolver(Vec b, Vec x) {
 
 }
 
-bool CGSolver::isConverged(PetscInt itNumber, PetscScalar rNorm, Vec *r) {
+bool CGSolver::isConverged(PetscInt itNumber, PetscReal rNorm, Vec *r) {
 	return isCon(itNumber, rNorm, r);
 }
 
@@ -63,14 +63,14 @@ void CGSolver::solve() {
 		//MatMult(A,p,temp);
 		sApp->applyMult(p, temp);
 		VecDot(p, temp,&pAp);
-		PetscScalar a = (rNorm*rNorm) / pAp;
+		PetscReal a = (rNorm*rNorm) / pAp;
 		VecAXPY(x,-a,p);
 		VecAXPY(r,-a,temp);
 		
 		PetscReal rNormS;
 		VecNorm(r, NORM_2, &rNormS);
 		
-		PetscScalar b = (rNormS * rNormS) / (rNorm * rNorm);
+		PetscReal b = (rNormS * rNormS) / (rNorm * rNorm);
 		VecAYPX(p,b,r);
 	
 		//PetscPrintf(PETSC_COMM_WORLD,"It: %d \t Res: %e\n",itCounter, rNorm);
@@ -127,7 +127,7 @@ void MPRGP::applyMult(Vec in,Vec out) {
 	MatMult(A,in, out);
 }
 
-bool MPRGP::isConverged(PetscInt itNum, PetscScalar rNorm, Vec *vec) {
+bool MPRGP::isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec) {
 	return rNorm < 1e-3;
 }
 
@@ -153,7 +153,7 @@ void MPRGP::solve() {
 	VecCopy(freeG, p);
 
 	while (!sCtr->isConverged(itCounter, normGP, &x)) {
-		PetscScalar freeXrFree;
+		PetscReal freeXrFree;
 		VecDot(freeG, rFreeG, &freeXrFree);
 
 		if (normCHG*normCHG  <= G*G*freeXrFree) {
@@ -228,7 +228,7 @@ void MPRGP::partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG) {
 	VecZeroEntries(rFreeG);
 
 	
-	PetscScalar *xArr, *lArr, *gArr, *freeGArr, *chopGArr, *rFreeGArr;
+	PetscReal *xArr, *lArr, *gArr, *freeGArr, *chopGArr, *rFreeGArr;
 
 	VecGetArray(g, &gArr);
 	VecGetArray(freeG, &freeGArr);
@@ -244,7 +244,7 @@ void MPRGP::partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG) {
 			}
 		} else {		//free set
 			freeGArr[i] = gArr[i];
-			PetscScalar rG = (xArr[i] - lArr[i]) / alp;
+			PetscReal rG = (xArr[i] - lArr[i]) / alp;
 			if (rG < gArr[i]) {
 				rFreeGArr[i] = rG;
 			}  else {
@@ -262,7 +262,7 @@ void MPRGP::partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG) {
 }
 
 void MPRGP::projectFeas(Vec &vec) {
-	PetscScalar *lArr, *vecArr;
+	PetscReal *lArr, *vecArr;
 	VecGetArray(l, &lArr);
 	VecGetArray(vec, &vecArr);
 	
@@ -277,7 +277,7 @@ void MPRGP::projectFeas(Vec &vec) {
 PetscReal MPRGP::alpFeas() {
 	PetscFunctionBegin;
 	PetscReal alpF;
-	PetscScalar *lArr, *xArr, *pArr;
+	PetscReal *lArr, *xArr, *pArr;
 	VecGetArray(l, &lArr);
 	VecGetArray(x, &xArr);
 	VecGetArray(p, &pArr);

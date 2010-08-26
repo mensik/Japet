@@ -1,6 +1,6 @@
 #include "smale.h"
 
-SDSystem::SDSystem(Mesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point)) {
+SDSystem::SDSystem(Mesh *mesh, PetscReal (*f)(Point), PetscReal (*K)(Point)) {
 	Mat Agl;
 	Vec bgl;
 	Vec lmb;
@@ -215,7 +215,7 @@ void Smale::dumpSolution(PetscViewer v) {
 }
 
 /*
-SassiRectSystem::SassiRectSystem(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h, PetscInt xSize, PetscInt ySize, PetscScalar (*f)(Point), PetscScalar (*K)(Point), PetscReal rr) {
+SassiRectSystem::SassiRectSystem(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h, PetscInt xSize, PetscInt ySize, PetscReal (*f)(Point), PetscReal (*K)(Point), PetscReal rr) {
   
 	r = rr;
 

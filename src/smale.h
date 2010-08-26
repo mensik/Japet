@@ -20,7 +20,7 @@ class SDSystem {
 	Mat B;
 	Vec c;
 public:
-	SDSystem(Mesh *mesh, PetscScalar (*f)(Point), PetscScalar (*K)(Point));
+	SDSystem(Mesh *mesh, PetscReal (*f)(Point), PetscReal (*K)(Point));
 	~SDSystem() { MatDestroy(A); MatDestroy(B); VecDestroy(b); VecDestroy(c); }
 	Mat getA() { return A; }	///< @return mass matrix A of local subdomain
 	Vec getb() { return b; }	///< @return right side vector b of local subdomain
@@ -92,7 +92,7 @@ class SassiRectSystem {
 	
 	void prepareBorder(Mat &B, Vec &lag, PetscInt numNodes, PetscInt borderLenght, PetscInt *indexes);
 public:
-	SassiRectSystem(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h, PetscInt xSize, PetscInt ySize, PetscScalar (*f)(Point), PetscScalar (*K)(Point), PetscReal r);
+	SassiRectSystem(PetscReal m, PetscReal n, PetscReal k, PetscReal l, PetscReal h, PetscInt xSize, PetscInt ySize, PetscReal (*f)(Point), PetscReal (*K)(Point), PetscReal r);
 	~SassiRectSystem();
 
 	void setDirchletBound(PetscInt n, BoundSide *sides);

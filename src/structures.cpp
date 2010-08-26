@@ -413,7 +413,7 @@ void Mesh::partition(int numDomains) {
 			elmnts[i++] = el->second->vetrices[1];
 			elmnts[i++] = el->second->vetrices[2];
 		}
-		METIS_PartMeshDual(&ne, &nn, elmnts, &eType, &numFlag, &numDomains, &edgeCut, epart, npart);
+		//METIS_PartMeshDual(&ne, &nn, elmnts, &eType, &numFlag, &numDomains, &edgeCut, epart, npart);
 
 		PetscFree(npart);
 		PetscFree(elmnts);
@@ -593,7 +593,7 @@ void Mesh::tear() {
 			} else {
 				int id = p->first;
 				MPI_Send(&id, 1, MPI_INT, p->second->domainInd, 0, PETSC_COMM_WORLD);
-				PetscScalar coords[] = { p->second->x, p->second->y, p->second->z };
+				PetscReal coords[] = { p->second->x, p->second->y, p->second->z };
 				MPI_Send(coords, 3, MPI_DOUBLE, p->second->domainInd, 0, PETSC_COMM_WORLD);
 			}
 		}
@@ -698,7 +698,7 @@ void Mesh::tear() {
 
 		for (int i = 0; i < nVetrices; i++) {
 			MPI_Recv(glIndices + i, 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stats); // RCV ID
-			PetscScalar coords[3];
+			PetscReal coords[3];
 			MPI_Recv(coords, 3, MPI_DOUBLE, 0, 0, PETSC_COMM_WORLD, &stats); // RCV COORDINATES
 			vetrices.insert(std::pair<PetscInt, Point*>(i + startIndex, new Point(coords[0], coords[1], coords[2])));
 		}
@@ -736,7 +736,7 @@ void Mesh::tear() {
 
 }
 
-void Mesh::evalInNodes(PetscScalar(*f)(Point), Vec *fv) {
+void Mesh::evalInNodes(PetscReal(*f)(Point), Vec *fv) {
 	VecCreateMPI(PETSC_COMM_WORLD, getNumNodes(), PETSC_DECIDE, fv);
 
 	for (std::map<PetscInt, Point*>::iterator v = vetrices.begin(); v

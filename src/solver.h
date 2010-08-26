@@ -10,7 +10,7 @@
 #include "math.h"
 #include "petscmat.h"
 
-typedef bool (*ConvFunc)(PetscInt, PetscScalar, Vec*);
+typedef bool (*ConvFunc)(PetscInt, PetscReal, Vec*);
 /// Basic Conjugate gradient implementation
 
 class SolverApp {
@@ -20,7 +20,7 @@ public:
 
 class SolverCtr {
 public:
-	virtual bool isConverged(PetscInt itNum, PetscScalar rNorm, Vec *vec) = 0;
+	virtual bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec) = 0;
 };
 
 class CGSolver : public SolverApp, public SolverCtr{
@@ -49,7 +49,7 @@ public:
 	void getX(Vec r) { VecCopy(x,r); }	///< @return copy of solution
 	void solve();						///< begin solving
 	void applyMult(Vec in, Vec out);
-	bool isConverged(PetscInt itNum, PetscScalar rNorm, Vec *vec);
+	bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec);
 
 };
 
@@ -95,12 +95,12 @@ public:
 
 	void setCtrl(SolverCtr *ctr) { sCtr = ctr; };
 	void applyMult(Vec in, Vec out);
-	bool isConverged(PetscInt itNum, PetscScalar rNorm, Vec *vec);
+	bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec);
 	void solve();
 
 	int getNumIterations();
 };
 
-bool isConFun(PetscInt itNumber, PetscScalar rNorm, Vec *r);
+bool isConFun(PetscInt itNumber, PetscReal rNorm, Vec *r);
  
 #endif

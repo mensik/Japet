@@ -5,18 +5,18 @@
  @param[in]  bl	local right side vector
  @param[in]	f		"force" function value
  */
-void bLoc(PetscScalar *R, PetscScalar *bl, PetscScalar f);
+void bLoc(PetscReal *R, PetscReal *bl, PetscReal f);
 /**
  @param[in] R	 	coordinates transformation matrix
  @param[out] Al	local mass matrix
  @param[in] K	 	"material" function value
  */
-void ALoc(PetscScalar *R, PetscScalar *Al, PetscScalar K);
+void ALoc(PetscReal *R, PetscReal *Al, PetscReal K);
 
 Point getCenterOfSet(Point points[], PetscInt size);
 
 PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
-		PetscScalar(*f)(Point), PetscScalar(*K)(Point)) {
+		PetscReal(*f)(Point), PetscReal(*K)(Point)) {
 	PetscErrorCode ierr;
 	PetscInt rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -40,7 +40,7 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
 	for (std::map<PetscInt, Element*>::iterator e = mesh->elements.begin(); e != mesh->elements.end(); e++) {
 		PetscScalar bl[3];
 		PetscScalar Al[9];
-		PetscScalar R[4];
+		PetscReal R[4];
 
 		PetscInt elSize = e->second->numVetrices;
 		Point vetrices[elSize];
@@ -90,9 +90,9 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
 }
 
 Point getCenterOfSet(Point p[], PetscInt size) {
-	PetscScalar x = 0;
-	PetscScalar y = 0;
-	PetscScalar z = 0;
+	PetscReal x = 0;
+	PetscReal y = 0;
+	PetscReal z = 0;
 	for (int i = 0; i < size; i++) {
 		x += p[i].x;
 		y += p[i].y;
@@ -104,23 +104,23 @@ Point getCenterOfSet(Point p[], PetscInt size) {
 	return Point(x, y, z);
 }
 
-void bLoc(PetscScalar *R, PetscScalar *bl, PetscScalar f) {
+void bLoc(PetscReal *R, PetscReal *bl, PetscReal f) {
 
-	PetscScalar dR = fabs(R[0] * R[3] - R[1] * R[2]);
+	PetscReal dR = fabs(R[0] * R[3] - R[1] * R[2]);
 	for (int i = 0; i < 3; i++)
 		bl[i] = f / 6.0 * dR;
 }
 
-void ALoc(PetscScalar *R, PetscScalar *Al, PetscScalar k) {
-	PetscScalar dR = fabs(R[0] * R[3] - R[1] * R[2]);
-	PetscScalar iR[4];
+void ALoc(PetscReal *R, PetscReal *Al, PetscReal k) {
+	PetscReal dR = fabs(R[0] * R[3] - R[1] * R[2]);
+	PetscReal iR[4];
 	//Transponovana inverze R
 	iR[0] = -R[3] / dR;
 	iR[1] = R[2] / dR;
 	iR[2] = R[1] / dR;
 	iR[3] = -R[0] / dR;
 
-	PetscScalar B[] =
+	PetscReal B[] =
 			{ -iR[0] - iR[1], iR[0], iR[1], -iR[2] - iR[3], iR[2], iR[3] };
 
 	//printf("%f\t%f\n",iR[0],iR[1]);

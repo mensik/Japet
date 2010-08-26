@@ -8,33 +8,33 @@ static char help[] = "My first own testing utility for PETSc\n\n";
 #include "solver.h"
 #include "feti.h"
 
-PetscScalar funConst(Point n) {
+PetscReal funConst(Point n) {
 	return 1;
 }
 
-PetscScalar funSin(Point n) {
+PetscReal funSin(Point n) {
 	return sin((n.x + n.y) * 2*3.1415);
 }
 
-PetscScalar funConstNeg(Point n) {
+PetscReal funConstNeg(Point n) {
 	return -1;
 }
 
-PetscScalar funL(Point n) {
+PetscReal funL(Point n) {
 	return (n.x > 0.25) && (n.x < 0.75) && (n.y > 0.25) && (n.y < 0.75)?-0.1:-0.01; 
 }
 
-PetscScalar funTable(Point n) {
+PetscReal funTable(Point n) {
 	return (n.x > 0.0) && (n.x < 0.5) && (n.y > 0.25) && (n.y < 0.75)?-0.02:-0.3;
 }
 
-bool cf(PetscInt itNumber, PetscScalar rNorm, Vec *r) {
+bool cf(PetscInt itNumber, PetscReal rNorm, Vec *r) {
 	PetscPrintf(PETSC_COMM_SELF, "%d - %e\n", itNumber, rNorm);
 	return itNumber >	5;
 }
 
 int main(int argc, char *argv[]) {
-	PetscScalar (*fList[])(Point) = {funConst, funSin, funConstNeg};
+	PetscReal (*fList[])(Point) = {funConst, funSin, funConstNeg};
 	PetscErrorCode 	ierr;
 	PetscMPIInt			rank, size;
 	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.02;

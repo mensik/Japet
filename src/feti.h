@@ -53,14 +53,14 @@ class Feti1 : public SolverApp, public SolverCtr {
 	Vec tgA;
 	Vec tgB;
 public:
-	Feti1(Mesh *mesh,PetscScalar (*f)(Point), PetscScalar (*K)(Point));
+	Feti1(Mesh *mesh,PetscReal (*f)(Point), PetscReal (*K)(Point));
 	~Feti1();
 	void solve(); ///< solve the syste ;-)
 	void dumpSolution(PetscViewer v);
 	void dumpSystem(PetscViewer v);
 	void applyMult(Vec in, Vec out); ///< Apply multiplication in outer (dual) CG iteration 
 	void projectGOrth(Vec in);			 ///< Remove space spaned by G from vec in
-	bool isConverged(PetscInt itNumber, PetscScalar norm, Vec *vec);
+	bool isConverged(PetscInt itNumber, PetscReal norm, Vec *vec);
 };
 
 void GenerateJumpOperator(Mesh *mesh,Mat &B, Vec &lmb);

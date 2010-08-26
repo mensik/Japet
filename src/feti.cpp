@@ -1,6 +1,6 @@
 #include "feti.h"
 
-Feti1::Feti1(Mesh *mesh, PetscScalar(*f)(Point), PetscScalar(*K)(
+Feti1::Feti1(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(
 		Point)) {
 
 	FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, f, K);
@@ -186,7 +186,7 @@ void Feti1::projectGOrth(Vec in) {
 	VecScale(in, -1);
 }
 
-bool Feti1::isConverged(PetscInt itNumber, PetscScalar norm, Vec *vec) {
+bool Feti1::isConverged(PetscInt itNumber, PetscReal norm, Vec *vec) {
 	PetscPrintf(PETSC_COMM_WORLD, "It.%d: residual norm:%f\n", itNumber, norm);
 	return norm < 1e-3;
 }

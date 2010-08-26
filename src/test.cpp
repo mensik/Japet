@@ -5,13 +5,13 @@ static char help[] = "My first own testing utility for PETSc\n\n";
 #include "structures.h"
 #include "petscmat.h"
 
-PetscScalar funConst(Point n) {
+PetscReal funConst(Point n) {
 	return 1;
 }
 
 int main(int argc, char *argv[]) {
 	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.5;
-	PetscScalar (*fList[])(Point) = {funConst};
+	PetscReal (*fList[])(Point) = {funConst};
 
 	PetscInitialize(&argc,&argv,(char *)0,help);
 	PetscInt size,rank;
