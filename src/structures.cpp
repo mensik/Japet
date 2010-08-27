@@ -389,38 +389,116 @@ void Mesh::linkPointsToElements() {
 void Mesh::partition(int numDomains) {
 	//TODO now only for triangles
 
-	PetscInt rank;
+	PetscInt rank, size;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_size(PETSC_COMM_WORLD, &size);
+
+	Mat mesh, dual;
+
+	MatPartitioning part;
+	IS is, isg;
+
+	isPartitioned = true;
+	numOfPartitions = size;
+
+	PetscInt NVetrices, NElements; // Global counts of vetrices and elements
+	PetscInt nElements = 0; // Size of local portion of elements
+	int *ie, *je; // Mesh adjacency indexes
 
 	if (!rank) {
-		isPartitioned = true;
-		numOfPartitions = numDomains;
+		NVetrices = vetrices.size();
+		NElements = elements.size();
 
-		int eType = 1;
-		int numFlag = 0;
-		int nn = vetrices.size();
-		int ne = elements.size();
-		int edgeCut;
+		MPI_Bcast(&NVetrices, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+		MPI_Bcast(&NElements, 1, MPI_INT, 0, PETSC_COMM_WORLD);
 
-		idxtype *npart, *elmnts;
-		PetscMalloc(nn * sizeof(idxtype), &npart);
-		PetscMalloc(ne * 3 * sizeof(idxtype), &elmnts);
-		PetscMalloc(ne * sizeof(idxtype), &epart);
-		int i = 0;
-		for (std::map<PetscInt, Element*>::iterator el = elements.begin(); el
-				!= elements.end(); el++) {
-			elmnts[i++] = el->second->vetrices[0];
-			elmnts[i++] = el->second->vetrices[1];
-			elmnts[i++] = el->second->vetrices[2];
+		nElements = NElements / size;
+		if (NElements % size > rank) nElements++;
+
+		PetscMalloc((nElements + 1) * sizeof(int), &ie);
+		PetscMalloc(nElements * 3 * sizeof(int), &je);
+
+		ie[0] = 0;
+
+		std::map<PetscInt, Element*>::iterator el = elements.begin();
+
+		for (int i = 0; i < nElements; i++, el++) {
+			je[i * 3] = el->second->vetrices[0];
+			je[i * 3 + 1] = el->second->vetrices[1];
+			je[i * 3 + 2] = el->second->vetrices[2];
+
+			ie[i + 1] = (i + 1) * 3;
+
 		}
-		//METIS_PartMeshDual(&ne, &nn, elmnts, &eType, &numFlag, &numDomains, &edgeCut, epart, npart);
 
-		PetscFree(npart);
-		PetscFree(elmnts);
-		//for (std::map<PetscInt, Point*>::iterator v = vetrices.begin(); v != vetrices.end(); v++) {
-		//	v->second->domainInd = npart[v->first];
-		//}
+		int *jE;
+		PetscMalloc(nElements * 3 * sizeof(int), &jE);
+		for (int j = 1; j < size; j++) {
+			PetscInt nE = NElements / size;
+			if (NElements % size > j) nE++;
+			for (int i = 0; i < nE; i++, el++) {
+				jE[i * 3] = el->second->vetrices[0];
+				jE[i * 3 + 1] = el->second->vetrices[1];
+				jE[i * 3 + 2] = el->second->vetrices[2];
+			}
+
+			MPI_Send(jE, nE * 3, MPI_INT, j, 0, PETSC_COMM_WORLD);
+		}
+		PetscFree(jE);
+
+	} else {
+		MPI_Bcast(&NVetrices, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+		MPI_Bcast(&NElements, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+
+		nElements = NElements / size;
+		if (NElements % size > rank) nElements++;
+
+		PetscMalloc((nElements + 1) * sizeof(int), &ie);
+		PetscMalloc(nElements * 3 * sizeof(int), &je);
+
+		ie[0] = 0;
+		for (int i = 1; i < nElements + 1; i++) {
+			ie[i] = i * 3;
+		}
+
+		MPI_Status stat;
+		MPI_Recv(je, nElements * 3, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stat);
+
 	}
+
+	MatCreateMPIAdj(PETSC_COMM_WORLD, nElements, NVetrices, ie, je, PETSC_NULL, &mesh);
+	MatMeshToCellGraph(mesh, 2, &dual);
+
+	//MatView(dual, PETSC_VIEWER_STDOUT_WORLD);
+
+	MatPartitioningCreate(PETSC_COMM_WORLD, &part);
+	MatPartitioningSetAdjacency(part, dual);
+	MatPartitioningSetFromOptions(part);
+	MatPartitioningApply(part, &is);
+	ISAllGather(is, &isg);
+	if (!rank) {
+		PetscMalloc(NElements * sizeof(PetscInt), &epart);
+		const PetscInt *idx;
+
+		ISGetIndices(isg, &idx);
+		for (int i = 0; i < NElements; i++)
+			epart[i] = idx[i];
+
+		//ISView(isg, PETSC_VIEWER_STDOUT_SELF);
+	}
+
+	ISDestroy(is);
+	ISDestroy(isg);
+	MatPartitioningDestroy(part);
+
+	MatDestroy(mesh);
+	MatDestroy(dual);
+	//PetscFree(npart);
+	//PetscFree(elmnts);
+
+	//for (std::map<PetscInt, Point*>::iterator v = vetrices.begin(); v != vetrices.end(); v++) {
+	//	v->second->domainInd = npart[v->first];
+	//}
 }
 
 void Mesh::tear() {

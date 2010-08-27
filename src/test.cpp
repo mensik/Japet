@@ -10,7 +10,7 @@ PetscReal funConst(Point n) {
 }
 
 int main(int argc, char *argv[]) {
-	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.5;
+	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.025;
 	PetscReal (*fList[])(Point) = {funConst};
 
 	PetscInitialize(&argc,&argv,(char *)0,help);
@@ -22,7 +22,8 @@ int main(int argc, char *argv[]) {
 	Mesh *mesh = new Mesh();
 	mesh->generateRectangularMesh(m, n, k, l, h);
 	mesh->partition(size);
-	
+
+
 	PetscPrintf(PETSC_COMM_WORLD, "Mesh was partitioned\n");
 
 	mesh->tear();

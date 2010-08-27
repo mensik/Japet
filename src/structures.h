@@ -15,7 +15,6 @@
 #include "petscmat.h"
 #include "petscao.h"
 
-#include "parmetis.h"
 
 
 class MyMultiMap {
@@ -116,7 +115,7 @@ public:
 
 	bool isPartitioned;
 	PetscInt numOfPartitions; ///< number of partitions, obviously ;-)
-	idxtype *epart; ///< elements domain indexes
+	PetscInt *epart; ///< elements domain indexes
 	Mesh() {
 		isPartitioned = false;
 	}
