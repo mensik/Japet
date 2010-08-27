@@ -50,7 +50,7 @@ void Smalbe::applyMult(Vec in, Vec out) {
 bool Smalbe::isConverged(PetscInt itNum, PetscReal gpNorm, Vec *x) {
 	MatMult(B, *x, tempMSize);
 	PetscReal normBx;
-	VecNorm(tempMSize, &normBx);
+	VecNorm(tempMSize, NORM_2, &normBx);
 	PetscReal conv = fmin(normBx * M, mi);
 	return gpNorm < conv;
 }
@@ -123,7 +123,7 @@ PetscReal Smalbe::Lagrangian() {
 
 	PetscReal xAx;
 	VecCopy(x, temp2);
-	MatMultAdd(A, temp2Gh, tempGh);
+	MatMult(A, temp2Gh, tempGh);
 	VecDot(x, temp, &xAx);
 
 	PetscReal bx;

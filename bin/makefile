@@ -1,7 +1,7 @@
 #
 CFLAGS		 = 
 FFLAGS		 = 
-CPPFLAGS         = -Imetis/ -Wno-unused-result
+CPPFLAGS         = -Wno-unused-result
 FPPFLAGS         =
 MANSEC           = Mat
 LOCDIR		 = 
@@ -22,7 +22,7 @@ smalbe: testSMALBE.o chkopts $(MYLIB)
 	-${CLINKER} -o smalbe testSMALBE.o $(MYLIB) ${PETSC_KSP_LIB}
 
 test: test.o chkopts structures.o fem.o feti.o solver.o 
-	-${CLINKER} -o test test.o fem.o structures.o feti.o solver.o metis/libmetis.a ${PETSC_KSP_LIB}
+	-${CLINKER} -o test test.o fem.o structures.o feti.o solver.o  ${PETSC_KSP_LIB}
 	${RM} test.o 
 
 testSmale: testSmale.o chkopts $(MYLIB)

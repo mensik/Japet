@@ -24,12 +24,10 @@ Mesh::~Mesh() {
 			!= vetrices.end(); i++) {
 		delete i->second;
 	}
-	if (isPartitioned) {
-		PetscFree(epart);
-	}
 
 	if (!rank) {
 		if (isPartitioned) {
+			PetscFree(epart);
 			for (std::vector<Corner*>::iterator c = corners.begin(); c
 					!= corners.end(); c++) {
 				delete *c;
@@ -393,17 +391,15 @@ void Mesh::partition(int numDomains) {
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
 
-	Mat mesh, dual;
-
-	MatPartitioning part;
-	IS is, isg;
-
 	isPartitioned = true;
-	numOfPartitions = size;
+	numOfPartitions = numDomains;
 
 	PetscInt NVetrices, NElements; // Global counts of vetrices and elements
 	PetscInt nElements = 0; // Size of local portion of elements
-	int *ie, *je; // Mesh adjacency indexes
+	idxtype *ie, *je; // Mesh adjacency indexes
+
+	idxtype *eDist;
+	PetscMalloc((size + 1) * sizeof(idxtype), &eDist);
 
 	if (!rank) {
 		NVetrices = vetrices.size();
@@ -415,8 +411,26 @@ void Mesh::partition(int numDomains) {
 		nElements = NElements / size;
 		if (NElements % size > rank) nElements++;
 
-		PetscMalloc((nElements + 1) * sizeof(int), &ie);
-		PetscMalloc(nElements * 3 * sizeof(int), &je);
+	} else {
+		MPI_Bcast(&NVetrices, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+		MPI_Bcast(&NElements, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+
+		nElements = NElements / size;
+		if (NElements % size > rank) nElements++;
+
+	}
+
+	eDist[0] = 0;
+	for (int i = 1; i < size + 1; i++) {
+		idxtype elPortion = NElements / size;
+		if (NElements % size > i - 1) elPortion++;
+		eDist[i] = eDist[i - 1] + elPortion;
+	}
+
+	if (!rank) {
+
+		PetscMalloc((nElements + 1) * sizeof(idxtype), &ie);
+		PetscMalloc(nElements * 3 * sizeof(idxtype), &je);
 
 		ie[0] = 0;
 
@@ -431,8 +445,8 @@ void Mesh::partition(int numDomains) {
 
 		}
 
-		int *jE;
-		PetscMalloc(nElements * 3 * sizeof(int), &jE);
+		idxtype *jE;
+		PetscMalloc(nElements * 3 * sizeof(idxtype), &jE);
 		for (int j = 1; j < size; j++) {
 			PetscInt nE = NElements / size;
 			if (NElements % size > j) nE++;
@@ -447,14 +461,8 @@ void Mesh::partition(int numDomains) {
 		PetscFree(jE);
 
 	} else {
-		MPI_Bcast(&NVetrices, 1, MPI_INT, 0, PETSC_COMM_WORLD);
-		MPI_Bcast(&NElements, 1, MPI_INT, 0, PETSC_COMM_WORLD);
-
-		nElements = NElements / size;
-		if (NElements % size > rank) nElements++;
-
-		PetscMalloc((nElements + 1) * sizeof(int), &ie);
-		PetscMalloc(nElements * 3 * sizeof(int), &je);
+		PetscMalloc((nElements + 1) * sizeof(idxtype), &ie);
+		PetscMalloc(nElements * 3 * sizeof(idxtype), &je);
 
 		ie[0] = 0;
 		for (int i = 1; i < nElements + 1; i++) {
@@ -463,42 +471,54 @@ void Mesh::partition(int numDomains) {
 
 		MPI_Status stat;
 		MPI_Recv(je, nElements * 3, MPI_INT, 0, 0, PETSC_COMM_WORLD, &stat);
-
 	}
 
-	MatCreateMPIAdj(PETSC_COMM_WORLD, nElements, NVetrices, ie, je, PETSC_NULL, &mesh);
-	MatMeshToCellGraph(mesh, 2, &dual);
+	int wFlag = 0;
+	int numFlag = 0;
+	int nCon = 1;
+	int nCommonNodes = 2;
+	int options[] = { 0, 0, 0 };
+	int eCut;
 
-	//MatView(dual, PETSC_VIEWER_STDOUT_WORLD);
+	float *tpwgts = new float[numDomains];
+	float *ubvec = new float[numDomains];
 
-	MatPartitioningCreate(PETSC_COMM_WORLD, &part);
-	MatPartitioningSetAdjacency(part, dual);
-	MatPartitioningSetFromOptions(part);
-	MatPartitioningApply(part, &is);
-	ISAllGather(is, &isg);
+	for (int i = 0; i < numDomains; i++) {
+		tpwgts[i] = 1.0 / numDomains;
+		ubvec[i] = 1.05;
+	}
+
+	idxtype *eLocPart;
+	PetscMalloc(nElements * sizeof(idxtype), &eLocPart);
+
+	ParMETIS_V3_PartMeshKway(eDist, ie, je, NULL, &wFlag, &numFlag, &nCon, &nCommonNodes, &numDomains, tpwgts, ubvec, options, &eCut, eLocPart, &PETSC_COMM_WORLD);
+
+	PetscFree(ie);
+	PetscFree(je);
+
+
+	int *rCounts;
+
 	if (!rank) {
-		PetscMalloc(NElements * sizeof(PetscInt), &epart);
-		const PetscInt *idx;
+		PetscMalloc(NElements * sizeof(idxtype), &epart);
 
-		ISGetIndices(isg, &idx);
-		for (int i = 0; i < NElements; i++)
-			epart[i] = idx[i];
+		rCounts = new int[size];
+		for (int i = 0; i < size; i++) {
+			rCounts[i] = eDist[i + 1] - eDist[i];
+		//	PetscPrintf(PETSC_COMM_SELF, "%d: dist: %d size: %d\n", i, eDist[i], rCounts[i]);
+		}
 
-		//ISView(isg, PETSC_VIEWER_STDOUT_SELF);
+		MPI_Gatherv(eLocPart, nElements, MPI_INT, epart, rCounts, eDist, MPI_INT, 0, PETSC_COMM_WORLD);
+
+		delete [] rCounts;
+	} else {
+		MPI_Gatherv(eLocPart, nElements, MPI_INT, NULL, NULL, NULL, MPI_INT, 0, PETSC_COMM_WORLD);
 	}
+	PetscFree(eLocPart);
+	PetscFree(eDist);
+	delete[] tpwgts;
+	delete[] ubvec;
 
-	ISDestroy(is);
-	ISDestroy(isg);
-	MatPartitioningDestroy(part);
-
-	MatDestroy(mesh);
-	MatDestroy(dual);
-	//PetscFree(npart);
-	//PetscFree(elmnts);
-
-	//for (std::map<PetscInt, Point*>::iterator v = vetrices.begin(); v != vetrices.end(); v++) {
-	//	v->second->domainInd = npart[v->first];
-	//}
 }
 
 void Mesh::tear() {

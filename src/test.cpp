@@ -10,7 +10,7 @@ PetscReal funConst(Point n) {
 }
 
 int main(int argc, char *argv[]) {
-	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.025;
+	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.1;
 	PetscReal (*fList[])(Point) = {funConst};
 
 	PetscInitialize(&argc,&argv,(char *)0,help);
@@ -24,11 +24,12 @@ int main(int argc, char *argv[]) {
 	mesh->partition(size);
 
 
-	PetscPrintf(PETSC_COMM_WORLD, "Mesh was partitioned\n");
+	PetscPrintf(PETSC_COMM_WORLD, "Mesh was partitioned : (%d)\n", mesh->vetrices.size());
 
 	mesh->tear();
 
-	PetscPrintf(PETSC_COMM_WORLD, "Mesh was distributed - generation A...\n");
+	PetscPrintf(PETSC_COMM_WORLD, "Mesh was distributed\n");
+	PetscSynchronizedFlush(PETSC_COMM_WORLD);
 
 	Mat A;
 	Vec b;
