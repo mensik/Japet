@@ -47,18 +47,18 @@ int main(int argc, char *argv[]) {
 	PetscTruth 			flg;
 	char fileName[PETSC_MAX_PATH_LEN]="matlab/out.m";			
 	
-	PetscOptionsGetReal("-jpt_m", &m, PETSC_NULL);
-	PetscOptionsGetReal("-jpt_n", &n, PETSC_NULL);
-	PetscOptionsGetReal("-jpt_k", &k, PETSC_NULL);
-	PetscOptionsGetReal("-jpt_l", &l, PETSC_NULL);
-	PetscOptionsGetReal("-jpt_h", &h, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-jpt_m", &m, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-jpt_n", &n, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-jpt_k", &k, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-jpt_l", &l, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-jpt_h", &h, PETSC_NULL);
 
-	PetscOptionsGetInt("-jpt_f", &f, PETSC_NULL);
+	PetscOptionsGetInt(PETSC_NULL, "-jpt_f", &f, PETSC_NULL);
 
-	PetscOptionsGetReal("-jpt_mi", &mi, PETSC_NULL);
-	PetscOptionsGetReal("-jpt_ro", &ro, PETSC_NULL);
-	PetscOptionsGetReal("-jpt_beta", &beta, PETSC_NULL);
-	PetscOptionsGetReal("-jpt_sM", &M, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-jpt_mi", &mi, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-jpt_ro", &ro, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-jpt_beta", &beta, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-jpt_sM", &M, PETSC_NULL);
 
 	PetscOptionsGetString(PETSC_NULL, "-test_out_file", fileName, PETSC_MAX_PATH_LEN-1, &flg);
 

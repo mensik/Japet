@@ -47,11 +47,16 @@ int main(int argc, char *argv[]) {
 	mesh->dumpForMatlab(v);
 	PetscViewerDestroy(v);
 	delete mesh;
-	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/out.m", FILE_MODE_WRITE, &v);
+
+	PetscViewerSocketOpen(PETSC_COMM_WORLD,PETSC_NULL,PETSC_DEFAULT,&v);
+	PetscPrintf(PETSC_COMM_WORLD, "A\n");
+
+	//PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/out.m", FILE_MODE_WRITE, &v);
 	MatView(A, v);
+	PetscPrintf(PETSC_COMM_WORLD, "A\n");
 	VecView(b, v);
 	PetscViewerDestroy(v);
-
+	PetscPrintf(PETSC_COMM_WORLD, "A\n");
 	PetscFinalize();
   return 0;
 }

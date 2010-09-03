@@ -1,7 +1,7 @@
 #
 CFLAGS		 = 
 FFLAGS		 = 
-CPPFLAGS         = -Wno-unused-result
+CPPFLAGS         = -Wno-unused-result -DHAVE-MPE
 FPPFLAGS         =
 MANSEC           = Mat
 LOCDIR		 = 

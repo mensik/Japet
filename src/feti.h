@@ -65,5 +65,6 @@ public:
 
 void GenerateJumpOperator(Mesh *mesh,Mat &B, Vec &lmb);
 void Generate2DLaplaceNullSpace(Mesh *mesh,bool &isSingular,bool &isLocalSingular, Mat *Rmat);
+void getLocalJumpPart(Mat B, Mat *Bloc);
 
 #endif

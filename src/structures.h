@@ -132,7 +132,7 @@ public:
 	void dumpForMatlab(PetscViewer v);
 	void save(const char *filename, bool withEdges);
 	void load(const char *filename, bool withEdges);
-	void partition(int numDomains); ///< call Metis and divide elements among processes, only marks elements
+	PetscErrorCode partition(int numDomains); ///< call Metis and divide elements among processes, only marks elements
 	/**
 	 * @brief Actually tear mesh to part, make new points and edges a distribute them among processes  by MPI
 	 *

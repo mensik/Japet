@@ -2,7 +2,7 @@
 
 Smalbe::Smalbe(Mat A, Vec b, Mat B, Vec c, Vec L, PetscReal mi, PetscReal ro,
 		PetscReal beta, PetscReal M) {
-	this->A = A;
+	//this->A = A;
 	this->B = B;
 	this->b = b;
 	this->c = c;
@@ -14,6 +14,11 @@ Smalbe::Smalbe(Mat A, Vec b, Mat B, Vec c, Vec L, PetscReal mi, PetscReal ro,
 
 	VecDuplicate(b, &x);
 	extractLocalAPart(A, &(this->A));
+	getLocalJumpPart(B, &Bloc);
+
+	MatDuplicate(this->A, MAT_DO_NOT_COPY_VALUES, &AroLoc);
+
+	initPC();
 
 	PetscInt nA;
 	MatGetSize(this->A, &nA, PETSC_NULL);
@@ -33,9 +38,35 @@ Smalbe::~Smalbe() {
 	VecDestroy(temp2Gh);
 	VecDestroy(temp);
 	VecDestroy(temp2);
+
 	MatDestroy(A);
+	MatDestroy(AroLoc);
+	MatDestroy(Bloc);
+
 	VecDestroy(x);
 	VecDestroy(lmb);
+	PCDestroy(pc);
+}
+
+void Smalbe::initPC() {
+	PetscPrintf(PETSC_COMM_WORLD, "Setting PC ... ");
+	PCCreate(PETSC_COMM_SELF, &pc);
+
+	MatMatMultTranspose(Bloc, Bloc, MAT_REUSE_MATRIX, 1, &AroLoc);
+	MatAYPX(AroLoc, ro, A, DIFFERENT_NONZERO_PATTERN);
+
+	PCSetOperators(pc, AroLoc, AroLoc, SAME_PRECONDITIONER);
+	PCSetFromOptions(pc);
+
+//
+//	PCSetType(pc,PCMG);
+//	MPI_Comm comm = PETSC_COMM_SELF;
+//	PCMGSetLevels(pc,1, &comm);
+//	PCMGSetType(pc,PC_MG_MULTIPLICATIVE);
+
+	PCSetUp(pc);
+
+	PetscPrintf(PETSC_COMM_WORLD, "PC ready\n");
 }
 
 void Smalbe::applyMult(Vec in, Vec out) {
@@ -51,8 +82,15 @@ bool Smalbe::isConverged(PetscInt itNum, PetscReal gpNorm, Vec *x) {
 	MatMult(B, *x, tempMSize);
 	PetscReal normBx;
 	VecNorm(tempMSize, NORM_2, &normBx);
+	//VecNorm(tempMSize, NORM_1, &normBxMAX);
 	PetscReal conv = fmin(normBx * M, mi);
-	return gpNorm < conv;
+	return (gpNorm < conv);
+}
+
+void Smalbe::applyPC(Vec g, Vec z) {
+	VecCopy(g, temp);
+	PCApply(pc, tempGh, temp2Gh);
+	VecCopy(temp2, z);
 }
 
 void Smalbe::solve() {
@@ -78,7 +116,10 @@ void Smalbe::solve() {
 		VecAYPX(bCopy, -1, b);
 
 		MPRGP *mprgp = new MPRGP(this, bCopy, L, x, 1, 2 / (ANorm + ro));
+
 		mprgp->setCtrl(this);
+		mprgp->setPC(this);
+
 		mprgp->solve();
 		int ii = mprgp->getNumIterations();
 		PetscPrintf(PETSC_COMM_WORLD, "\n%d. Inner iterations: %d\n", outerIterations, ii);
@@ -90,15 +131,14 @@ void Smalbe::solve() {
 		actualL = Lagrangian();
 		VecAXPY(lmb, ro, tempMSize);
 
-//		Vec xTemp;
-//		VecDuplicate(x, &xTemp);
-//		MatMult(A, x, xTemp);
-//		VecAXPY(xTemp, -1, bCopy);
-//
-//		PetscReal norm;
-//		VecNorm(xTemp, &norm);
-//		PetscPrintf(PETSC_COMM_WORLD, "|Ax - b + B'lmb| = %f\n", norm);
-
+		//		Vec xTemp;
+		//		VecDuplicate(x, &xTemp);
+		//		MatMult(A, x, xTemp);
+		//		VecAXPY(xTemp, -1, bCopy);
+		//
+		//		PetscReal norm;
+		//		VecNorm(xTemp, &norm);
+		//		PetscPrintf(PETSC_COMM_WORLD, "|Ax - b + B'lmb| = %f\n", norm);
 
 
 		if (outerIterations > 1) {
@@ -106,6 +146,8 @@ void Smalbe::solve() {
 			VecNorm(tempMSize, NORM_2, &normBx);
 			if (actualL < (previousL + 0.5 * normBx * normBx)) {
 				ro = ro * beta;
+				PCDestroy(pc);
+				initPC();
 				PetscPrintf(PETSC_COMM_WORLD, "ro = %e\n", ro);
 			}
 		}

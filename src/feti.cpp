@@ -1,7 +1,6 @@
 #include "feti.h"
 
-Feti1::Feti1(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(
-		Point)) {
+Feti1::Feti1(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point)) {
 
 	FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, f, K);
 	GenerateJumpOperator(mesh, B, lmb);
@@ -235,6 +234,22 @@ void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 	VecSetSizes(lmb, PETSC_DECIDE, mesh->nPairs);
 	VecSetFromOptions(lmb);
 	VecSet(lmb, 0);
+}
+
+void getLocalJumpPart(Mat B, Mat *Bloc) {
+
+	PetscInt m, n,rows;
+	MatGetOwnershipRangeColumn(B, &m, &n);
+	MatGetSize(B, &rows, PETSC_NULL);
+	PetscInt size = n - m;
+
+	IS ISlocal, ISlocalRows;
+	ISCreateStride(PETSC_COMM_SELF, size, m, 1, &ISlocal);
+	ISCreateStride(PETSC_COMM_SELF, rows, 0, 1, &ISlocalRows);
+	Mat *sm;
+	MatGetSubMatrices(B, 1, &ISlocalRows, &ISlocal, MAT_INITIAL_MATRIX, &sm);
+	*Bloc = *sm;
+
 }
 
 void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,

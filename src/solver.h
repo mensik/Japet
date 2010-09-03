@@ -9,6 +9,7 @@
 
 #include "math.h"
 #include "petscmat.h"
+#include "petscksp.h"
 
 typedef bool (*ConvFunc)(PetscInt, PetscReal, Vec*);
 /// Basic Conjugate gradient implementation
@@ -21,6 +22,11 @@ public:
 class SolverCtr {
 public:
 	virtual bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec) = 0;
+};
+
+class SolverPreconditioner {
+public:
+	virtual void applyPC(Vec g, Vec z) = 0;
 };
 
 class CGSolver : public SolverApp, public SolverCtr{
@@ -53,7 +59,7 @@ public:
 
 };
 
-class MPRGP : public SolverApp,  SolverCtr{
+class MPRGP : public SolverApp,  SolverCtr {
 	Mat A;
 	Vec x;
 	Vec b;
@@ -76,11 +82,14 @@ class MPRGP : public SolverApp,  SolverCtr{
 
 	SolverApp *sApp;
 	SolverCtr *sCtr;
+	SolverPreconditioner *sPC;
 
 	void projectFeas(Vec &v);	//< @param[out] vector with changed infeasible parts to feasible
 	void partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG); //< divides gradient into its free, chopped and reduced parts
 	PetscReal alpFeas();		//< @return feasible step length for current gradient
 	void initSolver(Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
+	void pcAction(Vec free, Vec z);
+
 public:
 	/**
 	 	@param[in] A stiffness (mass) matrix
@@ -94,6 +103,7 @@ public:
 	~MPRGP();
 
 	void setCtrl(SolverCtr *ctr) { sCtr = ctr; };
+	void setPC(SolverPreconditioner *sPC) { this->sPC = sPC; };
 	void applyMult(Vec in, Vec out);
 	bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec);
 	void solve();

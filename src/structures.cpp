@@ -384,9 +384,10 @@ void Mesh::linkPointsToElements() {
 	}
 }
 
-void Mesh::partition(int numDomains) {
+PetscErrorCode Mesh::partition(int numDomains) {
 	//TODO now only for triangles
-
+	PetscErrorCode ierr;
+	PetscFunctionBegin;
 	PetscInt rank, size;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
@@ -399,7 +400,7 @@ void Mesh::partition(int numDomains) {
 	idxtype *ie, *je; // Mesh adjacency indexes
 
 	idxtype *eDist;
-	PetscMalloc((size + 1) * sizeof(idxtype), &eDist);
+	ierr = PetscMalloc((size + 1) * sizeof(idxtype), &eDist);
 
 	if (!rank) {
 		NVetrices = vetrices.size();
@@ -429,8 +430,8 @@ void Mesh::partition(int numDomains) {
 
 	if (!rank) {
 
-		PetscMalloc((nElements + 1) * sizeof(idxtype), &ie);
-		PetscMalloc(nElements * 3 * sizeof(idxtype), &je);
+		ierr = PetscMalloc((nElements + 1) * sizeof(idxtype), &ie);
+		ierr = PetscMalloc(nElements * 3 * sizeof(idxtype), &je);
 
 		ie[0] = 0;
 
@@ -446,7 +447,7 @@ void Mesh::partition(int numDomains) {
 		}
 
 		idxtype *jE;
-		PetscMalloc(nElements * 3 * sizeof(idxtype), &jE);
+		ierr = PetscMalloc(nElements * 3 * sizeof(idxtype), &jE);
 		for (int j = 1; j < size; j++) {
 			PetscInt nE = NElements / size;
 			if (NElements % size > j) nE++;
@@ -458,11 +459,11 @@ void Mesh::partition(int numDomains) {
 
 			MPI_Send(jE, nE * 3, MPI_INT, j, 0, PETSC_COMM_WORLD);
 		}
-		PetscFree(jE);
+		ierr = PetscFree(jE);
 
 	} else {
-		PetscMalloc((nElements + 1) * sizeof(idxtype), &ie);
-		PetscMalloc(nElements * 3 * sizeof(idxtype), &je);
+		ierr = PetscMalloc((nElements + 1) * sizeof(idxtype), &ie);
+		ierr = PetscMalloc(nElements * 3 * sizeof(idxtype), &je);
 
 		ie[0] = 0;
 		for (int i = 1; i < nElements + 1; i++) {
@@ -489,18 +490,18 @@ void Mesh::partition(int numDomains) {
 	}
 
 	idxtype *eLocPart;
-	PetscMalloc(nElements * sizeof(idxtype), &eLocPart);
+	ierr = PetscMalloc(nElements * sizeof(idxtype), &eLocPart);
 
 	ParMETIS_V3_PartMeshKway(eDist, ie, je, NULL, &wFlag, &numFlag, &nCon, &nCommonNodes, &numDomains, tpwgts, ubvec, options, &eCut, eLocPart, &PETSC_COMM_WORLD);
 
-	PetscFree(ie);
-	PetscFree(je);
+	ierr = PetscFree(ie);
+	ierr = PetscFree(je);
 
 
 	int *rCounts;
 
 	if (!rank) {
-		PetscMalloc(NElements * sizeof(idxtype), &epart);
+		ierr = PetscMalloc(NElements * sizeof(idxtype), &epart);
 
 		rCounts = new int[size];
 		for (int i = 0; i < size; i++) {
@@ -513,12 +514,14 @@ void Mesh::partition(int numDomains) {
 		delete [] rCounts;
 	} else {
 		MPI_Gatherv(eLocPart, nElements, MPI_INT, NULL, NULL, NULL, MPI_INT, 0, PETSC_COMM_WORLD);
+
 	}
-	PetscFree(eLocPart);
-	PetscFree(eDist);
+	ierr = PetscFree(eLocPart);
+	ierr = PetscFree(eDist);
 	delete[] tpwgts;
 	delete[] ubvec;
 
+	PetscFunctionReturn(0);
 }
 
 void Mesh::tear() {
