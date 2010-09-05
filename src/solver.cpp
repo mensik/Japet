@@ -1,83 +1,215 @@
 #include "solver.h"
 
-bool isConFun(PetscInt itNumber, PetscReal rNorm, Vec *r) {
-	return rNorm < 1e-6;
-}
-
-void CGSolver::applyMult(Vec in, Vec out) {
-	MatMult(A, in, out);
-}
-
-void CGSolver::initSolver(Vec b, Vec x) {
+Solver::Solver(Mat A, Vec b, Vec x) {
+	this->A = A;
 	this->b = b;
 	this->x = x;
 
+	sApp = this;
+
+	init();
+}
+
+Solver::Solver(SolverApp *sa, Vec b, Vec x) {
+	this->sApp = sa;
+	this->b = b;
+	this->x = x;
+	init();
+}
+
+Solver::~Solver() {
+
+	VecDestroy(g);
+}
+
+void Solver::init() {
+
 	sCtr = this;
+	itCounter = 0;
+	isVerbose = false;
+	precision = 1e-3;
 
-	VecDuplicate(b, &r);
+	VecDuplicate(b, &g);
+
+	Vec temp;
 	VecDuplicate(b, &temp);
-	VecDuplicate(r, &p);
 
-	VecCopy(b, r);
+	VecCopy(b, g);
 
 	sApp->applyMult(x, temp);
-	//MatMult(A, x, temp);
-	VecAYPX(r, -1, temp);
-	VecCopy(r, p);
+	VecAYPX(g, -1, temp);
 
-	VecNorm(r, NORM_2, &rNorm);
+	VecDestroy(temp);
 
-	itCounter = 0;
-	isCon = isConFun;
-
+	VecNorm(g, NORM_2, &rNorm);
 }
 
-bool CGSolver::isConverged(PetscInt itNumber, PetscReal rNorm, Vec *r) {
-	return isCon(itNumber, rNorm, r);
+void Solver::applyMult(Vec in, Vec out) {
+	MatMult(A, in, out);
 }
 
-CGSolver::CGSolver(SolverApp *sa, Vec b, Vec x) {
-	sApp = sa;
-	initSolver(b, x);
+bool Solver::isConverged(PetscInt itNumber, PetscReal rNorm, Vec *r) {
+	return rNorm < precision;
 }
 
-CGSolver::CGSolver(Mat A, Vec b, Vec x) {
-	this->A = A;
-	sApp = this;
-	initSolver(b, x);
+void Solver::setIterationData(std::string name, PetscReal value) {
+	iterationData[name] = value;
+}
+
+void Solver::nextIteration() {
+	IterationInfo info;
+	info.itNumber = itCounter;
+	info.rNorm = rNorm;
+
+	if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "%d: |g|_2 = %f", itCounter, rNorm);
+
+	for (std::map<std::string, PetscReal>::iterator i = iterationData.begin(); i
+			!= iterationData.end(); i++) {
+		const PetscReal data = i->second;
+		info.itData.push_back(data);
+		if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "\t%s=%f", i->first.c_str(), i->second);
+	}
+	if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "\n");
+
+	itInfo.push_back(info);
+	itCounter++;
+}
+
+void Solver::saveIterationInfo(const char *filename) {
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+
+	if (!rank) {
+		FILE *f;
+		f = fopen(filename, "w");
+		if (f != NULL) {
+			PetscReal firstRNorm = itInfo[0].rNorm;
+
+			fprintf(f, "#	itNumber\t|g|_2\tR");
+			for (std::map<std::string, PetscReal>::iterator d = iterationData.begin(); d
+					!= iterationData.end(); d++) {
+				fprintf(f, "\t%s", d->first.c_str());
+			}
+			fprintf(f, "\n");
+
+			for (std::vector<IterationInfo>::iterator i = itInfo.begin(); i
+					!= itInfo.end(); i++) {
+
+				fprintf(f, "%6d %11.4e %11.4e", i->itNumber, i->rNorm, std::pow((float)i->rNorm / firstRNorm,(float) 2 / (i->itNumber + 1)));
+				for (std::vector<PetscReal>::iterator d = i->itData.begin(); d
+						!= i->itData.end(); d++) {
+					fprintf(f, "%11.4e", *d);
+				}
+				fprintf(f, "\n");
+			}
+			fclose(f);
+		}
+	}
+}
+
+void CGSolver::initSolver() {
+	VecDuplicate(b, &temp);
+	VecDuplicate(g, &p);
+	VecCopy(g, p);
+
 }
 
 CGSolver::~CGSolver() {
 	VecDestroy(p);
-	VecDestroy(r);
 	VecDestroy(temp);
 }
 
 void CGSolver::solve() {
 
-	while (!sCtr->isConverged(itCounter, rNorm, &r)) {
-		//	PetscPrintf(PETSC_COMM_WORLD, "%d - %e\n",itCounter, rNorm);
-		itCounter++;
+	while (!sCtr->isConverged(getItCount(), rNorm, &g)) {
+
+		nextIteration();
+
 		PetscScalar pAp;
-		//MatMult(A,p,temp);
 		sApp->applyMult(p, temp);
 		VecDot(p, temp, &pAp);
+
 		PetscReal a = (rNorm * rNorm) / pAp;
 		VecAXPY(x, -a, p);
-		VecAXPY(r, -a, temp);
+		VecAXPY(g, -a, temp);
 
 		PetscReal rNormS;
-		VecNorm(r, NORM_2, &rNormS);
+		VecNorm(g, NORM_2, &rNormS);
 
-		PetscReal b = (rNormS * rNormS) / (rNorm * rNorm);
-		VecAYPX(p, b, r);
-
-		//PetscPrintf(PETSC_COMM_WORLD,"It: %d \t Res: %e\n",itCounter, rNorm);
+		PetscReal beta = (rNormS * rNormS) / (rNorm * rNorm);
+		VecAYPX(p, beta, g);
 
 		rNorm = rNormS;
 
 	}
+}
 
+void ASinStep::initSolver() {
+	tau = 1e-8;
+	fi = (sqrt(5) - 1) / 2;
+	z = 0;
+}
+
+void ASinStep::solve() {
+	PetscReal beta;
+	Vec Ag;
+	VecDuplicate(g, &Ag);
+
+	for (int i = 0; i < 2; i++) {
+
+		sApp->applyMult(g, Ag);
+
+		PetscReal gg, gAg;
+		VecDot(g, g, &gg);
+		VecDot(Ag, g, &gAg);
+		beta = gAg / gg;
+
+		if (getItCount() == 0) {
+			m = beta;
+			M = beta;
+		} else {
+			m = fmin(m, beta);
+			M = fmax(M, beta);
+		}
+
+		VecAXPY(x, -1 / beta, g);
+		VecAXPY(g, -1 / beta, Ag);
+
+		setIterationData("m", m);
+		setIterationData("M", M);
+		setIterationData("beta", beta);
+
+		nextIteration();
+		VecNorm(g, &rNorm);
+	}
+	while (!sCtr->isConverged(getItCount(), rNorm, &g)) {
+		sApp->applyMult(g, Ag);
+
+		PetscReal gg, gAg, moment1;
+		VecDot(g, g, &gg);
+		VecDot(Ag, g, &gAg);
+		moment1 = gAg / gg;
+		m = fmin(m, moment1);
+		M = fmax(M, moment1);
+
+		if (getItCount() % 2 == 0) {
+			PetscReal eps = tau * (M - m);
+			z += fi;
+			beta = m + eps + (std::cos(PI * z) + 1) * (M - m - 2 * eps) / 2;
+		} else {
+			beta = M + m - beta;
+		}
+
+		VecAXPY(x, -1 / beta, g);
+		VecAXPY(g, -1 / beta, Ag);
+
+		setIterationData("m", m);
+		setIterationData("M", M);
+		setIterationData("beta", beta);
+
+		nextIteration();
+		VecNorm(g, &rNorm);
+	}
 }
 
 MPRGP::MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {

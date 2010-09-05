@@ -26,6 +26,7 @@
 **/
 
 class Feti1 : public SolverApp, public SolverCtr {
+protected:
 	Mat A;			///< Global stifnes matrix
 	Vec b;			///< Global force vector
 	Mat B;			///< Jump operator matrix
@@ -55,12 +56,20 @@ class Feti1 : public SolverApp, public SolverCtr {
 public:
 	Feti1(Mesh *mesh,PetscReal (*f)(Point), PetscReal (*K)(Point));
 	~Feti1();
-	void solve(); ///< solve the syste ;-)
+	virtual void solve(); ///< solve the system ;-)
 	void dumpSolution(PetscViewer v);
 	void dumpSystem(PetscViewer v);
-	void applyMult(Vec in, Vec out); ///< Apply multiplication in outer (dual) CG iteration 
+	virtual void applyMult(Vec in, Vec out); ///< Apply multiplication in outer (dual) CG iteration
 	void projectGOrth(Vec in);			 ///< Remove space spaned by G from vec in
 	bool isConverged(PetscInt itNumber, PetscReal norm, Vec *vec);
+};
+
+class InexactFeti1: public Feti1{
+	PetscReal outerPrec;
+public:
+	InexactFeti1(Mesh *mesh,PetscReal (*f)(Point), PetscReal (*K)(Point)) :  Feti1(mesh, f,K) {}
+	void solve();
+	void  applyMult(Vec in, Vec out);
 };
 
 void GenerateJumpOperator(Mesh *mesh,Mat &B, Vec &lmb);

@@ -1,11 +1,11 @@
 #
 CFLAGS		 = 
 FFLAGS		 = 
-CPPFLAGS         = -Wno-unused-result -DHAVE-MPE
+CPPFLAGS         = -Wno-unused-result 
 FPPFLAGS         =
 MANSEC           = Mat
 LOCDIR		 = 
-MYLIB = smale.o solver.o fem.o feti.o structures.o smalbe.o
+MYLIB = smale.o solver.o fem.o feti.o structures.o smalbe.o japetUtils.h
 include ${PETSC_DIR}/conf/variables
 include ${PETSC_DIR}/conf/rules
 
@@ -21,8 +21,8 @@ testMPRGP: testMPRGP.o chkopts $(MYLIB)
 smalbe: testSMALBE.o chkopts $(MYLIB)
 	-${CLINKER} -o smalbe testSMALBE.o $(MYLIB) ${PETSC_KSP_LIB}
 
-test: test.o chkopts structures.o fem.o feti.o solver.o 
-	-${CLINKER} -o test test.o fem.o structures.o feti.o solver.o  ${PETSC_KSP_LIB}
+test: test.o chkopts structures.o fem.o feti.o solver.o japetUtils.o
+	-${CLINKER} -o test test.o fem.o structures.o feti.o solver.o japetUtils.o ${PETSC_KSP_LIB}
 	${RM} test.o 
 
 testSmale: testSmale.o chkopts $(MYLIB)

@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
 		mesh->dumpForMatlab(v);
 		PetscViewerDestroy(v);
 
-		Feti1 feti(mesh,fList[f], fList[0]);
+		InexactFeti1 feti(mesh,fList[f], fList[0]);
 		delete mesh;
 
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);

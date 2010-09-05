@@ -1,2 +1,2 @@
 clear
-mpiexec -n 8 ./test -test_h 0.5 -test_f 0 -test_K 0
+mpiexec -n 1 ./test -test_h 0.01 -test_f 0 -test_K 0

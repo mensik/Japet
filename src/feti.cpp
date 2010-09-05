@@ -187,7 +187,7 @@ void Feti1::projectGOrth(Vec in) {
 
 bool Feti1::isConverged(PetscInt itNumber, PetscReal norm, Vec *vec) {
 	PetscPrintf(PETSC_COMM_WORLD, "It.%d: residual norm:%f\n", itNumber, norm);
-	return norm < 1e-3;
+	return norm < 1e-4;
 }
 
 void Feti1::applyMult(Vec in, Vec out) {
@@ -212,6 +212,79 @@ void Feti1::dumpSystem(PetscViewer v) {
 	MatView(A, v);
 	VecView(b, v);
 	MatView(B, v);
+}
+
+void InexactFeti1::solve() {
+
+	PetscInt locSizeA, locSizeM;
+	MatGetSize(B, &locSizeM, &locSizeA);
+
+	KSPSetType(kspA, KSPCG);
+	if (isLocalSingular) KSPSetNullSpace(kspA, locNS);
+
+	if (isLocalSingular) MatNullSpaceRemove(locNS, tempLoc, PETSC_NULL);
+
+	outerPrec = 1e-6;
+	KSPSetTolerances(kspA, outerPrec,outerPrec, 1e10, 100);
+	KSPSolve(kspA, tempLoc, tempLoc);
+
+	Vec d;
+	VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, locSizeM, &d);
+	MatMult(B, temp, d);
+
+	if (isSingular) projectGOrth(d);
+
+	//Priprava vektoru lambda
+	VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, locSizeM, &lmb);
+	if (isSingular) { //Je li singularni, je treba pripavit vhodne vstupni lambda
+		Vec tlmb, ttlmb;
+		VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, gN, &tlmb);
+		MatMultTranspose(R, b, tlmb);
+		VecDuplicate(tlmb, &ttlmb);
+		KSPSolve(kspG, tlmb, ttlmb);
+		MatMult(G, ttlmb, lmb);
+
+		VecDestroy(tlmb);
+		VecDestroy(ttlmb);
+	}
+
+	ASinStep solver(this, d, lmb);
+
+	solver.setSolverCtr(this);
+	//Solve!!!
+	solver.solve();
+
+	solver.getX(lmb);
+
+	VecScale(lmb, -1);
+	MatMultTransposeAdd(B, lmb, b, temp);
+
+	if (isLocalSingular) MatNullSpaceRemove(locNS, tempLoc, PETSC_NULL);
+	KSPSetTolerances(kspA, 1e-6, 1e-6, 1e10, 1000);
+	KSPSolve(kspA, tempLoc, uloc);
+	if (isSingular) {
+		Vec tLmb, bAlp, alpha;
+		VecDuplicate(lmb, &tLmb);
+		MatMult(B, u, tLmb);
+		VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, gN, &bAlp);
+		VecDuplicate(bAlp, &alpha);
+		MatMultTranspose(G, tLmb, bAlp);
+		KSPSolve(kspG, bAlp, alpha);
+
+		VecScale(alpha, -1);
+		MatMultAdd(R, alpha, u, u);
+
+		VecDestroy(tLmb);
+		VecDestroy(bAlp);
+		VecDestroy(alpha);
+	}
+	VecDestroy(d);
+}
+
+void InexactFeti1::applyMult(Vec in, Vec out) {
+	outerPrec *= 0.9;
+	KSPSetTolerances(kspA, outerPrec,outerPrec,1e10, 1000);
+	Feti1::applyMult(in, out);
 }
 
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {

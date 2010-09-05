@@ -3,6 +3,7 @@ static char help[] = "My first own testing utility for PETSc\n\n";
 #include <iostream>
 #include "fem.h"
 #include "structures.h"
+#include "solver.h"
 #include "petscmat.h"
 
 PetscReal funConst(Point n) {
@@ -10,53 +11,52 @@ PetscReal funConst(Point n) {
 }
 
 int main(int argc, char *argv[]) {
-	PetscReal				m=0.0,n=1.0,k=0.0,l=1.0,h=0.1;
-	PetscReal (*fList[])(Point) = {funConst};
 
-	PetscInitialize(&argc,&argv,(char *)0,help);
-	PetscInt size,rank;
+	PetscInitialize(&argc, &argv, (char *) 0, help);
+	PetscInt size, rank;
+	PetscTruth 			flg;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
-	
+
 	PetscPrintf(PETSC_COMM_WORLD, "STARTING\n");
-	Mesh *mesh = new Mesh();
-	mesh->generateRectangularMesh(m, n, k, l, h);
-	mesh->partition(size);
+
+	PetscReal prec = 1e-5;
+	char fileNameA[PETSC_MAX_PATH_LEN]="A.m";
+	char fileNameB[PETSC_MAX_PATH_LEN]="b.m";
 
 
-	PetscPrintf(PETSC_COMM_WORLD, "Mesh was partitioned : (%d)\n", mesh->vetrices.size());
-
-	mesh->tear();
-
-	PetscPrintf(PETSC_COMM_WORLD, "Mesh was distributed\n");
-	PetscSynchronizedFlush(PETSC_COMM_WORLD);
+	PetscOptionsGetReal(PETSC_NULL, "-jpt_prec", &prec, PETSC_NULL);
+	PetscOptionsGetString(PETSC_NULL, "-jpt_file_A", fileNameA, PETSC_MAX_PATH_LEN-1, &flg);
+	PetscOptionsGetString(PETSC_NULL, "-jpt_file_b", fileNameB, PETSC_MAX_PATH_LEN-1, &flg);
 
 	Mat A;
 	Vec b;
-	FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, fList[0], fList[0]);
-
-	//mesh.save("domain.jpm", true);
-	
-	//Mesh mesh2;
-	//mesh2.load("domain.jpm", false);
-
 	PetscViewer v;
-	PetscPrintf(PETSC_COMM_WORLD, "Saving...\n");
-	
-	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
-	mesh->dumpForMatlab(v);
+	PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileNameA, FILE_MODE_READ, &v);
+	MatLoad(v, MATSEQAIJ, &A);
 	PetscViewerDestroy(v);
-	delete mesh;
-
-	PetscViewerSocketOpen(PETSC_COMM_WORLD,PETSC_NULL,PETSC_DEFAULT,&v);
-	PetscPrintf(PETSC_COMM_WORLD, "A\n");
-
-	//PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/out.m", FILE_MODE_WRITE, &v);
-	MatView(A, v);
-	PetscPrintf(PETSC_COMM_WORLD, "A\n");
-	VecView(b, v);
+	PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileNameB, FILE_MODE_READ, &v);
+	VecLoad(v, VECSEQ, &b);
 	PetscViewerDestroy(v);
-	PetscPrintf(PETSC_COMM_WORLD, "A\n");
+
+
+	PetscPrintf(PETSC_COMM_WORLD, "Computing...\n");
+
+	Vec x, x2;
+	VecDuplicate(b, &x);
+	VecDuplicate(b, &x2);
+	Solver *solver = new CGSolver(A, b, x);
+	solver->setPrecision(prec);
+	solver->setIsVerbose(true);
+	solver->solve();
+	solver->saveIterationInfo("cg.dat");
+
+	Solver *solver2 = new ASinStep(A, b, x2);
+	solver2->setPrecision(prec);
+	solver2->setIsVerbose(true);
+	solver2->solve();
+	solver2->saveIterationInfo("asin.dat");
+
 	PetscFinalize();
-  return 0;
+	return 0;
 }
