@@ -11,6 +11,7 @@ Smalbe::Smalbe(Mat A, Vec b, Mat B, Vec c, Vec L, PetscReal mi, PetscReal ro,
 	this->ro = ro;
 	this->beta = beta;
 	this->M = M;
+	logFileName = "Smalbe_default";
 
 	VecDuplicate(b, &x);
 	extractLocalAPart(A, &(this->A));
@@ -49,7 +50,6 @@ Smalbe::~Smalbe() {
 }
 
 void Smalbe::initPC() {
-	PetscPrintf(PETSC_COMM_WORLD, "Setting PC ... ");
 	PCCreate(PETSC_COMM_SELF, &pc);
 
 	MatMatMultTranspose(Bloc, Bloc, MAT_REUSE_MATRIX, 1, &AroLoc);
@@ -65,8 +65,6 @@ void Smalbe::initPC() {
 //	PCMGSetType(pc,PC_MG_MULTIPLICATIVE);
 
 	PCSetUp(pc);
-
-	PetscPrintf(PETSC_COMM_WORLD, "PC ready\n");
 }
 
 void Smalbe::applyMult(Vec in, Vec out) {
@@ -96,6 +94,8 @@ void Smalbe::applyPC(Vec g, Vec z) {
 void Smalbe::solve() {
 	PetscPrintf(PETSC_COMM_WORLD, "Here goes Smalbe!! \n");
 
+	remove((logFileName + IN_ITERATION_SUFFIX).c_str());
+	itManager.setTitle(logFileName);
 	Vec bCopy;
 	VecDuplicate(b, &bCopy);
 	VecCopy(b, bCopy);
@@ -107,10 +107,9 @@ void Smalbe::solve() {
 	MPI_Allreduce(&ANormLoc, &ANorm, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
 
 	PetscReal normBx = 1;
-	int outerIterations = 0;
 	int innnerIterations = 0;
+
 	while (normBx > 1e-3) {
-		outerIterations++;
 
 		MatMultTranspose(B, lmb, bCopy);
 		VecAYPX(bCopy, -1, b);
@@ -120,11 +119,16 @@ void Smalbe::solve() {
 		mprgp->setSolverCtr(this);
 		mprgp->setPC(this);
 
-		mprgp->solve();
-		int ii = mprgp->getItCount();
-		PetscPrintf(PETSC_COMM_WORLD, "\n%d. Inner iterations: %d\n", outerIterations, ii);
-		innnerIterations += ii;
+		std::string title("MPRGP cycle no.");
+		std::stringstream oss;
+		oss << title << ' ' << itManager.getItCount();
+		mprgp->setTitle(oss.str());
 
+		mprgp->solve();
+		mprgp->saveIterationInfo((logFileName + IN_ITERATION_SUFFIX).c_str(),false);
+
+		innnerIterations += mprgp->getItCount();
+		itManager.setIterationData("Inner it.count", mprgp->getItCount());
 		delete mprgp;
 
 		MatMult(B, x, tempMSize);
@@ -141,20 +145,25 @@ void Smalbe::solve() {
 		//		PetscPrintf(PETSC_COMM_WORLD, "|Ax - b + B'lmb| = %f\n", norm);
 
 
-		if (outerIterations > 1) {
+		if (itManager.getItCount() > 0) {
 
 			VecNorm(tempMSize, NORM_2, &normBx);
 			if (actualL < (previousL + 0.5 * normBx * normBx)) {
 				ro = ro * beta;
 				PCDestroy(pc);
 				initPC();
-				PetscPrintf(PETSC_COMM_WORLD, "ro = %e\n", ro);
 			}
 		}
 		VecNorm(tempMSize, NORM_1, &normBx);
-		PetscPrintf(PETSC_COMM_WORLD, "|Bx|_max = %f \t\tL = %f\n", normBx, actualL);
 
 		previousL = actualL;
+
+		itManager.setIterationData("|Bx|_max", normBx);
+		itManager.setIterationData("L", actualL);
+		itManager.setIterationData("ro",ro);
+
+		itManager.nextIteration();
+		itManager.saveIterationInfo((logFileName + OUT_ITERATION_SUFFIX).c_str());
 	}
 
 	PetscPrintf(PETSC_COMM_WORLD, "\nCompleted\n\nTotal inner iterations: %d\n\n", innnerIterations);

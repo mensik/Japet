@@ -44,7 +44,7 @@ Feti1::Feti1(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point)) {
 			MatDestroy(GTGloc);
 			ISDestroy(ISrows);
 			ISDestroy(IScols);
-			//TODO Zeptej se Davida Horaka!!!! CO TO SAKRA JAKO JE?
+
 		} else {
 			IS ISrows, IScols;
 			ISCreateStride(PETSC_COMM_SELF, 0, 0, 1, &ISrows);
@@ -290,7 +290,7 @@ void InexactFeti1::applyMult(Vec in, Vec out) {
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 	PetscInt rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-	///TODO Make jump operator only local? There so need for paralelization here (so far)
+
 	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, mesh->vetrices.size(), mesh->nPairs, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &B);
 
 	if (!rank) {

@@ -385,7 +385,7 @@ void Mesh::linkPointsToElements() {
 }
 
 PetscErrorCode Mesh::partition(int numDomains) {
-	//TODO now only for triangles
+
 	PetscErrorCode ierr;
 	PetscFunctionBegin;
 	PetscInt rank, size;

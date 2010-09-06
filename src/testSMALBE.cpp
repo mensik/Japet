@@ -2,6 +2,8 @@ static char help[] = "My fils"
 		"rst own testing utility for PETSc\n\n";
 
 #include <iostream>
+#include <sstream>
+#include <string>
 #include "petscksp.h"
 #include "petscmat.h"
 #include "petscmg.h"
@@ -10,6 +12,8 @@ static char help[] = "My fils"
 #include "solver.h"
 #include "feti.h"
 #include "smalbe.h"
+
+using namespace std;
 
 PetscReal funConst(Point n) {
 	return 1;
@@ -45,7 +49,7 @@ int main(int argc, char *argv[]) {
   PetscInitialize(&argc,&argv,0,help);
 	PetscInt				f = 2;
 	PetscTruth 			flg;
-	char fileName[PETSC_MAX_PATH_LEN]="matlab/out.m";			
+	char logFile[PETSC_MAX_PATH_LEN]="smalbe";
 	
 	PetscOptionsGetReal(PETSC_NULL, "-jpt_m", &m, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-jpt_n", &n, PETSC_NULL);
@@ -60,7 +64,7 @@ int main(int argc, char *argv[]) {
 	PetscOptionsGetReal(PETSC_NULL, "-jpt_beta", &beta, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-jpt_sM", &M, PETSC_NULL);
 
-	PetscOptionsGetString(PETSC_NULL, "-test_out_file", fileName, PETSC_MAX_PATH_LEN-1, &flg);
+	PetscOptionsGetString(PETSC_NULL, "-jpt_logfile", logFile, PETSC_MAX_PATH_LEN-1, &flg);
 
 	//if (!flg) SETERRQ(1,"Must indicate binary file with the -test_out_file option");
 
@@ -105,6 +109,11 @@ int main(int argc, char *argv[]) {
 		PetscPrintf(PETSC_COMM_WORLD, "DOF: %d, Dual: %d \n\n",mA, mB);
 		PetscLogStagePush(smalbeStage);
 		Smalbe smalbe(A,b,B,c,L,mi, ro, beta, M);
+
+		std::stringstream oss;
+		oss << logFile << '-' << mA;
+		smalbe.setLogFilename(oss.str());
+
 		smalbe.solve();
 		PetscLogStagePop();
 

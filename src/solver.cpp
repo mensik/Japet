@@ -234,7 +234,7 @@ void MPRGP::solve() {
 	pcAction(freeG, z);
 	VecCopy(z, p);
 
-	while (!sCtr->isConverged(getItCount(), normGP, &x)) {
+	while (!sCtr->isConverged(getItCount(), rNorm, &x)) {
 		PetscReal freeXrFree;
 		VecDot(freeG, rFreeG, &freeXrFree);
 

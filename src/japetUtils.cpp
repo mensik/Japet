@@ -30,7 +30,7 @@ void IterationManager::saveIterationInfo(const char *filename, bool rewrite) {
 			fprintf(f, "# \t %s\n", title.c_str());
 			fprintf(f, "# *********************************\n");
 			fprintf(f, "#\n");
-			fprintf(f, "#	itNumber");
+			fprintf(f, "#itNumber");
 			for (std::map<std::string, PetscReal>::iterator d = iterationData.begin(); d
 					!= iterationData.end(); d++) {
 				fprintf(f, "\t%s", d->first.c_str());
@@ -40,10 +40,10 @@ void IterationManager::saveIterationInfo(const char *filename, bool rewrite) {
 			for (std::vector<IterationInfo>::iterator i = itInfo.begin(); i
 					!= itInfo.end(); i++) {
 
-				fprintf(f, "%6d", i->itNumber);
+				fprintf(f, "\t%d", i->itNumber);
 				for (std::vector<PetscReal>::iterator d = i->itData.begin(); d
 						!= i->itData.end(); d++) {
-					fprintf(f, "%11.4e", *d);
+					fprintf(f, "\t%11.4e", *d);
 				}
 				fprintf(f, "\n");
 			}

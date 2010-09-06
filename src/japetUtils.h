@@ -29,6 +29,7 @@ class IterationManager {
 public:
 	IterationManager() {
 		itCounter = 0;
+		isVerbose = false;
 	}
 	void setTitle(std::string title) {
 		this->title = title;

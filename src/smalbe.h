@@ -9,11 +9,17 @@
 #define SMALBE_H_
 
 #include <math.h>
+#include <sstream>
+#include <string>
+#include <iostream>
 #include "petscmat.h"
 #include "petscmg.h"
 #include "solver.h"
 #include "structures.h"
 #include "feti.h"
+
+const std::string IN_ITERATION_SUFFIX = "_in.log";
+const std::string OUT_ITERATION_SUFFIX = "_out.log";
 
 class Smalbe : public SolverApp, SolverCtr, SolverPreconditioner {
 	Mat A;
@@ -38,6 +44,10 @@ class Smalbe : public SolverApp, SolverCtr, SolverPreconditioner {
 	Vec temp, tempGh;
 	Vec temp2, temp2Gh;
 
+	IterationManager itManager;
+
+	std::string logFileName;
+
 	PetscReal Lagrangian();
 
 	void initPC();
@@ -48,6 +58,8 @@ public:
 
 	void solve();
 	void dumpSolution(PetscViewer v);
+
+	void setLogFilename(std::string logFileName) { this->logFileName = logFileName; }
 
 	void applyMult(Vec in, Vec out);
 	bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec);
