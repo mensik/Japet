@@ -85,6 +85,7 @@ int main(int argc, char *argv[]) {
 		PetscPrintf(PETSC_COMM_WORLD, "START\n");
 		MPRGP mprgp(A,b,l,x,1,2/ANorm);
 		mprgp.solve();
+		mprgp.saveIterationInfo("mprgp.dat");
 		PetscPrintf(PETSC_COMM_WORLD, "END\n");
 		MatView(A, v);
 		VecView(b, v);

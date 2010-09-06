@@ -117,11 +117,11 @@ void Smalbe::solve() {
 
 		MPRGP *mprgp = new MPRGP(this, bCopy, L, x, 1, 2 / (ANorm + ro));
 
-		mprgp->setCtrl(this);
+		mprgp->setSolverCtr(this);
 		mprgp->setPC(this);
 
 		mprgp->solve();
-		int ii = mprgp->getNumIterations();
+		int ii = mprgp->getItCount();
 		PetscPrintf(PETSC_COMM_WORLD, "\n%d. Inner iterations: %d\n", outerIterations, ii);
 		innnerIterations += ii;
 

@@ -1,6 +1,7 @@
 #include "solver.h"
 
 Solver::Solver(Mat A, Vec b, Vec x) {
+
 	this->A = A;
 	this->b = b;
 	this->x = x;
@@ -25,8 +26,6 @@ Solver::~Solver() {
 void Solver::init() {
 
 	sCtr = this;
-	itCounter = 0;
-	isVerbose = false;
 	precision = 1e-3;
 
 	VecDuplicate(b, &g);
@@ -48,70 +47,20 @@ void Solver::applyMult(Vec in, Vec out) {
 	MatMult(A, in, out);
 }
 
-bool Solver::isConverged(PetscInt itNumber, PetscReal rNorm, Vec *r) {
+bool Solver::isConverged(PetscInt itNumber, PetscReal rNorm, Vec *x) {
 	return rNorm < precision;
 }
 
-void Solver::setIterationData(std::string name, PetscReal value) {
-	iterationData[name] = value;
-}
-
 void Solver::nextIteration() {
-	IterationInfo info;
-	info.itNumber = itCounter;
-	info.rNorm = rNorm;
-
-	if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "%d: |g|_2 = %f", itCounter, rNorm);
-
-	for (std::map<std::string, PetscReal>::iterator i = iterationData.begin(); i
-			!= iterationData.end(); i++) {
-		const PetscReal data = i->second;
-		info.itData.push_back(data);
-		if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "\t%s=%f", i->first.c_str(), i->second);
-	}
-	if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "\n");
-
-	itInfo.push_back(info);
-	itCounter++;
-}
-
-void Solver::saveIterationInfo(const char *filename) {
-	PetscInt rank;
-	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-
-	if (!rank) {
-		FILE *f;
-		f = fopen(filename, "w");
-		if (f != NULL) {
-			PetscReal firstRNorm = itInfo[0].rNorm;
-
-			fprintf(f, "#	itNumber\t|g|_2\tR");
-			for (std::map<std::string, PetscReal>::iterator d = iterationData.begin(); d
-					!= iterationData.end(); d++) {
-				fprintf(f, "\t%s", d->first.c_str());
-			}
-			fprintf(f, "\n");
-
-			for (std::vector<IterationInfo>::iterator i = itInfo.begin(); i
-					!= itInfo.end(); i++) {
-
-				fprintf(f, "%6d %11.4e %11.4e", i->itNumber, i->rNorm, std::pow((float)i->rNorm / firstRNorm,(float) 2 / (i->itNumber + 1)));
-				for (std::vector<PetscReal>::iterator d = i->itData.begin(); d
-						!= i->itData.end(); d++) {
-					fprintf(f, "%11.4e", *d);
-				}
-				fprintf(f, "\n");
-			}
-			fclose(f);
-		}
-	}
+	itManager.setIterationData("!normG", rNorm);
+	itManager.nextIteration();
 }
 
 void CGSolver::initSolver() {
 	VecDuplicate(b, &temp);
 	VecDuplicate(g, &p);
 	VecCopy(g, p);
-
+	setTitle("CG");
 }
 
 CGSolver::~CGSolver() {
@@ -148,6 +97,7 @@ void ASinStep::initSolver() {
 	tau = 1e-8;
 	fi = (sqrt(5) - 1) / 2;
 	z = 0;
+	setTitle("Arcsine Density Descent");
 }
 
 void ASinStep::solve() {
@@ -212,26 +162,12 @@ void ASinStep::solve() {
 	}
 }
 
-MPRGP::MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
-	this->A = A;
-	sApp = this;
-	initSolver(b, l, x, G, alp);
-}
-
-MPRGP::MPRGP(SolverApp *app, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
-	sApp = app;
-	initSolver(b, l, x, G, alp);
-}
-
-MPRGP::~MPRGP() {
-	VecDestroy(g);
+MPRGP::~MPRGP() {;
 	VecDestroy(p);
 	VecDestroy(temp);
 }
 
-void MPRGP::initSolver(Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
-	this->b = b;
-	this->x = x;
+void MPRGP::initSolver(Vec l,PetscReal G, PetscReal alp) {
 	this->l = l;
 	this->G = G;
 	this->alp = alp;
@@ -241,16 +177,11 @@ void MPRGP::initSolver(Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) {
 	VecGetOwnershipRange(x, &localRangeStart, &localRangeEnd);
 	localRangeSize = localRangeEnd - localRangeStart;
 
-	sCtr = this;
 	sPC = NULL;
-
-	VecDuplicate(b, &g);
 	VecDuplicate(g, &p);
 	VecDuplicate(g, &temp);
-}
 
-void MPRGP::applyMult(Vec in, Vec out) {
-	MatMult(A, in, out);
+	setTitle("MPRGP");
 }
 
 void MPRGP::pcAction(Vec free, Vec z) {
@@ -273,10 +204,6 @@ void MPRGP::pcAction(Vec free, Vec z) {
 	} else {
 		VecCopy(free, z);
 	}
-}
-
-bool MPRGP::isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec) {
-	return rNorm < 1e-3;
 }
 
 void MPRGP::solve() {
@@ -304,12 +231,10 @@ void MPRGP::solve() {
 	VecNorm(gp, NORM_2, &normGP);
 	VecNorm(chopG, NORM_2, &normCHG);
 
-	itCounter = 0;
-
 	pcAction(freeG, z);
 	VecCopy(z, p);
 
-	while (!sCtr->isConverged(itCounter, normGP, &x)) {
+	while (!sCtr->isConverged(getItCount(), normGP, &x)) {
 		PetscReal freeXrFree;
 		VecDot(freeG, rFreeG, &freeXrFree);
 
@@ -326,6 +251,7 @@ void MPRGP::solve() {
 
 			if (alpCG < alpF) {
 				//CG step
+				setIterationData("stepType",CG);
 				VecAXPY(x, -alpCG, p);
 				VecAXPY(g, -alpCG, Ap);
 
@@ -338,6 +264,7 @@ void MPRGP::solve() {
 				VecAYPX(p, -beta, z);
 			} else {
 				//Expansion step
+				setIterationData("stepType",Expansion);
 				VecAXPY(x, -alpF, p);
 				VecAXPY(g, -alpF, Ap);
 				partGradient(freeG, chopG, rFreeG);
@@ -355,6 +282,7 @@ void MPRGP::solve() {
 			}
 		} else {
 			//Proportioning step
+			setIterationData("stepType",Proportion);
 			PetscReal dg, dAd;
 			sApp->applyMult(chopG, Ap);
 			VecDot(g, chopG, &dg);
@@ -373,7 +301,12 @@ void MPRGP::solve() {
 		VecAYPX(gp, 1, chopG);
 		VecNorm(gp, NORM_2, &normGP);
 		VecNorm(chopG, NORM_2, &normCHG);
-		itCounter++;
+
+		VecDot(gp, z, &rNorm);
+		rNorm = sqrt(rNorm);
+
+		setIterationData("normGP", normGP);
+		nextIteration();
 	}
 
 	VecDestroy(chopG);
@@ -457,9 +390,5 @@ PetscReal MPRGP::alpFeas() {
 	MPI_Allreduce(&alpF, &alpFGlobal, 1, MPI_DOUBLE, MPI_MIN, PETSC_COMM_WORLD);
 
 	PetscFunctionReturn(alpFGlobal);
-}
-
-int MPRGP::getNumIterations() {
-	return itCounter;
 }
 

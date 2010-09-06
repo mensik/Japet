@@ -8,13 +8,11 @@
 #define SOLVER_H
 
 #include <cmath>
-#include <string>
-#include <vector>
-#include <map>
+#include "japetUtils.h"
 #include "petscmat.h"
 #include "petscksp.h"
 
-const double PI = 4.0*std::atan(1.0);
+const double PI = 4.0 * std::atan(1.0);
 
 class SolverApp {
 public:
@@ -31,21 +29,15 @@ public:
 	virtual void applyPC(Vec g, Vec z) = 0;
 };
 
-struct IterationInfo {
-	int itNumber;
-	PetscReal rNorm;
-	std::vector<PetscReal> itData;
+enum StepType {
+	CG, Expansion, Proportion
 };
 
 class Solver: public SolverApp, public SolverCtr {
 private:
 	Mat A; ///< Matrix A in problem A*x = b
-	int itCounter;
-	std::vector<IterationInfo> itInfo;
-	bool isVerbose;
 	PetscReal precision;
-
-	std::map<std::string, PetscReal> iterationData;
+	IterationManager itManager;
 
 	void init();
 protected:
@@ -60,16 +52,20 @@ protected:
 	SolverCtr *sCtr;
 
 	void nextIteration();
-	void setIterationData(std::string name, PetscReal value);
+	void setIterationData(std::string name, PetscReal value) {
+		itManager.setIterationData(name, value);
+	}
 
 public:
 	Solver(Mat A, Vec b, Vec x);
 	Solver(SolverApp *sa, Vec b, Vec x);
 	~Solver();
 
-	void setIsVerbose(bool isVerbose) { this->isVerbose = isVerbose; }
+	void setIsVerbose(bool isVerbose) {
+		itManager.setIsVerbose(isVerbose);
+	}
 	int getItCount() {
-		return itCounter;
+		return itManager.getItCount();
 	}
 	void applyMult(Vec in, Vec out);
 	bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec);
@@ -79,9 +75,15 @@ public:
 	void setSolverCtr(SolverCtr *sc) {
 		sCtr = sc;
 	}
-	void setPrecision(PetscReal precision) { this->precision = precision;}
-	void saveIterationInfo(const char *filename);
-
+	void setPrecision(PetscReal precision) {
+		this->precision = precision;
+	}
+	void saveIterationInfo(const char *filename, bool rewrite = true) {
+		itManager.saveIterationInfo(filename, rewrite);
+	}
+	void setTitle(std::string title) {
+		itManager.setTitle(title);
+	}
 	Vec getX() {
 		return x;
 	} ///< @return solution
@@ -133,10 +135,7 @@ public:
 	void solve();
 };
 
-class MPRGP: public SolverApp, SolverCtr {
-	Mat A;
-	Vec x;
-	Vec b;
+class MPRGP: public Solver {
 	Vec l;
 
 	PetscReal G;
@@ -148,20 +147,15 @@ class MPRGP: public SolverApp, SolverCtr {
 
 	PetscReal e;
 
-	Vec g;
 	Vec p;
 	Vec temp;
 
-	int itCounter;
-
-	SolverApp *sApp;
-	SolverCtr *sCtr;
 	SolverPreconditioner *sPC;
 
 	void projectFeas(Vec &v); //< @param[out] vector with changed infeasible parts to feasible
 	void partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG); //< divides gradient into its free, chopped and reduced parts
 	PetscReal alpFeas(); //< @return feasible step length for current gradient
-	void initSolver(Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
+	void initSolver(Vec l, PetscReal G, PetscReal alp);
 	void pcAction(Vec free, Vec z);
 
 public:
@@ -172,23 +166,21 @@ public:
 	 @param[in] G Gamma operator, used to decide about domination of free part of gradient
 	 @param[in] alp fixed step length - <0, 2/||A||>
 	 */
-	MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
-	MPRGP(SolverApp *app, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp);
+	MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) :
+		Solver(A, b, x) {
+		initSolver(l, G, alp);
+	}
+	;
+	MPRGP(SolverApp *app, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) :
+		Solver(app, b, x) {
+		initSolver(l, G, alp);
+	}
+	;
 	~MPRGP();
 
-	void setCtrl(SolverCtr *ctr) {
-		sCtr = ctr;
-	}
-	;
-	void setPC(SolverPreconditioner *sPC) {
-		this->sPC = sPC;
-	}
-	;
-	void applyMult(Vec in, Vec out);
-	bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec);
-	void solve();
+	void setPC(SolverPreconditioner *pc) { this->sPC = pc; }
 
-	int getNumIterations();
+	void solve();
 };
 
 #endif
