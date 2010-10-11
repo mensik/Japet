@@ -27,7 +27,7 @@ void IterationManager::saveIterationInfo(const char *filename, bool rewrite) {
 		f = fopen(filename, rewrite?"w":"a");
 		if (f != NULL) {
 			fprintf(f, "# *********************************\n");
-			fprintf(f, "# \t %s\n", title.c_str());
+			fprintf(f, "#   %s\n", title.c_str());
 			fprintf(f, "# *********************************\n");
 			fprintf(f, "#\n");
 			fprintf(f, "#itNumber");

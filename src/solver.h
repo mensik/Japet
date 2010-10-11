@@ -21,7 +21,7 @@ public:
 
 class SolverCtr {
 public:
-	virtual bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec) = 0;
+	virtual bool isConverged(PetscInt itNum, PetscReal rNorm, PetscReal bNorm, Vec *vec) = 0;
 };
 
 class SolverPreconditioner {
@@ -47,20 +47,21 @@ protected:
 	Vec g; ///< residual vector
 
 	PetscReal rNorm;
+	PetscReal bNorm;
 
 	SolverApp *sApp;
 	SolverCtr *sCtr;
 
 	void nextIteration();
-	void setIterationData(std::string name, PetscReal value) {
-		itManager.setIterationData(name, value);
-	}
 
 public:
 	Solver(Mat A, Vec b, Vec x);
 	Solver(SolverApp *sa, Vec b, Vec x);
 	~Solver();
 
+	void setIterationData(std::string name, PetscReal value) {
+		itManager.setIterationData(name, value);
+	}
 	void setIsVerbose(bool isVerbose) {
 		itManager.setIsVerbose(isVerbose);
 	}
@@ -68,7 +69,7 @@ public:
 		return itManager.getItCount();
 	}
 	void applyMult(Vec in, Vec out);
-	bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec);
+	bool isConverged(PetscInt itNum, PetscReal rNorm, PetscReal bNorm, Vec *vec);
 	void setSolverApp(SolverApp *sa) {
 		sApp = sa;
 	}
@@ -84,6 +85,7 @@ public:
 	void setTitle(std::string title) {
 		itManager.setTitle(title);
 	}
+	PetscReal getNormG() { return rNorm; }
 	Vec getX() {
 		return x;
 	} ///< @return solution

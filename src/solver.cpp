@@ -27,6 +27,7 @@ void Solver::init() {
 
 	sCtr = this;
 	precision = 1e-3;
+	VecNorm(b, NORM_2, &bNorm);
 
 	VecDuplicate(b, &g);
 
@@ -47,8 +48,8 @@ void Solver::applyMult(Vec in, Vec out) {
 	MatMult(A, in, out);
 }
 
-bool Solver::isConverged(PetscInt itNumber, PetscReal rNorm, Vec *x) {
-	return rNorm < precision;
+bool Solver::isConverged(PetscInt itNumber, PetscReal rNorm, PetscReal bNorm, Vec *x) {
+	return rNorm/bNorm < precision;
 }
 
 void Solver::nextIteration() {
@@ -70,7 +71,7 @@ CGSolver::~CGSolver() {
 
 void CGSolver::solve() {
 
-	while (!sCtr->isConverged(getItCount(), rNorm, &g)) {
+	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
 
 		nextIteration();
 
@@ -95,7 +96,7 @@ void CGSolver::solve() {
 
 void ASinStep::initSolver() {
 	tau = 1e-8;
-	fi = (sqrt(5) - 1) / 2;
+	fi = (sqrt((double)5.0) - 1) / 2;
 	z = 0;
 	setTitle("Arcsine Density Descent");
 }
@@ -130,9 +131,9 @@ void ASinStep::solve() {
 		setIterationData("beta", beta);
 
 		nextIteration();
-		VecNorm(g, &rNorm);
+		VecNorm(g, NORM_2, &rNorm);
 	}
-	while (!sCtr->isConverged(getItCount(), rNorm, &g)) {
+	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
 		sApp->applyMult(g, Ag);
 
 		PetscReal gg, gAg, moment1;
@@ -158,7 +159,7 @@ void ASinStep::solve() {
 		setIterationData("beta", beta);
 
 		nextIteration();
-		VecNorm(g, &rNorm);
+		VecNorm(g, NORM_2, &rNorm);
 	}
 }
 
@@ -234,7 +235,7 @@ void MPRGP::solve() {
 	pcAction(freeG, z);
 	VecCopy(z, p);
 
-	while (!sCtr->isConverged(getItCount(), rNorm, &x)) {
+	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &x)) {
 		PetscReal freeXrFree;
 		VecDot(freeG, rFreeG, &freeXrFree);
 
@@ -360,7 +361,9 @@ void MPRGP::projectFeas(Vec &vec) {
 	VecGetArray(vec, &vecArr);
 
 	for (int i = 0; i < localRangeSize; i++) {
-		if (lArr[i] > vecArr[i]) vecArr[i] = lArr[i];
+		if (lArr[i] > vecArr[i]) {
+			vecArr[i] = lArr[i];
+		}
 	}
 
 	VecRestoreArray(l, &lArr);

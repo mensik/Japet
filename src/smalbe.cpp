@@ -1,6 +1,6 @@
 #include "smalbe.h"
 
-Smalbe::Smalbe(Mat A, Vec b, Mat B, Vec c, Vec L, PetscReal mi, PetscReal ro,
+Smalbe::Smalbe(Mat A, Vec b, Mat B, Vec c, Vec L, PetscReal h, PetscReal mi, PetscReal ro,
 		PetscReal beta, PetscReal M) {
 	//this->A = A;
 	this->B = B;
@@ -11,7 +11,9 @@ Smalbe::Smalbe(Mat A, Vec b, Mat B, Vec c, Vec L, PetscReal mi, PetscReal ro,
 	this->ro = ro;
 	this->beta = beta;
 	this->M = M;
+	this->h = h;
 	logFileName = "Smalbe_default";
+	title = "Smalbe";
 
 	VecDuplicate(b, &x);
 	extractLocalAPart(A, &(this->A));
@@ -76,12 +78,13 @@ void Smalbe::applyMult(Vec in, Vec out) {
 	VecAYPX(out, ro, temp2);
 }
 
-bool Smalbe::isConverged(PetscInt itNum, PetscReal gpNorm, Vec *x) {
+bool Smalbe::isConverged(PetscInt itNum, PetscReal gpNorm, PetscReal bNorm, Vec *x) {
 	MatMult(B, *x, tempMSize);
 	PetscReal normBx;
+	//VecNorm(tempMSize, NORM_2, &normBx);
 	VecNorm(tempMSize, NORM_2, &normBx);
-	//VecNorm(tempMSize, NORM_1, &normBxMAX);
-	PetscReal conv = fmin(normBx * M, mi);
+	PetscReal conv = normBx * M * sqrt((double)h);
+	if (conv > mi) conv = mi;
 	return (gpNorm < conv);
 }
 
@@ -95,7 +98,7 @@ void Smalbe::solve() {
 	PetscPrintf(PETSC_COMM_WORLD, "Here goes Smalbe!! \n");
 
 	remove((logFileName + IN_ITERATION_SUFFIX).c_str());
-	itManager.setTitle(logFileName);
+	itManager.setTitle(title);
 	Vec bCopy;
 	VecDuplicate(b, &bCopy);
 	VecCopy(b, bCopy);
@@ -128,7 +131,8 @@ void Smalbe::solve() {
 		mprgp->saveIterationInfo((logFileName + IN_ITERATION_SUFFIX).c_str(),false);
 
 		innnerIterations += mprgp->getItCount();
-		itManager.setIterationData("Inner it.count", mprgp->getItCount());
+		itManager.setIterationData("3. Inner it.count", mprgp->getItCount());
+		itManager.setIterationData("2. (z*g)^0.5", mprgp->getNormG());
 		delete mprgp;
 
 		MatMult(B, x, tempMSize);
@@ -154,13 +158,13 @@ void Smalbe::solve() {
 				initPC();
 			}
 		}
-		VecNorm(tempMSize, NORM_1, &normBx);
-
+		VecNorm(tempMSize, NORM_2, &normBx);
+		normBx *= sqrt(h);
 		previousL = actualL;
 
-		itManager.setIterationData("|Bx|_max", normBx);
-		itManager.setIterationData("L", actualL);
-		itManager.setIterationData("ro",ro);
+		itManager.setIterationData("1. sqrt(h) |Bx|", normBx);
+		itManager.setIterationData("5. L", actualL);
+		itManager.setIterationData("4. ro",ro);
 
 		itManager.nextIteration();
 		itManager.saveIterationInfo((logFileName + OUT_ITERATION_SUFFIX).c_str());

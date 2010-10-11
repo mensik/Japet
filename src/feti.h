@@ -46,6 +46,8 @@ protected:
 	Mat G;		///< BR
 	PetscInt gM,gN; ///<	dimensions of G
 	MatNullSpace locNS; ///< local null space of local A
+
+	PetscReal lastNorm;
 	
 	Vec temp;
 	Vec tempLoc;
@@ -61,11 +63,13 @@ public:
 	void dumpSystem(PetscViewer v);
 	virtual void applyMult(Vec in, Vec out); ///< Apply multiplication in outer (dual) CG iteration
 	void projectGOrth(Vec in);			 ///< Remove space spaned by G from vec in
-	bool isConverged(PetscInt itNumber, PetscReal norm, Vec *vec);
+	bool isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm, Vec *vec);
 };
 
 class InexactFeti1: public Feti1{
 	PetscReal outerPrec;
+	Solver *solver;
+	PetscInt inCounter;
 public:
 	InexactFeti1(Mesh *mesh,PetscReal (*f)(Point), PetscReal (*K)(Point)) :  Feti1(mesh, f,K) {}
 	void solve();

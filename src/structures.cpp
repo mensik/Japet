@@ -521,7 +521,7 @@ PetscErrorCode Mesh::partition(int numDomains) {
 	delete[] tpwgts;
 	delete[] ubvec;
 
-	PetscFunctionReturn(0);
+	PetscFunctionReturn(ierr);
 }
 
 void Mesh::tear() {

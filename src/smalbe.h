@@ -39,6 +39,8 @@ class Smalbe : public SolverApp, SolverCtr, SolverPreconditioner {
 	PetscReal beta;
 	PetscReal M;
 
+	PetscReal h;
+
 	//TEMPS
 	Vec tempMSize;
 	Vec temp, tempGh;
@@ -47,22 +49,23 @@ class Smalbe : public SolverApp, SolverCtr, SolverPreconditioner {
 	IterationManager itManager;
 
 	std::string logFileName;
+	std::string title;
 
 	PetscReal Lagrangian();
 
 	void initPC();
 
 public:
-	Smalbe(Mat A, Vec b, Mat B, Vec c, Vec L, PetscReal mi = 1e-2, PetscReal ro = 1, PetscReal beta = 1.1, PetscReal M = 3);
+	Smalbe(Mat A, Vec b, Mat B, Vec c, Vec L, PetscReal h, PetscReal mi = 1e-2, PetscReal ro = 1, PetscReal beta = 1.1, PetscReal M = 3);
 	~Smalbe() ;
 
 	void solve();
 	void dumpSolution(PetscViewer v);
 
 	void setLogFilename(std::string logFileName) { this->logFileName = logFileName; }
-
+	void setTitle(std::string title) { this->title = title; }
 	void applyMult(Vec in, Vec out);
-	bool isConverged(PetscInt itNum, PetscReal rNorm, Vec *vec);
+	bool isConverged(PetscInt itNum, PetscReal rNorm, PetscReal bNorm, Vec *vec);
 	void applyPC(Vec g, Vec z);
 };
 
