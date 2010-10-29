@@ -188,7 +188,7 @@ void Feti1::projectGOrth(Vec in) {
 bool Feti1::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm, Vec *vec) {
 	PetscPrintf(PETSC_COMM_WORLD, "It.%d: residual norm:%f\n", itNumber, norm);
 	lastNorm = norm;
-	return norm < 1e-4;
+	return norm < 1e-4 || itNumber > 500;
 }
 
 void Feti1::applyMult(Vec in, Vec out) {
@@ -296,7 +296,7 @@ void InexactFeti1::solve() {
 }
 
 void InexactFeti1::applyMult(Vec in, Vec out) {
-	outerPrec = lastNorm * 1e-3;
+
 	KSPSetTolerances(kspA, outerPrec,outerPrec,1e10, 1000);
 	//solver->setIterationData("inPrec", outerPrec);
 	
@@ -307,6 +307,10 @@ void InexactFeti1::applyMult(Vec in, Vec out) {
 	inCounter += itNumber;
 
 //	solver->saveIterationInfo("In. iterations", itNumber); 
+}
+
+void InexactFeti1::setRequiredPrecision(PetscReal reqPrecision) {
+	outerPrec = reqPrecision;
 }
 
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {

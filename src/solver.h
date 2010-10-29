@@ -13,10 +13,12 @@
 #include "petscksp.h"
 
 const double PI = 4.0 * std::atan(1.0);
+const double MAXPREC = 1e-8;
 
 class SolverApp {
 public:
 	virtual void applyMult(Vec in, Vec out) = 0;
+	virtual void setRequiredPrecision(PetscReal reqPrecision);
 };
 
 class SolverCtr {
@@ -135,6 +137,7 @@ public:
 		initSolver();
 	}
 	void solve();
+	PetscReal getRequiredMultPrecision();
 };
 
 class MPRGP: public Solver {

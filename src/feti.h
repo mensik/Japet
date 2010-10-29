@@ -74,6 +74,7 @@ public:
 	InexactFeti1(Mesh *mesh,PetscReal (*f)(Point), PetscReal (*K)(Point)) :  Feti1(mesh, f,K) {}
 	void solve();
 	void  applyMult(Vec in, Vec out);
+	void setRequiredPrecision(PetscReal reqPrecision);
 };
 
 void GenerateJumpOperator(Mesh *mesh,Mat &B, Vec &lmb);

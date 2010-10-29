@@ -20,7 +20,7 @@ int main(int argc, char *argv[]) {
 
 	PetscPrintf(PETSC_COMM_WORLD, "STARTING\n");
 
-	PetscReal prec = 1e-5;
+	PetscReal prec = 1e-3;
 	char fileNameA[PETSC_MAX_PATH_LEN]="A.m";
 	char fileNameB[PETSC_MAX_PATH_LEN]="b.m";
 
@@ -45,17 +45,18 @@ int main(int argc, char *argv[]) {
 	Vec x, x2;
 	VecDuplicate(b, &x);
 	VecDuplicate(b, &x2);
-	Solver *solver = new CGSolver(A, b, x);
+/*	Solver *solver = new CGSolver(A, b, x);
 	solver->setPrecision(prec);
 	solver->setIsVerbose(true);
 	solver->solve();
-	solver->saveIterationInfo("cg.dat");
+	solver->saveIterationInfo("cg.dat");*/
 
 	Solver *solver2 = new ASinStep(A, b, x2);
 	solver2->setPrecision(prec);
 	solver2->setIsVerbose(true);
 	solver2->solve();
 	solver2->saveIterationInfo("asin.dat");
+
 
 	PetscFinalize();
 	return 0;

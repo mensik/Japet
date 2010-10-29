@@ -1,5 +1,9 @@
 #include "solver.h"
 
+void SolverApp::setRequiredPrecision(PetscReal reqPrecision) {
+
+}
+
 Solver::Solver(Mat A, Vec b, Vec x) {
 
 	this->A = A;
@@ -36,6 +40,7 @@ void Solver::init() {
 
 	VecCopy(b, g);
 
+	sApp->setRequiredPrecision(MAXPREC);
 	sApp->applyMult(x, temp);
 	VecAYPX(g, -1, temp);
 
@@ -48,8 +53,9 @@ void Solver::applyMult(Vec in, Vec out) {
 	MatMult(A, in, out);
 }
 
-bool Solver::isConverged(PetscInt itNumber, PetscReal rNorm, PetscReal bNorm, Vec *x) {
-	return rNorm/bNorm < precision;
+bool Solver::isConverged(PetscInt itNumber, PetscReal rNorm, PetscReal bNorm,
+		Vec *x) {
+	return rNorm / bNorm < precision;
 }
 
 void Solver::nextIteration() {
@@ -95,18 +101,24 @@ void CGSolver::solve() {
 }
 
 void ASinStep::initSolver() {
-	tau = 1e-8;
-	fi = (sqrt((double)5.0) - 1) / 2;
+	tau = 1;
+	fi = (sqrt((double) 5.0) - 1) / 2;
 	z = 0;
 	setTitle("Arcsine Density Descent");
 }
 
 void ASinStep::solve() {
 	PetscReal beta;
-	Vec Ag;
+	Vec Ag, Ax;
 	VecDuplicate(g, &Ag);
+	VecDuplicate(x, &Ax);
+
+	int gradRestartLoop = 2;
+	PetscReal outNorm = 1;
 
 	for (int i = 0; i < 2; i++) {
+
+		sApp->setRequiredPrecision(MAXPREC);
 
 		sApp->applyMult(g, Ag);
 
@@ -134,14 +146,22 @@ void ASinStep::solve() {
 		VecNorm(g, NORM_2, &rNorm);
 	}
 	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
-		sApp->applyMult(g, Ag);
 
-		PetscReal gg, gAg, moment1;
-		VecDot(g, g, &gg);
-		VecDot(Ag, g, &gAg);
-		moment1 = gAg / gg;
-		m = fmin(m, moment1);
-		M = fmax(M, moment1);
+		outNorm = rNorm * 0.2;
+		sApp->setRequiredPrecision(outNorm);
+
+		if (getItCount() % gradRestartLoop == 0) {
+			//sApp->applyMult(x, Ax);
+		} else {
+			sApp->applyMult(g, Ag);
+
+			PetscReal gg, gAg, moment1;
+			VecDot(g, g, &gg);
+			VecDot(Ag, g, &gAg);
+			moment1 = gAg / gg;
+			m = fmin(m, moment1);
+			M = fmax(M, moment1);
+		}
 
 		if (getItCount() % 2 == 0) {
 			PetscReal eps = tau * (M - m);
@@ -152,7 +172,14 @@ void ASinStep::solve() {
 		}
 
 		VecAXPY(x, -1 / beta, g);
-		VecAXPY(g, -1 / beta, Ag);
+
+		if (getItCount() % gradRestartLoop == 0) {
+			VecCopy(b, g);
+			sApp->applyMult(x, Ax);
+			VecAYPX(g, -1, Ax);
+		} else {
+			VecAXPY(g, -1 / beta, Ag);
+		}
 
 		setIterationData("m", m);
 		setIterationData("M", M);
@@ -161,14 +188,18 @@ void ASinStep::solve() {
 		nextIteration();
 		VecNorm(g, NORM_2, &rNorm);
 	}
+
+	VecDestroy(Ag);
+	VecDestroy(Ax);
 }
 
-MPRGP::~MPRGP() {;
+MPRGP::~MPRGP() {
+	;
 	VecDestroy(p);
 	VecDestroy(temp);
 }
 
-void MPRGP::initSolver(Vec l,PetscReal G, PetscReal alp) {
+void MPRGP::initSolver(Vec l, PetscReal G, PetscReal alp) {
 	this->l = l;
 	this->G = G;
 	this->alp = alp;
@@ -252,7 +283,7 @@ void MPRGP::solve() {
 
 			if (alpCG < alpF) {
 				//CG step
-				setIterationData("stepType",CG);
+				setIterationData("stepType", CG);
 				VecAXPY(x, -alpCG, p);
 				VecAXPY(g, -alpCG, Ap);
 
@@ -265,7 +296,7 @@ void MPRGP::solve() {
 				VecAYPX(p, -beta, z);
 			} else {
 				//Expansion step
-				setIterationData("stepType",Expansion);
+				setIterationData("stepType", Expansion);
 				VecAXPY(x, -alpF, p);
 				VecAXPY(g, -alpF, Ap);
 				partGradient(freeG, chopG, rFreeG);
@@ -283,7 +314,7 @@ void MPRGP::solve() {
 			}
 		} else {
 			//Proportioning step
-			setIterationData("stepType",Proportion);
+			setIterationData("stepType", Proportion);
 			PetscReal dg, dAd;
 			sApp->applyMult(chopG, Ap);
 			VecDot(g, chopG, &dg);
