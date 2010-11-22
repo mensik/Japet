@@ -13,7 +13,7 @@
 #include "petscksp.h"
 
 const double PI = 4.0 * std::atan(1.0);
-const double MAXPREC = 1e-8;
+const double MAXPREC = 1e-6;
 
 class SolverApp {
 public:
@@ -96,6 +96,15 @@ public:
 	} ///< @return copy of solution
 
 	virtual void solve() = 0;
+};
+
+class RichardsSolver: public Solver {
+	PetscReal alpha;
+
+public:
+	RichardsSolver(SolverApp *sa, Vec b, Vec x, PetscReal alpha) : Solver(sa,b,x) { this->alpha = alpha;};
+
+	void solve();
 };
 
 class CGSolver: public Solver {

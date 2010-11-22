@@ -63,6 +63,28 @@ void Solver::nextIteration() {
 	itManager.nextIteration();
 }
 
+void RichardsSolver::solve() {
+
+	Vec Ax;
+	VecDuplicate(x, &Ax);
+
+	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
+		nextIteration();
+
+		VecAXPY(x, -alpha, g);
+
+		sApp->setRequiredPrecision(rNorm * 1e-3);
+
+		sApp->applyMult(x, Ax);
+
+		VecCopy(b, g);
+		VecAYPX(g, -1, Ax);
+		VecNorm(g, NORM_2, &rNorm);
+	}
+
+	VecDestroy(Ax);
+}
+
 void CGSolver::initSolver() {
 	VecDuplicate(b, &temp);
 	VecDuplicate(g, &p);
@@ -114,11 +136,12 @@ void ASinStep::solve() {
 	VecDuplicate(x, &Ax);
 
 	int gradRestartLoop = 2;
-	PetscReal outNorm = 1;
+	PetscReal outNorm = 1e-1;
+
 
 	for (int i = 0; i < 2; i++) {
 
-		sApp->setRequiredPrecision(MAXPREC);
+		sApp->setRequiredPrecision(outNorm);
 
 		sApp->applyMult(g, Ag);
 
@@ -141,14 +164,22 @@ void ASinStep::solve() {
 		setIterationData("m", m);
 		setIterationData("M", M);
 		setIterationData("beta", beta);
+		setIterationData("reqPrec", outNorm);
 
 		nextIteration();
 		VecNorm(g, NORM_2, &rNorm);
 	}
 	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
 
-		outNorm = rNorm * 0.2;
-		sApp->setRequiredPrecision(outNorm);
+		outNorm = outNorm * 0.66;
+
+		PetscReal reqPrec = fmax(fmin(outNorm, rNorm * 1e-1), 1e-6);
+		sApp->setRequiredPrecision(reqPrec);
+		if (reqPrec < pow(10,-1*(gradRestartLoop))) {
+			gradRestartLoop++;
+		}
+		setIterationData("reqPrec", reqPrec);
+
 
 		if (getItCount() % gradRestartLoop == 0) {
 			//sApp->applyMult(x, Ax);
@@ -177,8 +208,10 @@ void ASinStep::solve() {
 			VecCopy(b, g);
 			sApp->applyMult(x, Ax);
 			VecAYPX(g, -1, Ax);
+			VecNorm(g, NORM_2, &rNorm);
 		} else {
 			VecAXPY(g, -1 / beta, Ag);
+			VecNorm(g, NORM_2, &rNorm);
 		}
 
 		setIterationData("m", m);
@@ -186,7 +219,7 @@ void ASinStep::solve() {
 		setIterationData("beta", beta);
 
 		nextIteration();
-		VecNorm(g, NORM_2, &rNorm);
+
 	}
 
 	VecDestroy(Ag);

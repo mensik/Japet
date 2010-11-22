@@ -185,8 +185,9 @@ void Feti1::projectGOrth(Vec in) {
 	VecScale(in, -1);
 }
 
-bool Feti1::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm, Vec *vec) {
-	PetscPrintf(PETSC_COMM_WORLD, "It.%d: residual norm:%f\n", itNumber, norm);
+bool Feti1::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
+		Vec *vec) {
+	//PetscPrintf(PETSC_COMM_WORLD, "It.%d: residual norm:%f\n", itNumber, norm);
 	lastNorm = norm;
 	return norm < 1e-4 || itNumber > 500;
 }
@@ -211,6 +212,9 @@ void Feti1::dumpSolution(PetscViewer v) {
 
 void Feti1::dumpSystem(PetscViewer v) {
 	MatView(A, v);
+	PetscInt sizeM, sizeN;
+	MatGetSize(A, &sizeM, &sizeN);
+	PetscPrintf(PETSC_COMM_WORLD,"DOF:%d\n", sizeM);
 	VecView(b, v);
 	MatView(B, v);
 }
@@ -223,17 +227,17 @@ void InexactFeti1::solve() {
 	KSPSetType(kspA, KSPCG);
 
 	PC prec;
-	KSPGetPC(kspA,&prec);
-  PCSetType(prec,PCILU);
+	KSPGetPC(kspA, &prec);
+	PCSetType(prec, PCILU);
 	PCSetUp(prec);
 	KSPSetPC(kspA, prec);
-  KSPSetUp(kspA);
+	KSPSetUp(kspA);
 
 	if (isLocalSingular) KSPSetNullSpace(kspA, locNS);
 
 	if (isLocalSingular) MatNullSpaceRemove(locNS, tempLoc, PETSC_NULL);
 
-	KSPSetTolerances(kspA, 1e-7,1e-7, 1e10, 100);
+	KSPSetTolerances(kspA, 1e-7, 1e-7, 1e10, 100);
 	KSPSolve(kspA, tempLoc, tempLoc);
 
 	Vec d;
@@ -260,8 +264,10 @@ void InexactFeti1::solve() {
 	lastNorm = 1e-4;
 	inCounter = 0;
 	solver = new ASinStep(this, d, lmb);
+	//solver = new RichardsSolver(this, d, lmb, 0.01);
 
 	solver->setSolverCtr(this);
+	solver->setIsVerbose(false);
 	//Solve!!!
 	solver->solve();
 	solver->saveIterationInfo("iFeti.dat");
@@ -269,7 +275,8 @@ void InexactFeti1::solve() {
 	solver->getX(lmb);
 	delete solver;
 
-	PetscPrintf(PETSC_COMM_WORLD, "%d\n", inCounter);
+	PetscPrintf(PETSC_COMM_WORLD, "In it: %d\n", inCounter);
+	PetscPrintf(PETSC_COMM_WORLD, "Out it: %d\n", solver->getItCount());
 	VecScale(lmb, -1);
 	MatMultTransposeAdd(B, lmb, b, temp);
 
@@ -297,16 +304,16 @@ void InexactFeti1::solve() {
 
 void InexactFeti1::applyMult(Vec in, Vec out) {
 
-	KSPSetTolerances(kspA, outerPrec,outerPrec,1e10, 1000);
+	KSPSetTolerances(kspA, outerPrec, outerPrec, 1e10, 1000);
 	//solver->setIterationData("inPrec", outerPrec);
-	
+
 	Feti1::applyMult(in, out);
 
 	PetscInt itNumber;
-	KSPGetIterationNumber(kspA,&itNumber);
+	KSPGetIterationNumber(kspA, &itNumber);
 	inCounter += itNumber;
 
-//	solver->saveIterationInfo("In. iterations", itNumber); 
+	//	solver->saveIterationInfo("In. iterations", itNumber);
 }
 
 void InexactFeti1::setRequiredPrecision(PetscReal reqPrecision) {
@@ -337,7 +344,7 @@ void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 
 void getLocalJumpPart(Mat B, Mat *Bloc) {
 
-	PetscInt m, n,rows;
+	PetscInt m, n, rows;
 	MatGetOwnershipRangeColumn(B, &m, &n);
 	MatGetSize(B, &rows, PETSC_NULL);
 	PetscInt size = n - m;
