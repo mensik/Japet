@@ -175,7 +175,7 @@ void ASinStep::solve() {
 
 		PetscReal reqPrec = fmax(fmin(outNorm, rNorm * 1e-1), 1e-6);
 		sApp->setRequiredPrecision(reqPrec);
-		if (reqPrec < pow(10,-1*(gradRestartLoop))) {
+		if (reqPrec < pow((float)10,(int)-1*(gradRestartLoop))) {
 			gradRestartLoop++;
 		}
 		setIterationData("reqPrec", reqPrec);

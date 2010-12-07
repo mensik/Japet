@@ -642,9 +642,7 @@ void Mesh::tear() {
 			}
 		}
 
-		//********************************
-		//			DISTRIBUTION
-		//*********************************
+
 
 		// Count vetrices,elements and edges per domain
 		std::set<PetscInt> vetSetPerDom[numOfPartitions];
@@ -655,6 +653,7 @@ void Mesh::tear() {
 		for (int i = 0; i < numOfPartitions; i++)
 			edgesPerDom[i] = 0;
 
+		//Refresh domain numbers for vetrices and gather sets for each domain
 		for (std::map<PetscInt, Element*>::iterator e = elements.begin(); e
 				!= elements.end(); e++) {
 			elementPerDom[epart[e->first]]++;
@@ -664,11 +663,18 @@ void Mesh::tear() {
 			}
 		}
 
+		//Refresh domain numbers for edges and gether sets of them for each domain
 		for (std::map<PetscInt, Edge*>::iterator e = edges.begin(); e
 				!= edges.end(); e++) {
 			e->second->domainInd = vetrices[e->second->vetrices[0]]->domainInd;
 			edgesPerDom[e->second->domainInd]++;
 		}
+
+
+
+		//********************************
+		//			DISTRIBUTION
+		//*********************************
 
 		PetscInt indexCounter = vetSetPerDom[0].size();
 		PetscInt elIndexCounter = elementPerDom[0];
@@ -699,6 +705,7 @@ void Mesh::tear() {
 			}
 		}
 
+		std::map<PetscInt, Point*> allVetrices = vetrices;
 		vetrices = masterVetrices;
 
 		AO procesOrdering;

@@ -57,7 +57,7 @@ void Smalbe::initPC() {
 	MatMatMultTranspose(Bloc, Bloc, MAT_REUSE_MATRIX, 1, &AroLoc);
 	MatAYPX(AroLoc, ro, A, DIFFERENT_NONZERO_PATTERN);
 
-	PCSetOperators(pc, AroLoc, AroLoc, SAME_PRECONDITIONER);
+	PCSetOperators(pc, A, A, SAME_PRECONDITIONER);
 	PCSetFromOptions(pc);
 
 //
@@ -82,8 +82,8 @@ bool Smalbe::isConverged(PetscInt itNum, PetscReal gpNorm, PetscReal bNorm, Vec 
 	MatMult(B, *x, tempMSize);
 	PetscReal normBx;
 	//VecNorm(tempMSize, NORM_2, &normBx);
-	VecNorm(tempMSize, NORM_2, &normBx);
-	PetscReal conv = normBx * M * sqrt((double)h);
+ VecNorm(tempMSize, NORM_MAX, &normBx);
+	PetscReal conv = normBx * M;
 	if (conv > mi) conv = mi;
 	return (gpNorm < conv);
 }
@@ -158,8 +158,8 @@ void Smalbe::solve() {
 				initPC();
 			}
 		}
-		VecNorm(tempMSize, NORM_2, &normBx);
-		normBx *= sqrt(h);
+		VecNorm(tempMSize, NORM_MAX, &normBx);
+	//	normBx *= sqrt(h);
 		previousL = actualL;
 
 		itManager.setIterationData("1. sqrt(h) |Bx|", normBx);

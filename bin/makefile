@@ -23,7 +23,11 @@ smalbe: testSMALBE.o chkopts $(MYLIB)
 
 test: test.o chkopts structures.o fem.o feti.o solver.o japetUtils.o
 	-${CLINKER} -o test test.o fem.o structures.o feti.o solver.o japetUtils.o ${PETSC_KSP_LIB}
-	${RM} test.o 
+	 ${RM} test.o 
+
+testStructures: testStructures.o chkopts structures.o fem.o feti.o solver.o japetUtils.o
+	-${CLINKER} -o testStructures testStructures.o fem.o structures.o feti.o solver.o japetUtils.o ${PETSC_KSP_LIB}
+	${RM} testStructures.o
 
 testSmale: testSmale.o chkopts $(MYLIB)
 	-${CLINKER} -o testSmale testSmale.o $(MYLIB) ${PETSC_KSP_LIB}
