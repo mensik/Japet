@@ -10,6 +10,29 @@ void MyMultiMap::saveNewPoint(PetscInt oldPointId, PetscInt domainId,
 	data[oldPointId].insert(std::pair<PetscInt, PetscInt>(domainId, newPointId));
 }
 
+void DomainPairings::insert(PetscInt domA, PetscInt domB, PetscInt *pair) {
+	if (domA > domB) {
+		PetscInt temp = domA;
+		domA = domB;
+		domB = temp;
+	}
+
+	data[domA][domB].push_back(pair[0]);
+	data[domA][domB].push_back(pair[1]);
+}
+
+void DomainPairings::getPairs(PetscInt domA, PetscInt domB, std::vector<
+		PetscInt>::iterator &begin, std::vector<PetscInt>::iterator &end) {
+	if (domA > domB) {
+		PetscInt temp = domA;
+		domA = domB;
+		domB = temp;
+	}
+
+	begin = data[domA][domB].begin();
+	end = data[domA][domB].end();
+}
+
 Mesh::~Mesh() {
 	PetscInt rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -36,6 +59,7 @@ Mesh::~Mesh() {
 					!= borderPairs.end(); p++) {
 				delete[] *p;
 			}
+			delete[] startIndexes;
 		}
 	}
 }
@@ -497,7 +521,6 @@ PetscErrorCode Mesh::partition(int numDomains) {
 	ierr = PetscFree(ie);
 	ierr = PetscFree(je);
 
-
 	int *rCounts;
 
 	if (!rank) {
@@ -506,12 +529,12 @@ PetscErrorCode Mesh::partition(int numDomains) {
 		rCounts = new int[size];
 		for (int i = 0; i < size; i++) {
 			rCounts[i] = eDist[i + 1] - eDist[i];
-		//	PetscPrintf(PETSC_COMM_SELF, "%d: dist: %d size: %d\n", i, eDist[i], rCounts[i]);
+			//	PetscPrintf(PETSC_COMM_SELF, "%d: dist: %d size: %d\n", i, eDist[i], rCounts[i]);
 		}
 
 		MPI_Gatherv(eLocPart, nElements, MPI_INT, epart, rCounts, eDist, MPI_INT, 0, PETSC_COMM_WORLD);
 
-		delete [] rCounts;
+		delete[] rCounts;
 	} else {
 		MPI_Gatherv(eLocPart, nElements, MPI_INT, NULL, NULL, NULL, MPI_INT, 0, PETSC_COMM_WORLD);
 
@@ -642,12 +665,11 @@ void Mesh::tear() {
 			}
 		}
 
-
-
 		// Count vetrices,elements and edges per domain
 		std::set<PetscInt> vetSetPerDom[numOfPartitions];
 		PetscInt elementPerDom[numOfPartitions];
 		PetscInt edgesPerDom[numOfPartitions];
+		startIndexes = new PetscInt[numOfPartitions];
 		for (int i = 0; i < numOfPartitions; i++)
 			elementPerDom[i] = 0;
 		for (int i = 0; i < numOfPartitions; i++)
@@ -670,16 +692,16 @@ void Mesh::tear() {
 			edgesPerDom[e->second->domainInd]++;
 		}
 
-
-
 		//********************************
 		//			DISTRIBUTION
 		//*********************************
 
 		PetscInt indexCounter = vetSetPerDom[0].size();
+		startIndexes[0] = 0;
 		PetscInt elIndexCounter = elementPerDom[0];
 		for (int i = 1; i < numOfPartitions; i++) {
 			int nv = vetSetPerDom[i].size();
+			startIndexes[i] = indexCounter;
 			MPI_Send(&nv, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);
 			MPI_Send(&indexCounter, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);
 			MPI_Send(elementPerDom + i, 1, MPI_INT, i, 0, PETSC_COMM_WORLD);
@@ -705,7 +727,6 @@ void Mesh::tear() {
 			}
 		}
 
-		std::map<PetscInt, Point*> allVetrices = vetrices;
 		vetrices = masterVetrices;
 
 		AO procesOrdering;
@@ -854,6 +875,36 @@ void Mesh::evalInNodes(PetscReal(*f)(Point), Vec *fv) {
 
 	VecAssemblyBegin(*fv);
 	VecAssemblyEnd(*fv);
+}
+
+void Mesh::analyzeDomainConection() {
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	DomainPairings pairings;
+	if (!rank) {
+		for (int i = 0; i < nPairs; i++) {
+			PetscInt *pair = pointPairing + i * 2;
+			pairings.insert(getNodeDomain(pair[0]), getNodeDomain(pair[1]), pair);
+		}
+
+		for (std::map<PetscInt, std::map<PetscInt, std::vector<PetscInt> > >::iterator
+				i = pairings.data.begin(); i != pairings.data.end(); i++) {
+			for (std::map<PetscInt, std::vector<PetscInt> >::iterator b =
+					i->second.begin(); b != i->second.end(); b++) {
+				PetscPrintf(PETSC_COMM_SELF, "%d - %d : %d \n", i->first, b->first, b->second.size());
+			}
+		}
+	}
+}
+
+PetscInt Mesh::getNodeDomain(PetscInt index) {
+	int domainIndex = 0;
+	while (domainIndex + 1 < numOfPartitions) {
+		if (index < startIndexes[domainIndex + 1]) break;
+		domainIndex++;
+	}
+
+	return domainIndex;
 }
 
 void extractLocalAPart(Mat A, Mat *Aloc) {

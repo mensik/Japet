@@ -24,13 +24,20 @@ public:
 	MyMultiMap() {
 		numOfPoints = 0;
 	}
-	;
+
 	PetscInt getNumOfPoints() {
 		return numOfPoints;
 	}
-	;
+
 	PetscInt getNewPointId(PetscInt oldPointId, PetscInt domainId);
 	void saveNewPoint(PetscInt oldPoint, PetscInt domainId, PetscInt newPoint);
+};
+
+class DomainPairings {
+public:
+	std::map<PetscInt, std::map<PetscInt, std::vector<PetscInt> > > data;
+	void insert(PetscInt domA, PetscInt domB, PetscInt* pair);
+	void getPairs(PetscInt domA, PetscInt domB, std::vector<PetscInt>::iterator &begin, std::vector<PetscInt>::iterator &end);
 };
 
 static const int MAX_VETRICES = 3;
@@ -107,6 +114,7 @@ public:
 	PetscInt *pointPairing; ///< array with pairs of neighbor vetrices
 	std::vector<PetscInt*> borderPairs; ///< vector of pairs (array length 2), pairs of neighbor edges
 	std::vector<Corner*> corners; ///< vector of indices to corners - grouped by corner
+	PetscInt *startIndexes;
 
 	void linkPointsToElements(); ///<Add element pointer to points
 	void regenerateEdges(); ///< Regenerates edges according to vetrices and elements
@@ -149,6 +157,10 @@ public:
 	 * @param[out] fv vector with values of f in nodes
 	 */
 	void evalInNodes(PetscReal(*f)(Point), Vec *fv);
+
+	void analyzeDomainConection();
+
+	PetscInt getNodeDomain(PetscInt index);
 };
 
 /**
