@@ -882,19 +882,87 @@ void Mesh::analyzeDomainConection() {
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	DomainPairings pairings;
 	if (!rank) {
+
+		PetscPrintf(PETSC_COMM_WORLD, "*** ANALYZESUBDOMAINS ****\n\n");
+
 		for (int i = 0; i < nPairs; i++) {
 			PetscInt *pair = pointPairing + i * 2;
 			pairings.insert(getNodeDomain(pair[0]), getNodeDomain(pair[1]), pair);
 		}
 
+		idxtype *xadj = new idxtype[numOfPartitions + 1];
+		for (int i = 0; i < numOfPartitions + 1; i++)
+			xadj[i] = 0;
+
 		for (std::map<PetscInt, std::map<PetscInt, std::vector<PetscInt> > >::iterator
 				i = pairings.data.begin(); i != pairings.data.end(); i++) {
 			for (std::map<PetscInt, std::vector<PetscInt> >::iterator b =
 					i->second.begin(); b != i->second.end(); b++) {
-				PetscPrintf(PETSC_COMM_SELF, "%d - %d : %d \n", i->first, b->first, b->second.size());
+				//PetscPrintf(PETSC_COMM_SELF, "%d - %d : %d \n", i->first, b->first, b->second.size());
+				xadj[i->first + 1]++;
+				xadj[b->first + 1]++;
 			}
 		}
+		//Sums up and finalize the xadj array
+		for (int i = numOfPartitions; i >= 0; i--)
+			for (int j = i + 1; j < numOfPartitions + 1; j++)
+				xadj[j] += xadj[i];
+
+		for (int i = 0; i < numOfPartitions + 1; i++) {
+			PetscPrintf(PETSC_COMM_SELF, "%d \n", xadj[i]);
+		}
+
+		idxtype *adjncy = new idxtype[xadj[numOfPartitions]];
+		idxtype *adjwgt = new idxtype[xadj[numOfPartitions]];
+
+		int *tempCounter = new int[numOfPartitions];
+		for (int i = 0; i < numOfPartitions; i++)
+			tempCounter[i] = 0;
+
+		for (std::map<PetscInt, std::map<PetscInt, std::vector<PetscInt> > >::iterator
+				i = pairings.data.begin(); i != pairings.data.end(); i++) {
+			for (std::map<PetscInt, std::vector<PetscInt> >::iterator b =
+					i->second.begin(); b != i->second.end(); b++) {
+
+				adjncy[xadj[i->first] + tempCounter[i->first]] = b->first;
+				adjncy[xadj[b->first] + tempCounter[b->first]] = i->first;
+
+				adjwgt[xadj[i->first] + tempCounter[i->first]] = b->second.size();
+				adjwgt[xadj[b->first] + tempCounter[b->first]] = b->second.size();
+
+				tempCounter[i->first]++;
+				tempCounter[b->first]++;
+			}
+		}
+
+		PetscPrintf(PETSC_COMM_SELF, "************** \n");
+		//for (int i = 0; i < xadj[numOfPartitions]; i++) {
+		//	PetscPrintf(PETSC_COMM_SELF, "%d - %d \n", adjncy[i], adjwgt[i]);
+		//}
+
+		int wgtflag = 1; //weights on edges
+		int numFlag = 0; //C style
+		int nparts = int(floor(sqrt(numOfPartitions)));
+		int options[] = { 0, 0, 0, 0, 0 };
+
+		int edgecut;
+		idxtype *part = new idxtype[numOfPartitions];
+
+		METIS_PartGraphKway(&numOfPartitions, xadj, adjncy, NULL, adjwgt, &wgtflag, &numFlag, &nparts, options, &edgecut, part);
+
+		for (int i = 0; i < numOfPartitions; i++) {
+			PetscPrintf(PETSC_COMM_SELF, "%d [%d] \n", i, part[i]);
+		}
+
+		delete[] tempCounter;
+
+		delete[] xadj;
+		delete[] adjncy;
+		delete[] adjwgt;
+
+		delete[] part;
 	}
+
 }
 
 PetscInt Mesh::getNodeDomain(PetscInt index) {

@@ -1,7 +1,7 @@
 #
 CFLAGS		 = 
 FFLAGS		 = 
-CPPFLAGS         = -Wno-unused-result 
+CPPFLAGS         = -Wno-unused-result -Ilib
 FPPFLAGS         =
 MANSEC           = Mat
 LOCDIR		 = 
@@ -9,8 +9,11 @@ MYLIB = smale.o solver.o fem.o feti.o structures.o smalbe.o japetUtils.o
 include ${PETSC_DIR}/conf/variables
 include ${PETSC_DIR}/conf/rules
 
-vpath %.h ../src
+headerDir = ../src
+
 vpath %.cpp ../src
+vpath %.h $(headerDir)
+
 
 testFeti: testFeti.o chkopts $(MYLIB)
 	-${CLINKER} -o testFeti testFeti.o $(MYLIB) ${PETSC_KSP_LIB}
@@ -26,8 +29,8 @@ test: test.o chkopts structures.o fem.o feti.o solver.o japetUtils.o
 	 ${RM} test.o 
 
 testStructures: testStructures.o chkopts structures.o fem.o feti.o solver.o japetUtils.o
-	-${CLINKER} -o testStructures testStructures.o fem.o structures.o feti.o solver.o japetUtils.o ${PETSC_KSP_LIB}
-	${RM} testStructures.o
+	-${CLINKER} -o testStructures testStructures.o fem.o structures.o feti.o solver.o japetUtils.o lib/libmetis.a ${PETSC_KSP_LIB} 
+	${RM} testStructures.o 
 
 testSmale: testSmale.o chkopts $(MYLIB)
 	-${CLINKER} -o testSmale testSmale.o $(MYLIB) ${PETSC_KSP_LIB}

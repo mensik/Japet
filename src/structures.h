@@ -16,6 +16,10 @@
 #include "petscao.h"
 #include "parmetis.h"
 
+extern "C" {
+	#include "metis.h"
+}
+
 
 class MyMultiMap {
 public:

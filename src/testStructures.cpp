@@ -14,7 +14,6 @@ int main(int argc, char *argv[]) {
 
 	PetscInitialize(&argc, &argv, (char *) 0, help);
 	PetscInt size, rank;
-	PetscTruth 			flg;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
 
@@ -22,7 +21,7 @@ int main(int argc, char *argv[]) {
 
 
 	Mesh *mesh = new Mesh();
-	mesh->generateRectangularMesh(0, 1, 0, 1, 0.5);
+	mesh->generateRectangularMesh(0, 1, 0, 1, 0.05);
 	mesh->partition(size);
 	mesh->tear();
 	mesh->analyzeDomainConection();
