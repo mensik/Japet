@@ -21,7 +21,7 @@ int main(int argc, char *argv[]) {
 
 
 	Mesh *mesh = new Mesh();
-	mesh->generateRectangularMesh(0, 1, 0, 1, 0.05);
+	mesh->generateRectangularMesh(0, 1, 0, 1, 0.01);
 	mesh->partition(size);
 	mesh->tear();
 	mesh->analyzeDomainConection();
@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
 	mesh->dumpForMatlab(v);
 	PetscViewerDestroy(v);
 
-	//mesh->save("testMesh.msh",false);
+	mesh->save("testMesh.msh",false);
 
 	delete mesh;
 	PetscFinalize();

@@ -293,37 +293,105 @@ PetscInt Mesh::getEdge(PetscInt nodeA, PetscInt nodeB) {
 }
 
 void Mesh::save(const char *filename, bool withEdges) {
-	PetscInt rank;
+	PetscInt rank, size;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_size(PETSC_COMM_WORLD, &size);
 
 	if (!rank) {
 		FILE *f;
 		f = fopen(filename, "w");
 
-		if (f != NULL) {
-			fprintf(f, "Vetrices (id:x y z)\n");
-			fprintf(f, "Num: %d\n", (int) vetrices.size());
-			for (std::map<PetscInt, Point*>::iterator i = vetrices.begin(); i
-					!= vetrices.end(); i++)
-				fprintf(f, "%d:%lf %lf %lf\n", i->first, i->second->x, i->second->y, i->second->z);
-			fprintf(f, "Elements (id:numVetrices [vetrices])\n");
-			fprintf(f, "Num: %d\n", (int) elements.size());
-			for (std::map<PetscInt, Element*>::iterator i = elements.begin(); i
-					!= elements.end(); i++) {
-				fprintf(f, "%d:%d", i->first, i->second->numVetrices);
-				for (int j = 0; j < i->second->numVetrices; j++)
-					fprintf(f, " %d", i->second->vetrices[j]);
+		int vAllSize = 0, vSize;
+		int vSizes[size];
+		vSize = (int) vetrices.size();
+		MPI_Gather(&vSize, 1, MPI_INT, vSizes, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+		for (int i = 0; i < size; i++)
+			vAllSize += vSizes[i];
+
+		fprintf(f, "#Vetrices (id:x y z domID)\n");
+		fprintf(f, "Num: %d\n", vAllSize);
+		for (std::map<PetscInt, Point*>::iterator i = vetrices.begin(); i
+				!= vetrices.end(); i++)
+			fprintf(f, "%d:%lf %lf %lf %d\n", i->first, i->second->x, i->second->y, i->second->z, 0);
+
+		for (int i = 1; i < size; i++)
+			for (int j = 0; j < vSizes[i]; j++) {
+				MPI_Status stat;
+				int id;
+				double coords[3];
+				MPI_Recv(&id, 1, MPI_INT, i, 0, PETSC_COMM_WORLD, &stat);
+				MPI_Recv(coords, 3, MPI_DOUBLE, i, 0, PETSC_COMM_WORLD, &stat);
+				fprintf(f, "%d:%lf %lf %lf %d\n", id, coords[0], coords[1], coords[2], i);
+			}
+
+		int eAllSize = 0, eSize;
+		int eSizes[size];
+		eSize = (int) elements.size();
+		MPI_Gather(&eSize, 1, MPI_INT, eSizes, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+		for (int i = 0; i < size; i++)
+			eAllSize += eSizes[i];
+
+		fprintf(f, "#Elements (id:domId numVetrices [vetrices])\n");
+		fprintf(f, "Num: %d\n", eAllSize);
+		for (std::map<PetscInt, Element*>::iterator i = elements.begin(); i
+				!= elements.end(); i++) {
+			fprintf(f, "%d:%d %d", i->first, 0, i->second->numVetrices);
+			for (int j = 0; j < i->second->numVetrices; j++)
+				fprintf(f, " %d", i->second->vetrices[j]);
+			fprintf(f, "\n");
+		}
+
+		for (int i = 1; i < size; i++)
+			for (int j = 0; j < eSizes[i]; j++) {
+				MPI_Status stat;
+				int intData[2]; // [id, numNodes]
+				MPI_Recv(intData, 2, MPI_INT, i, 0, PETSC_COMM_WORLD, &stat);
+
+				int *nodes = new int[intData[1]];
+				MPI_Recv(nodes, intData[1], MPI_INT, i, 0, PETSC_COMM_WORLD, &stat);
+				fprintf(f, "%d:%d %d", intData[0], i,intData[1]);
+				for (int j = 0; j < intData[1]; j++)
+					fprintf(f, " %d", nodes[j]);
 				fprintf(f, "\n");
 			}
-			if (withEdges) {
-				fprintf(f, "Edges (id:vetriceA vetriceB)\n");
-				fprintf(f, "Num: %d\n", (int) edges.size());
-				for (std::map<PetscInt, Edge*>::iterator i = edges.begin(); i
-						!= edges.end(); i++)
-					fprintf(f, "%d:%d %d\n", i->first, i->second->vetrices[0], i->second->vetrices[1]);
-			}
-			fclose(f);
+
+		//TODO DODELAT I PRO VICE PROCESU!!!!!!!!
+		if (withEdges) {
+			fprintf(f, "#Edges (id:vetriceA vetriceB)\n");
+			fprintf(f, "Num: %d\n", (int) edges.size());
+			for (std::map<PetscInt, Edge*>::iterator i = edges.begin(); i
+					!= edges.end(); i++)
+				fprintf(f, "%d:%d %d\n", i->first, i->second->vetrices[0], i->second->vetrices[1]);
 		}
+		fclose(f);
+
+	} else {
+		int vSize;
+		vSize = (int) vetrices.size();
+		MPI_Gather(&vSize, 1, MPI_INT, NULL, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+
+		for (std::map<PetscInt, Point*>::iterator i = vetrices.begin(); i
+				!= vetrices.end(); i++) {
+			int id = i->first;
+			double coords[] = { i->second->x, i->second->y, i->second->z };
+
+			MPI_Send(&id, 1, MPI_INT, 0, 0, PETSC_COMM_WORLD);
+			MPI_Send(coords, 3, MPI_DOUBLE, 0, 0, PETSC_COMM_WORLD);
+		}
+
+		int eSize;
+		eSize = (int) elements.size();
+		MPI_Gather(&eSize, 1, MPI_INT, NULL, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+
+		for (std::map<PetscInt, Element*>::iterator i = elements.begin(); i
+				!= elements.end(); i++) {
+
+			int intData[] = { i->first, i->second->numVetrices };
+			MPI_Send(intData, 2, MPI_INT, 0, 0, PETSC_COMM_WORLD);
+			MPI_Send(i->second->vetrices, intData[1], MPI_INT, 0, 0, PETSC_COMM_WORLD);
+
+		}
+
 	}
 }
 
@@ -878,7 +946,7 @@ void Mesh::evalInNodes(PetscReal(*f)(Point), Vec *fv) {
 }
 
 void Mesh::analyzeDomainConection() {
-	PetscInt rank;
+	PetscInt rank, color;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	DomainPairings pairings;
 	if (!rank) {
@@ -954,6 +1022,18 @@ void Mesh::analyzeDomainConection() {
 			PetscPrintf(PETSC_COMM_SELF, "%d [%d] \n", i, part[i]);
 		}
 
+		MPI_Scatter(part, 1, MPI_INT, &color, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+
+		PetscInt edgeCutSum = 0;
+		for (int i = 0; i < numOfPartitions; i++)
+			for (int j = xadj[i]; j < xadj[i + 1]; j++) {
+				if (part[i] != part[adjncy[j]]) {
+					edgeCutSum += adjwgt[j];
+				}
+			}
+
+		PetscPrintf(PETSC_COMM_SELF, "Extern cut: %d \n", edgeCutSum);
+
 		delete[] tempCounter;
 
 		delete[] xadj;
@@ -961,7 +1041,18 @@ void Mesh::analyzeDomainConection() {
 		delete[] adjwgt;
 
 		delete[] part;
+	} else {
+
+		MPI_Scatter(NULL, 1, MPI_INT, &color, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+
 	}
+	MPI_Comm subComm;
+	MPI_Comm_split(PETSC_COMM_WORLD, color, rank, &subComm);
+
+	PetscInt subRank;
+	MPI_Comm_rank(subComm, &subRank);
+
+	PetscPrintf(PETSC_COMM_SELF, "%d - %d - subRank: %d\n", rank, color, subRank);
 
 }
 
