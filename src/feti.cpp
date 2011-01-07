@@ -214,7 +214,7 @@ void Feti1::dumpSystem(PetscViewer v) {
 	MatView(A, v);
 	PetscInt sizeM, sizeN;
 	MatGetSize(A, &sizeM, &sizeN);
-	PetscPrintf(PETSC_COMM_WORLD,"DOF:%d\n", sizeM);
+	PetscPrintf(PETSC_COMM_WORLD, "DOF:%d\n", sizeM);
 	VecView(b, v);
 	MatView(B, v);
 }
@@ -340,6 +340,13 @@ void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 	VecSetSizes(lmb, PETSC_DECIDE, mesh->nPairs);
 	VecSetFromOptions(lmb);
 	VecSet(lmb, 0);
+}
+
+void GenerateClusterJumpOperator(Mesh *mesh, DomainPairings *pairings,
+		SubdomainCluster *cluster, Mat &BGlob, Vec &lmbGlob, Mat &BCluster,
+		Vec &lmbCluster) {
+
+
 }
 
 void getLocalJumpPart(Mat B, Mat *Bloc) {

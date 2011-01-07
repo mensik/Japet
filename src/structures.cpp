@@ -349,7 +349,7 @@ void Mesh::save(const char *filename, bool withEdges) {
 
 				int *nodes = new int[intData[1]];
 				MPI_Recv(nodes, intData[1], MPI_INT, i, 0, PETSC_COMM_WORLD, &stat);
-				fprintf(f, "%d:%d %d", intData[0], i,intData[1]);
+				fprintf(f, "%d:%d %d", intData[0], i, intData[1]);
 				for (int j = 0; j < intData[1]; j++)
 					fprintf(f, " %d", nodes[j]);
 				fprintf(f, "\n");
@@ -946,9 +946,10 @@ void Mesh::evalInNodes(PetscReal(*f)(Point), Vec *fv) {
 }
 
 void Mesh::analyzeDomainConection() {
-	PetscInt rank, color;
+	PetscInt rank, nparts = 0;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	DomainPairings pairings;
+	SubdomainCluster cluster;
 	if (!rank) {
 
 		PetscPrintf(PETSC_COMM_WORLD, "*** ANALYZESUBDOMAINS ****\n\n");
@@ -1010,7 +1011,7 @@ void Mesh::analyzeDomainConection() {
 
 		int wgtflag = 1; //weights on edges
 		int numFlag = 0; //C style
-		int nparts = int(floor(sqrt(numOfPartitions)));
+		nparts = int(floor(sqrt(numOfPartitions)));
 		int options[] = { 0, 0, 0, 0, 0 };
 
 		int edgecut;
@@ -1022,7 +1023,11 @@ void Mesh::analyzeDomainConection() {
 			PetscPrintf(PETSC_COMM_SELF, "%d [%d] \n", i, part[i]);
 		}
 
-		MPI_Scatter(part, 1, MPI_INT, &color, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+		MPI_Scatter(part, 1, MPI_INT, &(cluster.clusterColor), 1, MPI_INT, 0, PETSC_COMM_WORLD);
+
+		cluster.subdomainColors = new PetscInt[numOfPartitions];
+		for (int i = 0; i < numOfPartitions; i++)
+			cluster.subdomainColors[i] = part[i];
 
 		PetscInt edgeCutSum = 0;
 		for (int i = 0; i < numOfPartitions; i++)
@@ -1043,16 +1048,79 @@ void Mesh::analyzeDomainConection() {
 		delete[] part;
 	} else {
 
-		MPI_Scatter(NULL, 1, MPI_INT, &color, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+		MPI_Scatter(NULL, 1, MPI_INT, &(cluster.clusterColor), 1, MPI_INT, 0, PETSC_COMM_WORLD);
 
 	}
 	MPI_Comm subComm;
-	MPI_Comm_split(PETSC_COMM_WORLD, color, rank, &subComm);
-
+	MPI_Comm_split(PETSC_COMM_WORLD, cluster.clusterColor, rank, &subComm);
+	cluster.clusterComm = subComm;
 	PetscInt subRank;
-	MPI_Comm_rank(subComm, &subRank);
+	MPI_Comm_rank(cluster.clusterComm, &subRank);
 
-	PetscPrintf(PETSC_COMM_SELF, "%d - %d - subRank: %d\n", rank, color, subRank);
+	if (!rank) {
+		std::map<int, int> clusterMasters;
+		MPI_Status status;
+		for (int i = 1; i < nparts; i++) {
+			int temp[2];
+			MPI_Recv(temp, 2, MPI_INT, MPI_ANY_SOURCE, 0, PETSC_COMM_WORLD, &status);
+			clusterMasters[temp[0]] = temp[1];
+		}
+		typedef std::map<PetscInt, std::vector<PetscInt> > mapIn;
+		typedef std::map<PetscInt, mapIn> mapOut;
+		for (mapOut::iterator i = pairings.data.begin(); i != pairings.data.end(); i++)
+			for (mapIn::iterator j = (*i).second.begin(); j != (*i).second.end(); j++) {
+				int aColor = cluster.subdomainColors[i->first];
+				int bColor = cluster.subdomainColors[j->first];
+
+				if (aColor == bColor) {
+					if (aColor == 0) {
+						for (std::vector<PetscInt>::iterator p = j->second.begin(); p
+								!= j->second.end(); p++)
+							cluster.localPairing.push_back(*p);
+
+					} else {
+						int vSize = j->second.size();
+						PetscInt *temp = new PetscInt[vSize];
+						std::vector<PetscInt>::iterator p = j->second.begin();
+						for (int k = 0; k < vSize; k++, p++)
+							temp[k] = *p;
+
+						MPI_Send(&vSize, 1, MPI_INT, clusterMasters[aColor], 0, PETSC_COMM_WORLD);
+						MPI_Send(temp, vSize, MPI_INT, clusterMasters[aColor], 0, PETSC_COMM_WORLD);
+
+						delete[] temp;
+					}
+				} else {
+					for (std::vector<PetscInt>::iterator p = j->second.begin(); p
+							!= j->second.end(); p++)
+						cluster.globalPairing.push_back(*p);
+				}
+			}
+
+		for (int i = 1; i < nparts; i++) { //Message terminating sharing pairings
+			int msg = -1;
+			MPI_Send(&msg, 1, MPI_INT, clusterMasters[i], 0, PETSC_COMM_WORLD);
+		}
+	} else {
+		if (!subRank) {
+			//Send info about master on the cluster == [color, masterRank (in global comm)]
+			PetscInt info[] = { cluster.clusterColor, rank };
+			MPI_Send(info, 2, MPI_INT, 0, 0, PETSC_COMM_WORLD);
+
+			while (true) {
+				int vSize;
+				MPI_Status status;
+				MPI_Recv(&vSize, 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &status);
+				if (vSize == -1) break;
+
+				PetscInt *temp = new PetscInt[vSize];
+				MPI_Recv(temp, vSize, MPI_INT, 0, 0, PETSC_COMM_WORLD, &status);
+
+				for (int i = 0; i <vSize; i++)
+					cluster.localPairing.push_back(temp[i]);
+			}
+		}
+	}
 
 }
 

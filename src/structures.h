@@ -167,6 +167,19 @@ public:
 	PetscInt getNodeDomain(PetscInt index);
 };
 
+class SubdomainCluster {
+public:
+	MPI_Comm clusterComm;
+	PetscInt clusterColor;
+
+	//Root only
+	PetscInt *subdomainColors;
+	std::vector<PetscInt> globalPairing;
+
+	//cluster Roots
+	std::vector<PetscInt> localPairing;
+};
+
 /**
  @brief	Extract local part from global matrix A. Most likely will work best for
  this purpose.
