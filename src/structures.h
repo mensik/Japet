@@ -44,6 +44,24 @@ public:
 	void getPairs(PetscInt domA, PetscInt domB, std::vector<PetscInt>::iterator &begin, std::vector<PetscInt>::iterator &end);
 };
 
+class SubdomainCluster {
+public:
+	MPI_Comm clusterComm;
+	PetscInt clusterColor;
+
+	//Root only
+	PetscInt *subdomainColors;
+	std::vector<PetscInt> globalPairing;
+
+	//cluster Roots
+	std::vector<PetscInt> localPairing;
+
+	//cluster Roots
+
+	std::map<PetscInt, PetscInt> startIndexesDiff;
+};
+
+
 static const int MAX_VETRICES = 3;
 static const int MAX_CORNER_SIZE = 6;
 /// Struct representing general elements of mesh
@@ -162,23 +180,11 @@ public:
 	 */
 	void evalInNodes(PetscReal(*f)(Point), Vec *fv);
 
-	void analyzeDomainConection();
+	void createCluster(SubdomainCluster *cluster);
 
 	PetscInt getNodeDomain(PetscInt index);
 };
 
-class SubdomainCluster {
-public:
-	MPI_Comm clusterComm;
-	PetscInt clusterColor;
-
-	//Root only
-	PetscInt *subdomainColors;
-	std::vector<PetscInt> globalPairing;
-
-	//cluster Roots
-	std::vector<PetscInt> localPairing;
-};
 
 /**
  @brief	Extract local part from global matrix A. Most likely will work best for

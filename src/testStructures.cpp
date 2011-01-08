@@ -2,6 +2,7 @@ static char help[] = "My first own testing utility for PETSc\n\n";
 
 #include <iostream>
 #include "fem.h"
+#include "feti.h"
 #include "structures.h"
 #include "solver.h"
 #include "petscmat.h"
@@ -19,12 +20,17 @@ int main(int argc, char *argv[]) {
 
 	PetscPrintf(PETSC_COMM_WORLD, "STARTING\n");
 
-
 	Mesh *mesh = new Mesh();
 	mesh->generateRectangularMesh(0, 1, 0, 1, 0.01);
 	mesh->partition(size);
 	mesh->tear();
-	mesh->analyzeDomainConection();
+	SubdomainCluster cluster;
+	mesh->createCluster(&cluster);
+
+	Mat Bl, Bg;
+	Vec lmbG, lmbL;
+	//GenerateJumpOperator(mesh, Bg, lmbG);
+	GenerateClusterJumpOperator(mesh, &cluster, Bg, lmbG, Bl, lmbL);
 
 	PetscViewer v;
 	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);

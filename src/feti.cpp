@@ -342,11 +342,58 @@ void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 	VecSet(lmb, 0);
 }
 
-void GenerateClusterJumpOperator(Mesh *mesh, DomainPairings *pairings,
-		SubdomainCluster *cluster, Mat &BGlob, Vec &lmbGlob, Mat &BCluster,
-		Vec &lmbCluster) {
+void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
+		Mat &BGlob, Vec &lmbGlob, Mat &BCluster, Vec &lmbCluster) {
+	PetscInt rank, subRank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_rank(cluster->clusterComm, &subRank);
 
+	//Preparation - scatter of the informations
+	PetscInt globalPairCount, localPairCount;
+	if (!rank) {
+		globalPairCount = cluster->globalPairing.size() / 2;
+	}
+	MPI_Bcast(&globalPairCount, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+	if (!subRank) {
+		localPairCount = cluster->localPairing.size() / 2;
+	}
+	MPI_Bcast(&localPairCount, 1, MPI_INT, 0, cluster->clusterComm);
 
+	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, mesh->vetrices.size(), globalPairCount, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BGlob);
+	VecCreateMPI(PETSC_COMM_WORLD, mesh->vetrices.size(), PETSC_DECIDE, &lmbGlob);
+
+	if (!rank) {
+		std::vector<PetscInt>::iterator i = cluster->globalPairing.begin();
+		for (int rowCounter = 0; rowCounter < globalPairCount; rowCounter++) {
+			MatSetValue(BGlob, rowCounter, *(i++), 1, INSERT_VALUES);
+			MatSetValue(BGlob, rowCounter, *(i++), -1, INSERT_VALUES);
+		}
+	}
+
+	MatAssemblyBegin(BGlob, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(BGlob, MAT_FINAL_ASSEMBLY);
+	VecSet(lmbGlob, 0);
+
+	MatCreateMPIAIJ(cluster->clusterComm, PETSC_DECIDE, mesh->vetrices.size(), localPairCount, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BCluster);
+	VecCreateMPI(cluster->clusterComm, mesh->vetrices.size(), PETSC_DECIDE, &lmbCluster);
+
+	if (!subRank) {
+		std::vector<PetscInt>::iterator i = cluster->localPairing.begin();
+		for (int rowCounter = 0; rowCounter < localPairCount; rowCounter++) {
+			PetscInt globalIndex = *(i++);
+			PetscInt clusterIndex = globalIndex
+					+ cluster->startIndexesDiff[mesh->getNodeDomain(globalIndex)];
+			MatSetValue(BCluster, rowCounter, clusterIndex, 1, INSERT_VALUES);
+			globalIndex = *(i++);
+			clusterIndex = globalIndex
+					+ cluster->startIndexesDiff[mesh->getNodeDomain(globalIndex)];
+			MatSetValue(BCluster, rowCounter, clusterIndex, -1, INSERT_VALUES);
+		}
+	}
+
+	MatAssemblyBegin(BCluster, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(BCluster, MAT_FINAL_ASSEMBLY);
+	VecSet(lmbCluster, 0);
 }
 
 void getLocalJumpPart(Mat B, Mat *Bloc) {

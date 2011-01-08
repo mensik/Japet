@@ -78,7 +78,7 @@ public:
 };
 
 void GenerateJumpOperator(Mesh *mesh,Mat &B, Vec &lmb);
-void GenerateClusterJumpOperator(Mesh *mesh, DomainPairings *pairings, SubdomainCluster *cluster, Mat &BGlob, Vec &lmbGlob, Mat &BCluster, Vec &lmbCluster);
+void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster, Mat &BGlob, Vec &lmbGlob, Mat &BCluster, Vec &lmbCluster);
 void Generate2DLaplaceNullSpace(Mesh *mesh,bool &isSingular,bool &isLocalSingular, Mat *Rmat);
 void getLocalJumpPart(Mat B, Mat *Bloc);
 

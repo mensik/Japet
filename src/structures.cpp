@@ -59,8 +59,12 @@ Mesh::~Mesh() {
 					!= borderPairs.end(); p++) {
 				delete[] *p;
 			}
-			delete[] startIndexes;
+
 		}
+	}
+
+	if (isPartitioned) {
+		delete[] startIndexes;
 	}
 }
 
@@ -929,8 +933,10 @@ void Mesh::tear() {
 			borderEdges.insert(borderId);
 		}
 		MPI_Bcast(&nPairs, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+		startIndexes = new PetscInt[numOfPartitions];
 	}
 
+	MPI_Bcast(startIndexes, numOfPartitions, MPI_INT, 0, PETSC_COMM_WORLD);
 }
 
 void Mesh::evalInNodes(PetscReal(*f)(Point), Vec *fv) {
@@ -945,11 +951,11 @@ void Mesh::evalInNodes(PetscReal(*f)(Point), Vec *fv) {
 	VecAssemblyEnd(*fv);
 }
 
-void Mesh::analyzeDomainConection() {
+void Mesh::createCluster(SubdomainCluster *cluster) {
 	PetscInt rank, nparts = 0;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	DomainPairings pairings;
-	SubdomainCluster cluster;
+	idxtype *part;
 	if (!rank) {
 
 		PetscPrintf(PETSC_COMM_WORLD, "*** ANALYZESUBDOMAINS ****\n\n");
@@ -1015,7 +1021,7 @@ void Mesh::analyzeDomainConection() {
 		int options[] = { 0, 0, 0, 0, 0 };
 
 		int edgecut;
-		idxtype *part = new idxtype[numOfPartitions];
+		part = new idxtype[numOfPartitions];
 
 		METIS_PartGraphKway(&numOfPartitions, xadj, adjncy, NULL, adjwgt, &wgtflag, &numFlag, &nparts, options, &edgecut, part);
 
@@ -1023,11 +1029,11 @@ void Mesh::analyzeDomainConection() {
 			PetscPrintf(PETSC_COMM_SELF, "%d [%d] \n", i, part[i]);
 		}
 
-		MPI_Scatter(part, 1, MPI_INT, &(cluster.clusterColor), 1, MPI_INT, 0, PETSC_COMM_WORLD);
+		MPI_Scatter(part, 1, MPI_INT, &(cluster->clusterColor), 1, MPI_INT, 0, PETSC_COMM_WORLD);
 
-		cluster.subdomainColors = new PetscInt[numOfPartitions];
+		cluster->subdomainColors = new PetscInt[numOfPartitions];
 		for (int i = 0; i < numOfPartitions; i++)
-			cluster.subdomainColors[i] = part[i];
+			cluster->subdomainColors[i] = part[i];
 
 		PetscInt edgeCutSum = 0;
 		for (int i = 0; i < numOfPartitions; i++)
@@ -1045,17 +1051,16 @@ void Mesh::analyzeDomainConection() {
 		delete[] adjncy;
 		delete[] adjwgt;
 
-		delete[] part;
 	} else {
 
-		MPI_Scatter(NULL, 1, MPI_INT, &(cluster.clusterColor), 1, MPI_INT, 0, PETSC_COMM_WORLD);
+		MPI_Scatter(NULL, 1, MPI_INT, &(cluster->clusterColor), 1, MPI_INT, 0, PETSC_COMM_WORLD);
 
 	}
 	MPI_Comm subComm;
-	MPI_Comm_split(PETSC_COMM_WORLD, cluster.clusterColor, rank, &subComm);
-	cluster.clusterComm = subComm;
+	MPI_Comm_split(PETSC_COMM_WORLD, cluster->clusterColor, rank, &subComm);
+	cluster->clusterComm = subComm;
 	PetscInt subRank;
-	MPI_Comm_rank(cluster.clusterComm, &subRank);
+	MPI_Comm_rank(cluster->clusterComm, &subRank);
 
 	if (!rank) {
 		std::map<int, int> clusterMasters;
@@ -1069,16 +1074,16 @@ void Mesh::analyzeDomainConection() {
 		typedef std::map<PetscInt, mapIn> mapOut;
 		for (mapOut::iterator i = pairings.data.begin(); i != pairings.data.end(); i++)
 			for (mapIn::iterator j = (*i).second.begin(); j != (*i).second.end(); j++) {
-				int aColor = cluster.subdomainColors[i->first];
-				int bColor = cluster.subdomainColors[j->first];
+				int aColor = cluster->subdomainColors[i->first];
+				int bColor = cluster->subdomainColors[j->first];
 
 				if (aColor == bColor) {
-					if (aColor == 0) {
+					if (aColor == 0) { //local cluster
 						for (std::vector<PetscInt>::iterator p = j->second.begin(); p
 								!= j->second.end(); p++)
-							cluster.localPairing.push_back(*p);
+							cluster->localPairing.push_back(*p);
 
-					} else {
+					} else { //send pairings to other cluster roots
 						int vSize = j->second.size();
 						PetscInt *temp = new PetscInt[vSize];
 						std::vector<PetscInt>::iterator p = j->second.begin();
@@ -1090,10 +1095,10 @@ void Mesh::analyzeDomainConection() {
 
 						delete[] temp;
 					}
-				} else {
+				} else { //global pairing is saved here, on global root
 					for (std::vector<PetscInt>::iterator p = j->second.begin(); p
 							!= j->second.end(); p++)
-						cluster.globalPairing.push_back(*p);
+						cluster->globalPairing.push_back(*p);
 				}
 			}
 
@@ -1104,10 +1109,10 @@ void Mesh::analyzeDomainConection() {
 	} else {
 		if (!subRank) {
 			//Send info about master on the cluster == [color, masterRank (in global comm)]
-			PetscInt info[] = { cluster.clusterColor, rank };
+			PetscInt info[] = { cluster->clusterColor, rank };
 			MPI_Send(info, 2, MPI_INT, 0, 0, PETSC_COMM_WORLD);
 
-			while (true) {
+			while (true) { //Receive pairings belonging only to cluster
 				int vSize;
 				MPI_Status status;
 				MPI_Recv(&vSize, 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &status);
@@ -1116,12 +1121,47 @@ void Mesh::analyzeDomainConection() {
 				PetscInt *temp = new PetscInt[vSize];
 				MPI_Recv(temp, vSize, MPI_INT, 0, 0, PETSC_COMM_WORLD, &status);
 
-				for (int i = 0; i <vSize; i++)
-					cluster.localPairing.push_back(temp[i]);
+				for (int i = 0; i < vSize; i++)
+					cluster->localPairing.push_back(temp[i]);
 			}
 		}
 	}
 
+	if (rank) {
+		part = new idxtype[numOfPartitions];
+	}
+	MPI_Bcast(part, numOfPartitions, MPI_INT, 0, PETSC_COMM_WORLD);
+
+	PetscInt clusterStartIndexDiff = 0;
+	for (int i = 0; i < rank; i++) {
+		if (part[i] == cluster->clusterColor) {
+			clusterStartIndexDiff += startIndexes[i + 1] - startIndexes[i];
+		}
+	}
+
+	clusterStartIndexDiff -= startIndexes[rank];
+
+	if (!subRank) {
+		int clusterSize;
+		MPI_Comm_size(cluster->clusterComm, &clusterSize);
+		PetscInt *clusterStartIndexesDiff = new PetscInt[clusterSize];
+		MPI_Gather(&clusterStartIndexDiff, 1, MPI_INT, clusterStartIndexesDiff, 1, MPI_INT, 0, cluster->clusterComm);
+
+		MPI_Status status;
+		cluster->startIndexesDiff[rank] = clusterStartIndexDiff;
+		for (int i = 1; i < clusterSize; i++) { //Receive original rank from all cluster workers
+			PetscInt origRank;
+			MPI_Recv(&origRank, 1, MPI_INT, i, 0, cluster->clusterComm, &status);
+			cluster->startIndexesDiff[origRank] = clusterStartIndexesDiff[i];
+		}
+
+		delete [] clusterStartIndexesDiff;
+	} else {
+		MPI_Gather(&clusterStartIndexDiff, 1, MPI_INT, NULL, 1, MPI_INT, 0, cluster->clusterComm);
+		MPI_Send(&rank, 1, MPI_INT, 0, 0, cluster->clusterComm);
+	}
+
+	delete[] part;
 }
 
 PetscInt Mesh::getNodeDomain(PetscInt index) {
