@@ -27,17 +27,24 @@ int main(int argc, char *argv[]) {
 	SubdomainCluster cluster;
 	mesh->createCluster(&cluster);
 
-	Mat Bl, Bg;
+	Mat Bl, Bg, Rg, Rl;
 	Vec lmbG, lmbL;
 	//GenerateJumpOperator(mesh, Bg, lmbG);
+
 	GenerateClusterJumpOperator(mesh, &cluster, Bg, lmbG, Bl, lmbL);
 
+	Generate2DLaplaceClusterNullSpace(mesh, &cluster, Rg, Rl);
 	PetscViewer v;
+
+	PetscViewerASCIIOpen(PETSC_COMM_WORLD, "matlab/R.m", &v);
+	MatView(Rg, v);
+	PetscViewerDestroy(v);
+
 	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
 	mesh->dumpForMatlab(v);
 	PetscViewerDestroy(v);
 
-	mesh->save("testMesh.msh",false);
+	//mesh->save("testMesh.msh", false);
 
 	delete mesh;
 	PetscFinalize();

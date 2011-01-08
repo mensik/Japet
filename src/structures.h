@@ -48,6 +48,14 @@ class SubdomainCluster {
 public:
 	MPI_Comm clusterComm;
 	PetscInt clusterColor;
+	PetscInt clusterCount;
+
+	//Information required by FETI
+	bool isSubDomainSingular;
+	bool isClusterSingular;
+	bool isDomainSingular;
+
+	PetscInt indexDiff;
 
 	//Root only
 	PetscInt *subdomainColors;

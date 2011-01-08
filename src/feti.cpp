@@ -374,6 +374,7 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 	MatAssemblyEnd(BGlob, MAT_FINAL_ASSEMBLY);
 	VecSet(lmbGlob, 0);
 
+
 	MatCreateMPIAIJ(cluster->clusterComm, PETSC_DECIDE, mesh->vetrices.size(), localPairCount, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BCluster);
 	VecCreateMPI(cluster->clusterComm, mesh->vetrices.size(), PETSC_DECIDE, &lmbCluster);
 
@@ -413,10 +414,10 @@ void getLocalJumpPart(Mat B, Mat *Bloc) {
 }
 
 void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
-		bool &isLocalSingular, Mat *R) {
+		bool &isLocalSingular, Mat *R, MPI_Comm comm) {
 	PetscInt rank, size;
-	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-	MPI_Comm_size(PETSC_COMM_WORLD, &size);
+	MPI_Comm_rank(comm, &rank);
+	MPI_Comm_size(comm, &size);
 
 	//Zjisti, zda ma subdomena na tomto procesoru dirchletovu hranici (zda je regularni)
 	PetscInt hasDirchBound = 0;
@@ -428,7 +429,7 @@ void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 	}
 
 	PetscInt nullSpaceDim;
-	MPI_Allreduce(&hasDirchBound, &nullSpaceDim, 1, MPI_INT, MPI_SUM, PETSC_COMM_WORLD); //Sum number of regular subdomains
+	MPI_Allreduce(&hasDirchBound, &nullSpaceDim, 1, MPI_INT, MPI_SUM, comm); //Sum number of regular subdomains
 	nullSpaceDim = size - nullSpaceDim; //Dimnesion of null space is number of subdomains without dirch. border
 	PetscInt nsDomInd[nullSpaceDim];
 
@@ -441,14 +442,14 @@ void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 			}
 
 			for (; counter < nullSpaceDim; counter++)
-				MPI_Recv(nsDomInd + counter, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, PETSC_COMM_WORLD, &stats);
+				MPI_Recv(nsDomInd + counter, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, comm, &stats);
 		} else {
-			if (hasDirchBound == 0) MPI_Send(&rank, 1, MPI_INT, 0, 0, PETSC_COMM_WORLD);
+			if (hasDirchBound == 0) MPI_Send(&rank, 1, MPI_INT, 0, 0, comm);
 		}
-		MPI_Bcast(nsDomInd, nullSpaceDim, MPI_INT, 0, PETSC_COMM_WORLD);
+		MPI_Bcast(nsDomInd, nullSpaceDim, MPI_INT, 0, comm);
 
 		//Creating of matrix R - null space basis
-		MatCreateMPIDense(PETSC_COMM_WORLD, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, nullSpaceDim, PETSC_NULL, R);
+		MatCreateMPIDense(comm, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, nullSpaceDim, PETSC_NULL, R);
 		for (int i = 0; i < nullSpaceDim; i++) {
 			if (nsDomInd[i] == rank) {
 				for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
@@ -461,9 +462,127 @@ void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 		MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
 		isSingular = true;
-		PetscPrintf(PETSC_COMM_WORLD, "Null space dimension: %d \n", nullSpaceDim);
+		PetscPrintf(comm, "Null space dimension: %d \n", nullSpaceDim);
 	} else {
 		isSingular = false;
+	}
+}
+
+void genClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster, Mat *R) {
+	PetscInt rank, size;
+	MPI_Comm comm = cluster->clusterComm;
+	MPI_Comm_rank(comm, &rank);
+	MPI_Comm_size(comm, &size);
+
+	//Zjisti, zda ma subdomena na tomto procesoru dirchletovu hranici (zda je regularni)
+	PetscInt hasDirchBound = 0;
+	cluster->isSubDomainSingular = true;
+
+	if (mesh->borderEdges.size() > 0) {
+		hasDirchBound = 1;
+		cluster->isSubDomainSingular = false;
+	}
+
+	PetscInt nullSpaceDim;
+	MPI_Allreduce(&hasDirchBound, &nullSpaceDim, 1, MPI_INT, MPI_SUM, comm); //Sum number of regular subdomains
+	nullSpaceDim = size - nullSpaceDim; //Dimnesion of null space is number of subdomains without dirch. border
+	PetscInt nsDomInd[nullSpaceDim];
+
+	if (nullSpaceDim > 0) {
+		if (!rank) { //Master gathers array of singular domain indexes and sends it to all proceses
+			MPI_Status stats;
+			PetscInt counter = 0;
+			if (hasDirchBound == 0) {
+				nsDomInd[counter++] = rank;
+			}
+
+			for (; counter < nullSpaceDim; counter++)
+				MPI_Recv(nsDomInd + counter, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, comm, &stats);
+		} else {
+			if (hasDirchBound == 0) MPI_Send(&rank, 1, MPI_INT, 0, 0, comm);
+		}
+		MPI_Bcast(nsDomInd, nullSpaceDim, MPI_INT, 0, comm);
+
+		//Creating of matrix R - null space basis
+		MatCreateMPIDense(comm, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, nullSpaceDim, PETSC_NULL, R);
+		for (int i = 0; i < nullSpaceDim; i++) {
+			if (nsDomInd[i] == rank) {
+				for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
+						!= mesh->vetrices.end(); v++) {
+
+					MatSetValue(*R, v->first + cluster->indexDiff, i, 1, INSERT_VALUES);
+				}
+			}
+		}
+
+		MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
+		MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
+		cluster->isClusterSingular = true;
+		PetscPrintf(comm, "Cluster %d (size %d) null space dimension: %d \n", cluster->clusterColor, size, nullSpaceDim);
+	} else {
+		cluster->isClusterSingular = false;
+	}
+}
+
+void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster,
+		Mat &RGlob, Mat &RClust) {
+	PetscInt rank, size, clusterRank, clusterSize;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_size(PETSC_COMM_WORLD, &size);
+	MPI_Comm_rank(cluster->clusterComm, &clusterRank);
+	MPI_Comm_size(cluster->clusterComm, &clusterSize);
+
+	genClusterNullSpace(mesh, cluster, &RClust);
+
+	PetscInt nullSpaceDim, hasDirchBound = clusterRank?0:1; //Only cluster rank add to the null space
+
+	if (cluster->isClusterSingular) {
+		PetscInt clusterNullSpaceDim, n;
+		MPI_Comm_size(cluster->clusterComm, &clusterSize);
+		MatGetSize(RClust, &n, &clusterNullSpaceDim);
+		if (clusterNullSpaceDim == clusterSize) hasDirchBound = 0;
+	}
+
+	MPI_Allreduce(&hasDirchBound, &nullSpaceDim, 1, MPI_INT, MPI_SUM, PETSC_COMM_WORLD); //Sum number of regular subdomains
+	nullSpaceDim = cluster->clusterCount - nullSpaceDim; //Dimnesion of null space is number of subdomains without dirch. border
+	PetscInt nsDomInd[nullSpaceDim];
+
+	if (nullSpaceDim > 0) {
+		if (!rank) { //Master gathers array of singular domain indexes and sends it to all proceses
+			MPI_Status stats;
+			PetscInt counter = 0;
+			if (hasDirchBound == 0) {
+				nsDomInd[counter++] = cluster->clusterColor;
+			}
+
+			for (; counter < nullSpaceDim; counter++)
+				MPI_Recv(nsDomInd + counter, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, PETSC_COMM_WORLD, &stats);
+
+
+		} else if (!clusterRank) {
+			if (hasDirchBound == 0) MPI_Send(&(cluster->clusterColor), 1, MPI_INT, 0, 0, PETSC_COMM_WORLD);
+		}
+
+		MPI_Bcast(nsDomInd, nullSpaceDim, MPI_INT, 0, PETSC_COMM_WORLD);
+
+		//Creating of matrix R - null space basis
+		MatCreateMPIDense(PETSC_COMM_WORLD, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, nullSpaceDim, PETSC_NULL, &RGlob);
+		for (int i = 0; i < nullSpaceDim; i++) {
+			if (nsDomInd[i] == cluster->clusterColor) {
+				for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
+						!= mesh->vetrices.end(); v++) {
+					MatSetValue(RGlob, v->first, i, 1, INSERT_VALUES);
+				}
+			}
+		}
+
+		MatAssemblyBegin(RGlob, MAT_FINAL_ASSEMBLY);
+		MatAssemblyEnd(RGlob, MAT_FINAL_ASSEMBLY);
+		cluster->isDomainSingular = true;
+		PetscPrintf(PETSC_COMM_WORLD, "Null space dimension: %d \n", nullSpaceDim);
+	} else {
+		PetscPrintf(PETSC_COMM_WORLD, "Clusters are not singular\n");
+		cluster->isDomainSingular = false;
 	}
 }
 
