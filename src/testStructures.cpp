@@ -21,23 +21,23 @@ int main(int argc, char *argv[]) {
 	PetscPrintf(PETSC_COMM_WORLD, "STARTING\n");
 
 	Mesh *mesh = new Mesh();
-	mesh->generateRectangularMesh(0, 1, 0, 1, 0.01);
+	mesh->generateRectangularMesh(0, 1, 0, 1, 0.05);
 	mesh->partition(size);
 	mesh->tear();
 	SubdomainCluster cluster;
 	mesh->createCluster(&cluster);
 
-	Mat Bl, Bg, Rg, Rl;
+	Mat Bl, Bg;
 	Vec lmbG, lmbL;
 	//GenerateJumpOperator(mesh, Bg, lmbG);
 
 	GenerateClusterJumpOperator(mesh, &cluster, Bg, lmbG, Bl, lmbL);
 
-	Generate2DLaplaceClusterNullSpace(mesh, &cluster, Rg, Rl);
+	Generate2DLaplaceClusterNullSpace(mesh, &cluster);
 	PetscViewer v;
 
 	PetscViewerASCIIOpen(PETSC_COMM_WORLD, "matlab/R.m", &v);
-	MatView(Rg, v);
+	//MatView(Rg, v);
 	PetscViewerDestroy(v);
 
 	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);

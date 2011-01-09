@@ -1,23 +1,21 @@
 #include "feti.h"
+AFeti::AFeti(Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
+		PetscInt localNodeCount, MPI_Comm c) {
 
-Feti1::Feti1(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point)) {
+	comm = c;
+	this->b = b;
+	this->B = B;
+	this->lmb = lmb;
 
-	FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, f, K);
-	GenerateJumpOperator(mesh, B, lmb);
-	Generate2DLaplaceNullSpace(mesh, isSingular, isLocalSingular, &R);
-
-	//Extrakce lokalni casti matice tuhosti A
-	extractLocalAPart(A, &Aloc);
-	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
-	if (isLocalSingular) {
-		MatNullSpaceCreate(PETSC_COMM_SELF, PETSC_TRUE, 0, PETSC_NULL, &locNS);
-	}
+	isLocalSingular = nullSpace->isSubDomainSingular;
+	isSingular = nullSpace->isDomainSingular;
+	R = nullSpace->R;
 
 	if (isSingular) {
 		MatMatMult(B, R, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &G);
 
 		PetscInt rank;
-		MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+		MPI_Comm_rank(comm, &rank);
 		Mat GTG;
 		MatGetSize(G, &gM, &gN);
 		if (!rank) { //Bloody messy hellish way to compute GTG - need to compute localy
@@ -31,7 +29,7 @@ Feti1::Feti1(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point)) {
 			GLOC = *gl;
 
 			MatMatMultTranspose(GLOC, GLOC, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GTGloc);
-			MatCreateMPIDense(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, gN, gN, PETSC_NULL, &GTG);
+			MatCreateMPIDense(comm, PETSC_DECIDE, PETSC_DECIDE, gN, gN, PETSC_NULL, &GTG);
 
 			PetscScalar data[gN * gN];
 			PetscInt idx[gN];
@@ -51,7 +49,7 @@ Feti1::Feti1(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point)) {
 			ISCreateStride(PETSC_COMM_SELF, 0, 0, 1, &IScols);
 			Mat *gl;
 			MatGetSubMatrices(G, 1, &ISrows, &IScols, MAT_INITIAL_MATRIX, &gl);
-			MatCreateMPIDense(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, gN, gN, PETSC_NULL, &GTG);
+			MatCreateMPIDense(comm, PETSC_DECIDE, PETSC_DECIDE, gN, gN, PETSC_NULL, &GTG);
 			ISDestroy(ISrows);
 			ISDestroy(IScols);
 		}
@@ -59,42 +57,36 @@ Feti1::Feti1(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point)) {
 		MatAssemblyBegin(GTG, MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(GTG, MAT_FINAL_ASSEMBLY);
 
-		KSPCreate(PETSC_COMM_WORLD, &kspG);
+		KSPCreate(comm, &kspG);
 		KSPSetOperators(kspG, GTG, GTG, SAME_PRECONDITIONER);
 		MatDestroy(GTG);
 
-		VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, gN, &tgA);
+		VecCreateMPI(comm, PETSC_DECIDE, gN, &tgA);
 		VecDuplicate(tgA, &tgB);
 	}
 	//Priprava ghostovaneho vektoru TEMP a kopie vektoru b do lokalnich casti bloc	
-	VecCreateGhost(PETSC_COMM_WORLD, mesh->vetrices.size(), PETSC_DECIDE, 0, PETSC_NULL, &temp);
+	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &temp);
 	VecCopy(b, temp);
 	VecGhostGetLocalForm(temp, &tempLoc);
 	VecDuplicate(tempLoc, &tempLocB);
 
-	VecCreateSeq(PETSC_COMM_SELF, mesh->vetrices.size(), &bloc);
+	VecCreateSeq(PETSC_COMM_SELF, localNodeCount, &bloc);
 	VecCopy(tempLoc, bloc);
 
 	//Ghostovany vektor reseni
-	VecCreateGhost(PETSC_COMM_WORLD, mesh->vetrices.size(), PETSC_DECIDE, 0, PETSC_NULL, &u);
+	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &u);
 	VecSet(u, 0);
 
 	VecGhostGetLocalForm(u, &uloc);
-
-	KSPCreate(PETSC_COMM_SELF, &kspA);
-	KSPSetOperators(kspA, Aloc, Aloc, SAME_PRECONDITIONER);
 }
 
-Feti1::~Feti1() {
-	MatDestroy(A);
+AFeti::~AFeti() {
+
 	VecDestroy(b);
 	MatDestroy(B);
 	VecDestroy(lmb);
 	VecDestroy(u);
 
-	KSPDestroy(kspA);
-
-	MatDestroy(Aloc);
 	VecDestroy(uloc);
 	VecDestroy(bloc);
 
@@ -106,37 +98,62 @@ Feti1::~Feti1() {
 
 		KSPDestroy(kspG);
 	}
-	if (isLocalSingular) {
-		MatNullSpaceDestroy(locNS);
-	}
 	VecDestroy(temp);
 	VecDestroy(tempLoc);
 	VecDestroy(tempLocB);
-
 }
 
-void Feti1::solve() {
+void AFeti::dumpSolution(PetscViewer v) {
+	VecView(u, v);
+	VecView(lmb, v);
+}
+
+void AFeti::dumpSystem(PetscViewer v) {
+	//View A
+	VecView(b, v);
+	MatView(B, v);
+}
+
+void AFeti::projectGOrth(Vec in) {
+	MatMultTranspose(G, in, tgA);
+	KSPSolve(kspG, tgA, tgB);
+
+	VecScale(in, -1);
+	MatMultAdd(G, tgB, in, in);
+	VecScale(in, -1);
+}
+
+void AFeti::applyMult(Vec in, Vec out) {
+
+	MatMultTranspose(B, in, temp);
+	applyInvA(temp);
+	MatMult(B, temp, out);
+
+	if (isSingular) projectGOrth(out);
+}
+
+Solver* AFeti::instanceOuterSolver(Vec d, Vec l) {
+	return new CGSolver(this, d, l);
+}
+
+void AFeti::solve() {
 
 	PetscInt locSizeA, locSizeM;
 	MatGetSize(B, &locSizeM, &locSizeA);
 
-	if (isLocalSingular) KSPSetNullSpace(kspA, locNS);
-
-	if (isLocalSingular) MatNullSpaceRemove(locNS, tempLoc, PETSC_NULL);
-
-	KSPSolve(kspA, tempLoc, tempLoc);
+	applyInvA(temp);
 
 	Vec d;
-	VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, locSizeM, &d);
+	VecCreateMPI(comm, PETSC_DECIDE, locSizeM, &d);
 	MatMult(B, temp, d);
 
 	if (isSingular) projectGOrth(d);
 
 	//Priprava vektoru lambda
-	VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, locSizeM, &lmb);
+	VecCreateMPI(comm, PETSC_DECIDE, locSizeM, &lmb);
 	if (isSingular) { //Je li singularni, je treba pripavit vhodne vstupni lambda
 		Vec tlmb, ttlmb;
-		VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, gN, &tlmb);
+		VecCreateMPI(comm, PETSC_DECIDE, gN, &tlmb);
 		MatMultTranspose(R, b, tlmb);
 		VecDuplicate(tlmb, &ttlmb);
 		KSPSolve(kspG, tlmb, ttlmb);
@@ -145,23 +162,26 @@ void Feti1::solve() {
 		VecDestroy(tlmb);
 		VecDestroy(ttlmb);
 	}
-	CGSolver solver(this, d, lmb);
-	solver.setSolverCtr(this);
-	//Solve!!!
-	solver.solve();
 
-	solver.getX(lmb);
+	Solver *solver = instanceOuterSolver(d, lmb);
+	solver->setSolverCtr(this);
+	solver->setIsVerbose(true);
+	//Solve!!!
+	solver->solve();
+	solver->getX(lmb);
+
+	delete solver;
 
 	VecScale(lmb, -1);
 	MatMultTransposeAdd(B, lmb, b, temp);
 
-	if (isLocalSingular) MatNullSpaceRemove(locNS, tempLoc, PETSC_NULL);
-	KSPSolve(kspA, tempLoc, uloc);
+	applyInvA(temp);
+
 	if (isSingular) {
 		Vec tLmb, bAlp, alpha;
 		VecDuplicate(lmb, &tLmb);
 		MatMult(B, u, tLmb);
-		VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, gN, &bAlp);
+		VecCreateMPI(comm, PETSC_DECIDE, gN, &bAlp);
 		VecDuplicate(bAlp, &alpha);
 		MatMultTranspose(G, tLmb, bAlp);
 		KSPSolve(kspG, bAlp, alpha);
@@ -176,54 +196,64 @@ void Feti1::solve() {
 	VecDestroy(d);
 }
 
-void Feti1::projectGOrth(Vec in) {
-	MatMultTranspose(G, in, tgA);
-	KSPSolve(kspG, tgA, tgB);
-
-	VecScale(in, -1);
-	MatMultAdd(G, tgB, in, in);
-	VecScale(in, -1);
+void AFeti::copySolution(Vec out) {
+	VecCopy(u, out);
 }
 
-bool Feti1::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
+Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
+		PetscInt localNodeCount, MPI_Comm comm) :
+	AFeti(b, B, lmb, nullSpace, localNodeCount, comm) {
+
+	this->A = A;
+	extractLocalAPart(A, &Aloc);
+
+	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
+	if (isLocalSingular) {
+		MatNullSpaceCreate(PETSC_COMM_SELF, PETSC_TRUE, 0, PETSC_NULL, &locNS);
+	}
+
+	KSPCreate(PETSC_COMM_SELF, &kspA);
+	KSPSetOperators(kspA, Aloc, Aloc, SAME_PRECONDITIONER);
+	if (isLocalSingular) KSPSetNullSpace(kspA, locNS);
+
+	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &tempInv);
+	VecSet(tempInv, 0);
+	VecGhostGetLocalForm(tempInv, &tempInvGh);
+	VecDuplicate(tempInvGh, &tempInvGhB);
+}
+
+Feti1::~Feti1() {
+
+	MatDestroy(A);
+	KSPDestroy(kspA);
+	MatDestroy(Aloc);
+	if (isLocalSingular) {
+		MatNullSpaceDestroy(locNS);
+	}
+	VecDestroy(tempInv);
+	VecDestroy(tempInvGh);
+	VecDestroy(tempInvGhB);
+}
+
+bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
-	//PetscPrintf(PETSC_COMM_WORLD, "It.%d: residual norm:%f\n", itNumber, norm);
+	//PetscPrintf(comm, "It.%d: residual norm:%f\n", itNumber, norm);
 	lastNorm = norm;
 	return norm < 1e-4 || itNumber > 500;
 }
 
-void Feti1::applyMult(Vec in, Vec out) {
-	MatMultTranspose(B, in, temp);
-	//VecDuplicate(tempLoc, &tmpLoc);
+void Feti1::applyInvA(Vec in) {
 
-	if (isLocalSingular) MatNullSpaceRemove(locNS, tempLoc, PETSC_NULL);
-	KSPSolve(kspA, tempLoc, tempLocB);
-	VecCopy(tempLocB, tempLoc);
-
-	MatMult(B, temp, out);
-
-	if (isSingular) projectGOrth(out);
+	VecCopy(in, tempInv);
+	if (isLocalSingular) MatNullSpaceRemove(locNS, tempInvGh, PETSC_NULL);
+	KSPSolve(kspA, tempInvGh, tempInvGhB);
+	VecCopy(tempInvGhB, tempInvGh);
+	VecCopy(tempInv, in);
 }
 
-void Feti1::dumpSolution(PetscViewer v) {
-	VecView(u, v);
-	VecView(lmb, v);
-}
-
-void Feti1::dumpSystem(PetscViewer v) {
-	MatView(A, v);
-	PetscInt sizeM, sizeN;
-	MatGetSize(A, &sizeM, &sizeN);
-	PetscPrintf(PETSC_COMM_WORLD, "DOF:%d\n", sizeM);
-	VecView(b, v);
-	MatView(B, v);
-}
-
-void InexactFeti1::solve() {
-
-	PetscInt locSizeA, locSizeM;
-	MatGetSize(B, &locSizeM, &locSizeA);
-
+InexactFeti1::InexactFeti1(Mat A, Vec b, Mat B, Vec lmb,
+		Laplace2DNullSpace *nullSpace, PetscInt localNodeCount, MPI_Comm comm) :
+	Feti1(A, b, B, lmb, nullSpace, localNodeCount, comm) {
 	KSPSetType(kspA, KSPCG);
 
 	PC prec;
@@ -233,91 +263,70 @@ void InexactFeti1::solve() {
 	KSPSetPC(kspA, prec);
 	KSPSetUp(kspA);
 
-	if (isLocalSingular) KSPSetNullSpace(kspA, locNS);
+	outerPrec = 1e-7;
+}
 
-	if (isLocalSingular) MatNullSpaceRemove(locNS, tempLoc, PETSC_NULL);
-
-	KSPSetTolerances(kspA, 1e-7, 1e-7, 1e10, 100);
-	KSPSolve(kspA, tempLoc, tempLoc);
-
-	Vec d;
-	VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, locSizeM, &d);
-	MatMult(B, temp, d);
-
-	if (isSingular) projectGOrth(d);
-
-	//Priprava vektoru lambda
-	VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, locSizeM, &lmb);
-	if (isSingular) { //Je li singularni, je treba pripavit vhodne vstupni lambda
-		Vec tlmb, ttlmb;
-		VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, gN, &tlmb);
-		MatMultTranspose(R, b, tlmb);
-		VecDuplicate(tlmb, &ttlmb);
-		KSPSolve(kspG, tlmb, ttlmb);
-		MatMult(G, ttlmb, lmb);
-
-		VecDestroy(tlmb);
-		VecDestroy(ttlmb);
-	}
-
+Solver* InexactFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 	outerPrec = 1e-4;
 	lastNorm = 1e-4;
 	inCounter = 0;
-	solver = new ASinStep(this, d, lmb);
-	//solver = new RichardsSolver(this, d, lmb, 0.01);
-
-	solver->setSolverCtr(this);
-	solver->setIsVerbose(false);
-	//Solve!!!
-	solver->solve();
-	solver->saveIterationInfo("iFeti.dat");
-
-	solver->getX(lmb);
-	delete solver;
-
-	PetscPrintf(PETSC_COMM_WORLD, "In it: %d\n", inCounter);
-	PetscPrintf(PETSC_COMM_WORLD, "Out it: %d\n", solver->getItCount());
-	VecScale(lmb, -1);
-	MatMultTransposeAdd(B, lmb, b, temp);
-
-	if (isLocalSingular) MatNullSpaceRemove(locNS, tempLoc, PETSC_NULL);
-	KSPSetTolerances(kspA, 1e-7, 1e-7, 1e10, 1000);
-	KSPSolve(kspA, tempLoc, uloc);
-	if (isSingular) {
-		Vec tLmb, bAlp, alpha;
-		VecDuplicate(lmb, &tLmb);
-		MatMult(B, u, tLmb);
-		VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, gN, &bAlp);
-		VecDuplicate(bAlp, &alpha);
-		MatMultTranspose(G, tLmb, bAlp);
-		KSPSolve(kspG, bAlp, alpha);
-
-		VecScale(alpha, -1);
-		MatMultAdd(R, alpha, u, u);
-
-		VecDestroy(tLmb);
-		VecDestroy(bAlp);
-		VecDestroy(alpha);
-	}
-	VecDestroy(d);
+	return new ASinStep(this, d, lmb);
 }
 
-void InexactFeti1::applyMult(Vec in, Vec out) {
+void InexactFeti1::applyInv(Vec in) {
 
 	KSPSetTolerances(kspA, outerPrec, outerPrec, 1e10, 1000);
-	//solver->setIterationData("inPrec", outerPrec);
-
-	Feti1::applyMult(in, out);
+	Feti1::applyInvA(in);
 
 	PetscInt itNumber;
 	KSPGetIterationNumber(kspA, &itNumber);
 	inCounter += itNumber;
-
-	//	solver->saveIterationInfo("In. iterations", itNumber);
 }
 
 void InexactFeti1::setRequiredPrecision(PetscReal reqPrecision) {
 	outerPrec = reqPrecision;
+}
+
+HFeti::HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
+		SubdomainCluster *cluster, PetscInt localNodeCount, MPI_Comm comm) :
+	AFeti(b, BGlob, lmbGl, cluster->outerNullSpace, localNodeCount, comm) {
+
+	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &globTemp);
+	VecSet(globTemp, 0);
+	VecGhostGetLocalForm(globTemp, &globTempGh);
+
+	VecCreateGhost(cluster->clusterComm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &clustTemp);
+	VecSet(clustTemp, 0);
+	VecGhostGetLocalForm(clustTemp, &clustTempGh);
+
+	VecCreateMPI(cluster->clusterComm, localNodeCount, PETSC_DECIDE, &clustb);
+	VecCopy(b, globTemp);
+	VecCopy(globTempGh, clustTempGh);
+	VecCopy(clustTemp, clustb);
+
+	clustNullSpace = new Laplace2DNullSpace();
+	clustNullSpace->R = cluster->Rin;
+	clustNullSpace->isDomainSingular = cluster->isClusterSingular;
+	clustNullSpace->isSubDomainSingular = cluster->isSubDomainSingular;
+
+	subClusterSystem
+			= new Feti1(A, clustb, BClust, lmbCl, clustNullSpace, localNodeCount, cluster->clusterComm);
+
+	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
+	if (isLocalSingular) {
+		MatNullSpaceCreate(cluster->clusterComm, PETSC_TRUE, 0, PETSC_NULL, &clusterNS);
+	}
+}
+
+void HFeti::applyInvA(Vec in) {
+
+	VecCopy(in, globTemp);
+	VecCopy(globTempGh, clustTempGh);
+	if (isLocalSingular) MatNullSpaceRemove(clusterNS, clustTemp, PETSC_NULL);
+	subClusterSystem->solve(clustTemp);
+	subClusterSystem->copySolution(clustTemp);
+	VecCopy(clustTempGh, globTempGh);
+	VecCopy(globTemp, in);
 }
 
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
@@ -373,7 +382,6 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 	MatAssemblyBegin(BGlob, MAT_FINAL_ASSEMBLY);
 	MatAssemblyEnd(BGlob, MAT_FINAL_ASSEMBLY);
 	VecSet(lmbGlob, 0);
-
 
 	MatCreateMPIAIJ(cluster->clusterComm, PETSC_DECIDE, mesh->vetrices.size(), localPairCount, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BCluster);
 	VecCreateMPI(cluster->clusterComm, mesh->vetrices.size(), PETSC_DECIDE, &lmbCluster);
@@ -524,8 +532,8 @@ void genClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster, Mat *R) {
 	}
 }
 
-void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster,
-		Mat &RGlob, Mat &RClust) {
+void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster) {
+	Mat RClust, RGlob;
 	PetscInt rank, size, clusterRank, clusterSize;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
@@ -534,7 +542,7 @@ void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster,
 
 	genClusterNullSpace(mesh, cluster, &RClust);
 
-	PetscInt nullSpaceDim, hasDirchBound = clusterRank?0:1; //Only cluster rank add to the null space
+	PetscInt nullSpaceDim, hasDirchBound = clusterRank ? 0 : 1; //Only cluster rank add to the null space
 
 	if (cluster->isClusterSingular) {
 		PetscInt clusterNullSpaceDim, n;
@@ -557,7 +565,6 @@ void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster,
 
 			for (; counter < nullSpaceDim; counter++)
 				MPI_Recv(nsDomInd + counter, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, PETSC_COMM_WORLD, &stats);
-
 
 		} else if (!clusterRank) {
 			if (hasDirchBound == 0) MPI_Send(&(cluster->clusterColor), 1, MPI_INT, 0, 0, PETSC_COMM_WORLD);
@@ -584,5 +591,24 @@ void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster,
 		PetscPrintf(PETSC_COMM_WORLD, "Clusters are not singular\n");
 		cluster->isDomainSingular = false;
 	}
+
+	Laplace2DNullSpace *outNullSpace = new Laplace2DNullSpace();
+	outNullSpace->R = RGlob;
+	outNullSpace->isDomainSingular = cluster->isDomainSingular;
+	outNullSpace->isSubDomainSingular = cluster->isClusterSingular;
+
+	cluster->outerNullSpace = outNullSpace;
+	cluster->Rin = RClust;
 }
 
+Feti1* createFeti(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point),
+		MPI_Comm comm) {
+	Mat A, B;
+	Vec b, lmb;
+	Laplace2DNullSpace nullSpace;
+	FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, f, K);
+	GenerateJumpOperator(mesh, B, lmb);
+	Generate2DLaplaceNullSpace(mesh, nullSpace.isDomainSingular, nullSpace.isSubDomainSingular, &(nullSpace.R));
+
+	return new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), comm);
+}

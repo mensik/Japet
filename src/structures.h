@@ -20,6 +20,11 @@ extern "C" {
 	#include "metis.h"
 }
 
+struct Laplace2DNullSpace {
+	bool isSubDomainSingular;
+	bool isDomainSingular;
+	Mat R;
+};
 
 class MyMultiMap {
 public:
@@ -57,6 +62,9 @@ public:
 
 	PetscInt indexDiff;
 
+	Laplace2DNullSpace *outerNullSpace;
+	Mat Rin;
+
 	//Root only
 	PetscInt *subdomainColors;
 	std::vector<PetscInt> globalPairing;
@@ -65,7 +73,6 @@ public:
 	std::vector<PetscInt> localPairing;
 
 	//cluster Roots
-
 	std::map<PetscInt, PetscInt> startIndexesDiff;
 };
 
