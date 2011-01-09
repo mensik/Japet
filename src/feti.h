@@ -14,19 +14,23 @@
 #include "fem.h"
 #include "solver.h"
 
+/**
+ * @brief Abstract FETI ancestor
+ * @note		There is still some work to do. The messiest part of implementation is in dealing with
+ object G matrix and computation of the projector P = I - G inv(G'G) G'
+ *
+ **/
 class AFeti: public SolverApp, public SolverCtr {
 protected:
 
-	Solver *outerSolver;
+	Solver *outerSolver; ///< Solver class for outer loop (default is CGSolver)
 
-	Mat B;
-	Vec lmb;
-	Vec u;
-	Vec d;
+	Mat B; ///< Jump operator matrix
+	Vec lmb; ///< Lambda vector
+	Vec u; ///< solution
+	Vec d; ///< dual right side
 
 	Vec b; ///< Global force vector
-	Vec bloc; ///< Ghosted local force vector
-	Vec uloc; ///< Ghosted local solution
 
 	KSP kspG; ///< Global G'G solver
 
@@ -36,16 +40,16 @@ protected:
 	Mat G; ///< BR
 	PetscInt gM, gN; ///<	dimensions of G
 
-	PetscReal lastNorm;
+	PetscReal lastNorm; ///< last computed norm
 
 	Vec tgA;
 	Vec tgB;
 
 	Vec temp;
 	Vec tempLoc;
-	Vec tempLocB;
 
 	MPI_Comm comm; ///< Communication channel of processes
+	bool isVerbose;
 
 public:
 	AFeti(Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
@@ -68,17 +72,16 @@ public:
 	void dumpSystem(PetscViewer v);
 	void projectGOrth(Vec in); ///< Remove space spaned by G from vec in
 	void copySolution(Vec out); /// <Copy solution to vector out
+	void setIsVerbose(bool verbose) { isVerbose = verbose; }
 };
 
 /**
- @brief	Rather general (and functional) implementation of FETI-1 algorythm. Tearing of global
+ @brief	Rather general (and functional) implementation of FETI-1 algorithm. Tearing of global
  domain and distribution of subdomains is done in preprocesing of Mesh object.
 
- Currently, CG implemenation in solver.h is used for outer cycle and Petsc direct solver
+ Currently, CG implementation in solver.h is used for outer cycle and Petsc direct solver
  for inner cycle.
 
- @note		There is still some work to do. The messiest part of implementation is in dealing with
- object G matrix and computionfg of projector P = I - G inv(G'G) G'
  **/
 
 class Feti1: public AFeti {
@@ -88,7 +91,6 @@ protected:
 	KSP kspA; ///< Local A solver
 
 	MatNullSpace locNS; ///< local null space of local A
-
 
 	Vec tempInv, tempInvGh, tempInvGhB;
 public:
@@ -110,9 +112,12 @@ public:
 	void setRequiredPrecision(PetscReal reqPrecision);
 };
 
+/**
+ * @brief Hierarchical FETI implementation
+ */
 class HFeti: public AFeti {
-	AFeti *subClusterSystem;
-	SubdomainCluster *cluster;
+	AFeti *subClusterSystem;			///< FETI1 system associated with cluste [cluster]
+	SubdomainCluster *cluster;		///< Cluster info [cluster]
 
 	Vec clustTemp, clustTempGh;
 	Vec clustb;
@@ -120,20 +125,29 @@ class HFeti: public AFeti {
 	MatNullSpace clusterNS;
 
 	Vec globTemp, globTempGh;
+
+	PetscReal outerPrec;
+	PetscInt inCounter;
 public:
 	HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
 			SubdomainCluster *cluster, PetscInt localNodeCount, MPI_Comm comm);
 
 	virtual void applyInvA(Vec in);
 	void removeNullSpace(Vec in);
+	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);
+	virtual void setRequiredPrecision(PetscReal reqPrecision);
 };
 
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb);
+
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		Mat &BGlob, Vec &lmbGlob, Mat &BCluster, Vec &lmbCluster);
+
 void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 		bool &isLocalSingular, Mat *Rmat, MPI_Comm comm = PETSC_COMM_WORLD);
+
 void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
+
 void getLocalJumpPart(Mat B, Mat *Bloc);
 
 Feti1* createFeti(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point),

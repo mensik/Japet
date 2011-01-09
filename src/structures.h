@@ -20,10 +20,13 @@ extern "C" {
 	#include "metis.h"
 }
 
+/**
+ * @brief Keeps information needed for FETI about null space
+ **/
 struct Laplace2DNullSpace {
-	bool isSubDomainSingular;
-	bool isDomainSingular;
-	Mat R;
+	bool isSubDomainSingular;	///< is sub-part associated with current process singular
+	bool isDomainSingular;		///< is there any singular sub-part
+	Mat R;										///< matrix with null space basis
 };
 
 class MyMultiMap {
@@ -42,6 +45,10 @@ public:
 	void saveNewPoint(PetscInt oldPoint, PetscInt domainId, PetscInt newPoint);
 };
 
+
+/**
+ *	@brief Helper class for analysis of sub-domain relations
+ **/
 class DomainPairings {
 public:
 	std::map<PetscInt, std::map<PetscInt, std::vector<PetscInt> > > data;
@@ -49,31 +56,34 @@ public:
 	void getPairs(PetscInt domA, PetscInt domB, std::vector<PetscInt>::iterator &begin, std::vector<PetscInt>::iterator &end);
 };
 
+/**
+ * @brief Class holding all information related to sub-domain clustering, including pairings
+ **/
 class SubdomainCluster {
 public:
-	MPI_Comm clusterComm;
-	PetscInt clusterColor;
-	PetscInt clusterCount;
+	MPI_Comm clusterComm;		///< Communication channel [cluster]
+	PetscInt clusterColor;	///< Cluster color [cluster]
+	PetscInt clusterCount;	///< Global number of clusters [global]
 
 	//Information required by FETI
-	bool isSubDomainSingular;
-	bool isClusterSingular;
-	bool isDomainSingular;
+	bool isSubDomainSingular; ///< Is local domain singular [local]
+	bool isClusterSingular;		///< Is any domain in cluster singular [cluster]
+	bool isDomainSingular;		///< Is any domain singular [global]
 
-	PetscInt indexDiff;
+	PetscInt indexDiff;				///< Cluster - global index difference [local]
 
-	Laplace2DNullSpace *outerNullSpace;
-	Mat Rin;
+	Laplace2DNullSpace *outerNullSpace; ///< Domain outer null space info for FETI [global]
+	Mat Rin;									///< Cluster null space basis [cluster]
 
 	//Root only
-	PetscInt *subdomainColors;
-	std::vector<PetscInt> globalPairing;
+	PetscInt *subdomainColors;	///< array with all process cluster colors
+	std::vector<PetscInt> globalPairing;	///< paired extra-cluster nodes [root]
 
 	//cluster Roots
-	std::vector<PetscInt> localPairing;
+	std::vector<PetscInt> localPairing;	///< paired inter-cluster nodes [cluster roots]
 
 	//cluster Roots
-	std::map<PetscInt, PetscInt> startIndexesDiff;
+	std::map<PetscInt, PetscInt> startIndexesDiff; ///< array with cluster-global node index differences [cluster roots]
 };
 
 
@@ -195,6 +205,11 @@ public:
 	 */
 	void evalInNodes(PetscReal(*f)(Point), Vec *fv);
 
+	/**
+	 * @brief Divide already teared mesh to clusters
+	 *
+	 * @param[out] cluster cluster object
+	 */
 	void createCluster(SubdomainCluster *cluster);
 
 	PetscInt getNodeDomain(PetscInt index);

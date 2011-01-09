@@ -18,13 +18,17 @@ int main(int argc, char *argv[]) {
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
 
-	PetscPrintf(PETSC_COMM_WORLD, "STARTING\n");
+	PetscPrintf(PETSC_COMM_WORLD, "Mesh preparation ...");
 
 	Mesh *mesh = new Mesh();
 	mesh->generateRectangularMesh(0, 1, 0, 1, 0.05);
+
+	PetscPrintf(PETSC_COMM_WORLD, "done\n\n Tearing ....");
+
 	mesh->partition(size);
 	mesh->tear();
 	SubdomainCluster cluster;
+	PetscPrintf(PETSC_COMM_WORLD, "done\n\n");
 	mesh->createCluster(&cluster);
 
 	Mat Bl, Bg;

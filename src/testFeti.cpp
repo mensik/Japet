@@ -54,11 +54,14 @@ int main(int argc, char *argv[]) {
 		MPI_Comm_size(PETSC_COMM_WORLD, &size);
 		PetscViewer v;
 		Mesh *mesh = new Mesh();
+
+		PetscPrintf(PETSC_COMM_WORLD, "Generating mesh ... ");
 		mesh->generateRectangularMesh(m, n, k, l, h);
+		PetscPrintf(PETSC_COMM_WORLD, "done.\n\nTearing mesh ...");
 		mesh->partition(size);
 
 		mesh->tear();
-
+		PetscPrintf(PETSC_COMM_WORLD, "done.\n\n");
 		SubdomainCluster cluster;
 		mesh->createCluster(&cluster);
 
@@ -82,6 +85,7 @@ int main(int argc, char *argv[]) {
 
 		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 		//feti.dumpSystem(v);
+		hFeti->setIsVerbose(true);
 		hFeti->solve();
 		//feti.dumpSolution(v);
 		//PetscViewerDestroy(v);

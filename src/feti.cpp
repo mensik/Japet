@@ -2,6 +2,8 @@
 AFeti::AFeti(Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
 		PetscInt localNodeCount, MPI_Comm c) {
 
+	isVerbose = false;
+
 	comm = c;
 	this->b = b;
 	this->B = B;
@@ -68,16 +70,10 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
 	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &temp);
 	VecCopy(b, temp);
 	VecGhostGetLocalForm(temp, &tempLoc);
-	VecDuplicate(tempLoc, &tempLocB);
-
-	VecCreateSeq(PETSC_COMM_SELF, localNodeCount, &bloc);
-	VecCopy(tempLoc, bloc);
 
 	//Ghostovany vektor reseni
 	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &u);
 	VecSet(u, 0);
-
-	VecGhostGetLocalForm(u, &uloc);
 }
 
 AFeti::~AFeti() {
@@ -86,9 +82,6 @@ AFeti::~AFeti() {
 	MatDestroy(B);
 	VecDestroy(lmb);
 	VecDestroy(u);
-
-	VecDestroy(uloc);
-	VecDestroy(bloc);
 
 	if (isSingular) {
 		MatDestroy(R);
@@ -100,7 +93,6 @@ AFeti::~AFeti() {
 	}
 	VecDestroy(temp);
 	VecDestroy(tempLoc);
-	VecDestroy(tempLocB);
 }
 
 void AFeti::dumpSolution(PetscViewer v) {
@@ -137,6 +129,7 @@ Solver* AFeti::instanceOuterSolver(Vec d, Vec l) {
 }
 
 void AFeti::solve() {
+	VecCopy(b, temp);
 
 	PetscInt locSizeA, locSizeM;
 	MatGetSize(B, &locSizeM, &locSizeA);
@@ -163,19 +156,19 @@ void AFeti::solve() {
 		VecDestroy(ttlmb);
 	}
 
+
 	Solver *solver = instanceOuterSolver(d, lmb);
 	solver->setSolverCtr(this);
-	solver->setIsVerbose(true);
+	solver->setIsVerbose(isVerbose);
 	//Solve!!!
 	solver->solve();
 	solver->getX(lmb);
-
 	delete solver;
 
 	VecScale(lmb, -1);
-	MatMultTransposeAdd(B, lmb, b, temp);
+	MatMultTransposeAdd(B, lmb, b, u);
 
-	applyInvA(temp);
+	applyInvA(u);
 
 	if (isSingular) {
 		Vec tLmb, bAlp, alpha;
@@ -197,6 +190,7 @@ void AFeti::solve() {
 }
 
 void AFeti::copySolution(Vec out) {
+
 	VecCopy(u, out);
 }
 
@@ -320,13 +314,27 @@ HFeti::HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
 
 void HFeti::applyInvA(Vec in) {
 
+	PetscPrintf(PETSC_COMM_WORLD, "\t Inner FETI application!\n");
 	VecCopy(in, globTemp);
 	VecCopy(globTempGh, clustTempGh);
 	if (isLocalSingular) MatNullSpaceRemove(clusterNS, clustTemp, PETSC_NULL);
 	subClusterSystem->solve(clustTemp);
 	subClusterSystem->copySolution(clustTemp);
+
 	VecCopy(clustTempGh, globTempGh);
 	VecCopy(globTemp, in);
+
+}
+
+Solver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
+	outerPrec = 1e-4;
+	lastNorm = 1e-4;
+	inCounter = 0;
+	return new CGSolver(this, d, lmb);
+}
+
+void HFeti::setRequiredPrecision(PetscReal reqPrecision) {
+	outerPrec = reqPrecision;
 }
 
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {

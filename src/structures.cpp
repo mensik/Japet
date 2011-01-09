@@ -957,9 +957,7 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 	DomainPairings pairings;
 	idxtype *part;
 	if (!rank) {
-
-		PetscPrintf(PETSC_COMM_WORLD, "*** ANALYZESUBDOMAINS ****\n\n");
-
+		//Save all pairings in relation to subdomains they bound
 		for (int i = 0; i < nPairs; i++) {
 			PetscInt *pair = pointPairing + i * 2;
 			pairings.insert(getNodeDomain(pair[0]), getNodeDomain(pair[1]), pair);
@@ -969,6 +967,7 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 		for (int i = 0; i < numOfPartitions + 1; i++)
 			xadj[i] = 0;
 
+		//Prepare adjacency representation of domains
 		for (std::map<PetscInt, std::map<PetscInt, std::vector<PetscInt> > >::iterator
 				i = pairings.data.begin(); i != pairings.data.end(); i++) {
 			for (std::map<PetscInt, std::vector<PetscInt> >::iterator b =
@@ -983,10 +982,6 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 			for (int j = i + 1; j < numOfPartitions + 1; j++)
 				xadj[j] += xadj[i];
 
-		for (int i = 0; i < numOfPartitions + 1; i++) {
-			PetscPrintf(PETSC_COMM_SELF, "%d \n", xadj[i]);
-		}
-
 		idxtype *adjncy = new idxtype[xadj[numOfPartitions]];
 		idxtype *adjwgt = new idxtype[xadj[numOfPartitions]];
 
@@ -994,6 +989,7 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 		for (int i = 0; i < numOfPartitions; i++)
 			tempCounter[i] = 0;
 
+		//Analyze weights among subdomain
 		for (std::map<PetscInt, std::map<PetscInt, std::vector<PetscInt> > >::iterator
 				i = pairings.data.begin(); i != pairings.data.end(); i++) {
 			for (std::map<PetscInt, std::vector<PetscInt> >::iterator b =
@@ -1010,7 +1006,6 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 			}
 		}
 
-		PetscPrintf(PETSC_COMM_SELF, "************** \n");
 		//for (int i = 0; i < xadj[numOfPartitions]; i++) {
 		//	PetscPrintf(PETSC_COMM_SELF, "%d - %d \n", adjncy[i], adjwgt[i]);
 		//}
@@ -1024,11 +1019,8 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 		int edgecut;
 		part = new idxtype[numOfPartitions];
 
+		//Divide subdomains to clusters!!!
 		METIS_PartGraphKway(&numOfPartitions, xadj, adjncy, NULL, adjwgt, &wgtflag, &numFlag, &nparts, options, &edgecut, part);
-
-		for (int i = 0; i < numOfPartitions; i++) {
-			PetscPrintf(PETSC_COMM_SELF, "%d [%d] \n", i, part[i]);
-		}
 
 		MPI_Scatter(part, 1, MPI_INT, &(cluster->clusterColor), 1, MPI_INT, 0, PETSC_COMM_WORLD);
 
@@ -1044,7 +1036,8 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 				}
 			}
 
-		PetscPrintf(PETSC_COMM_SELF, "Extern cut: %d \n", edgeCutSum);
+		PetscPrintf(PETSC_COMM_SELF, "*** Clustering done *** \n");
+		PetscPrintf(PETSC_COMM_SELF, "Extra-cluster pair count: %d \n\n", edgeCutSum / 4);
 
 		delete[] tempCounter;
 
@@ -1073,6 +1066,9 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 
 			clusterMasters[temp[0]] = temp[1];
 		}
+
+		//Distribution of pairings to cluster masters
+
 		typedef std::map<PetscInt, std::vector<PetscInt> > mapIn;
 		typedef std::map<PetscInt, mapIn> mapOut;
 		for (mapOut::iterator i = pairings.data.begin(); i != pairings.data.end(); i++)
@@ -1129,6 +1125,8 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 			}
 		}
 	}
+
+	// cluster indexing difference
 
 	if (rank) {
 		part = new idxtype[numOfPartitions];
