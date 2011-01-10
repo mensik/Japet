@@ -2,8 +2,6 @@
 AFeti::AFeti(Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
 		PetscInt localNodeCount, MPI_Comm c) {
 
-	isVerbose = false;
-
 	comm = c;
 	this->b = b;
 	this->B = B;
@@ -115,10 +113,12 @@ void AFeti::projectGOrth(Vec in) {
 	VecScale(in, -1);
 }
 
-void AFeti::applyMult(Vec in, Vec out) {
+void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
+
+	outIterations++;
 
 	MatMultTranspose(B, in, temp);
-	applyInvA(temp);
+	applyInvA(temp, info);
 	MatMult(B, temp, out);
 
 	if (isSingular) projectGOrth(out);
@@ -129,12 +129,16 @@ Solver* AFeti::instanceOuterSolver(Vec d, Vec l) {
 }
 
 void AFeti::solve() {
+
+	inIterations = 0;
+	outIterations = 0;
+
 	VecCopy(b, temp);
 
 	PetscInt locSizeA, locSizeM;
 	MatGetSize(B, &locSizeM, &locSizeA);
 
-	applyInvA(temp);
+	applyInvA(temp, NULL);
 
 	Vec d;
 	VecCreateMPI(comm, PETSC_DECIDE, locSizeM, &d);
@@ -168,7 +172,7 @@ void AFeti::solve() {
 	VecScale(lmb, -1);
 	MatMultTransposeAdd(B, lmb, b, u);
 
-	applyInvA(u);
+	applyInvA(u, NULL);
 
 	if (isSingular) {
 		Vec tLmb, bAlp, alpha;
@@ -236,11 +240,16 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 	return norm < 1e-4 || itNumber > 500;
 }
 
-void Feti1::applyInvA(Vec in) {
+void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 	VecCopy(in, tempInv);
 	if (isLocalSingular) MatNullSpaceRemove(locNS, tempInvGh, PETSC_NULL);
 	KSPSolve(kspA, tempInvGh, tempInvGhB);
+
+	PetscInt itNumber;
+	KSPGetIterationNumber(kspA, &itNumber);
+	inIterations+=itNumber;
+
 	VecCopy(tempInvGhB, tempInvGh);
 	VecCopy(tempInv, in);
 }
@@ -267,10 +276,10 @@ Solver* InexactFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 	return new ASinStep(this, d, lmb);
 }
 
-void InexactFeti1::applyInv(Vec in) {
+void InexactFeti1::applyInvA(Vec in, IterationManager *itManager) {
 
 	KSPSetTolerances(kspA, outerPrec, outerPrec, 1e10, 1000);
-	Feti1::applyInvA(in);
+	Feti1::applyInvA(in, itManager);
 
 	PetscInt itNumber;
 	KSPGetIterationNumber(kspA, &itNumber);
@@ -312,25 +321,29 @@ HFeti::HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
 	}
 }
 
-void HFeti::applyInvA(Vec in) {
+void HFeti::applyInvA(Vec in, IterationManager *itManager) {
 
-	PetscPrintf(PETSC_COMM_WORLD, "\t Inner FETI application!\n");
 	VecCopy(in, globTemp);
 	VecCopy(globTempGh, clustTempGh);
 	if (isLocalSingular) MatNullSpaceRemove(clusterNS, clustTemp, PETSC_NULL);
+
 	subClusterSystem->solve(clustTemp);
 	subClusterSystem->copySolution(clustTemp);
 
+	if (itManager != NULL) {
+		itManager->setIterationData("outFETIit", subClusterSystem->getOutIterations());
+		itManager->setIterationData("inFETIit", subClusterSystem->getInIterations());
+	}
+
 	VecCopy(clustTempGh, globTempGh);
 	VecCopy(globTemp, in);
-
 }
 
 Solver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
 	outerPrec = 1e-4;
 	lastNorm = 1e-4;
 	inCounter = 0;
-	return new CGSolver(this, d, lmb);
+	return new ASinStep(this, d, lmb);
 }
 
 void HFeti::setRequiredPrecision(PetscReal reqPrecision) {

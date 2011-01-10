@@ -11,6 +11,7 @@
 
 #include "petscksp.h"
 #include "petscmat.h"
+#include "japetUtils.h"
 #include "fem.h"
 #include "solver.h"
 
@@ -24,6 +25,7 @@ class AFeti: public SolverApp, public SolverCtr {
 protected:
 
 	Solver *outerSolver; ///< Solver class for outer loop (default is CGSolver)
+	bool isVerbose;
 
 	Mat B; ///< Jump operator matrix
 	Vec lmb; ///< Lambda vector
@@ -49,20 +51,22 @@ protected:
 	Vec tempLoc;
 
 	MPI_Comm comm; ///< Communication channel of processes
-	bool isVerbose;
+
+	PetscInt outIterations;
+	PetscInt inIterations;
 
 public:
 	AFeti(Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
 			PetscInt localNodeCount, MPI_Comm comm);
 	~AFeti();
 
-	virtual void applyInvA(Vec in) = 0;
+	virtual void applyInvA(Vec in, IterationManager *itManager) = 0;
 	void solve(Vec b) {
 		this->b = b;
 		solve();
 	}
 	virtual void solve();
-	virtual void applyMult(Vec in, Vec out);
+	virtual void applyMult(Vec in, Vec out, IterationManager *info);
 	virtual bool
 	isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm, Vec *vec);
 
@@ -72,7 +76,12 @@ public:
 	void dumpSystem(PetscViewer v);
 	void projectGOrth(Vec in); ///< Remove space spaned by G from vec in
 	void copySolution(Vec out); /// <Copy solution to vector out
-	void setIsVerbose(bool verbose) { isVerbose = verbose; }
+	void setIsVerbose(bool verbose) {
+		isVerbose = verbose;
+	}
+
+	PetscInt getOutIterations() { return outIterations; }
+	PetscInt getInIterations() { return inIterations; }
 };
 
 /**
@@ -97,7 +106,7 @@ public:
 	Feti1(Mat A, Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
 			PetscInt localNodeCount, MPI_Comm comm);
 	~Feti1();
-	virtual void applyInvA(Vec in);
+	virtual void applyInvA(Vec in, IterationManager *itManager);
 };
 
 class InexactFeti1: public Feti1 {
@@ -107,7 +116,7 @@ public:
 	InexactFeti1(Mat A, Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
 			PetscInt localNodeCount, MPI_Comm comm);
 
-	virtual void applyInv(Vec in);
+	virtual void applyInvA(Vec in, IterationManager *itManager);
 	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);
 	void setRequiredPrecision(PetscReal reqPrecision);
 };
@@ -116,8 +125,8 @@ public:
  * @brief Hierarchical FETI implementation
  */
 class HFeti: public AFeti {
-	AFeti *subClusterSystem;			///< FETI1 system associated with cluste [cluster]
-	SubdomainCluster *cluster;		///< Cluster info [cluster]
+	AFeti *subClusterSystem; ///< FETI1 system associated with cluste [cluster]
+	SubdomainCluster *cluster; ///< Cluster info [cluster]
 
 	Vec clustTemp, clustTempGh;
 	Vec clustb;
@@ -132,7 +141,7 @@ public:
 	HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
 			SubdomainCluster *cluster, PetscInt localNodeCount, MPI_Comm comm);
 
-	virtual void applyInvA(Vec in);
+	virtual void applyInvA(Vec in, IterationManager *itManager);
 	void removeNullSpace(Vec in);
 	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);
 	virtual void setRequiredPrecision(PetscReal reqPrecision);

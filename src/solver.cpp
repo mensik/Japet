@@ -41,7 +41,7 @@ void Solver::init() {
 	VecCopy(b, g);
 
 	sApp->setRequiredPrecision(MAXPREC);
-	sApp->applyMult(x, temp);
+	sApp->applyMult(x, temp, &itManager);
 	VecAYPX(g, -1, temp);
 
 	VecDestroy(temp);
@@ -49,7 +49,7 @@ void Solver::init() {
 	VecNorm(g, NORM_2, &rNorm);
 }
 
-void Solver::applyMult(Vec in, Vec out) {
+void Solver::applyMult(Vec in, Vec out, IterationManager *info) {
 	MatMult(A, in, out);
 }
 
@@ -143,7 +143,7 @@ void ASinStep::solve() {
 
 		sApp->setRequiredPrecision(outNorm);
 
-		sApp->applyMult(g, Ag);
+		sApp->applyMult(g, Ag, &itManager);
 
 		PetscReal gg, gAg;
 		VecDot(g, g, &gg);
@@ -184,7 +184,7 @@ void ASinStep::solve() {
 		if (getItCount() % gradRestartLoop == 0) {
 			//sApp->applyMult(x, Ax);
 		} else {
-			sApp->applyMult(g, Ag);
+			sApp->applyMult(g, Ag, &itManager);
 
 			PetscReal gg, gAg, moment1;
 			VecDot(g, g, &gg);
@@ -206,7 +206,7 @@ void ASinStep::solve() {
 
 		if (getItCount() % gradRestartLoop == 0) {
 			VecCopy(b, g);
-			sApp->applyMult(x, Ax);
+			sApp->applyMult(x, Ax, &itManager);
 			VecAYPX(g, -1, Ax);
 			VecNorm(g, NORM_2, &rNorm);
 		} else {

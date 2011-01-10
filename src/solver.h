@@ -17,7 +17,7 @@ const double MAXPREC = 1e-6;
 
 class SolverApp {
 public:
-	virtual void applyMult(Vec in, Vec out) = 0;
+	virtual void applyMult(Vec in, Vec out, IterationManager* info = NULL) = 0;
 	virtual void setRequiredPrecision(PetscReal reqPrecision);
 };
 
@@ -39,7 +39,7 @@ class Solver: public SolverApp, public SolverCtr {
 private:
 	Mat A; ///< Matrix A in problem A*x = b
 	PetscReal precision;
-	IterationManager itManager;
+
 
 	void init();
 protected:
@@ -57,6 +57,8 @@ protected:
 	void nextIteration();
 
 public:
+	IterationManager itManager;
+
 	Solver(Mat A, Vec b, Vec x);
 	Solver(SolverApp *sa, Vec b, Vec x);
 	~Solver();
@@ -70,7 +72,7 @@ public:
 	int getItCount() {
 		return itManager.getItCount();
 	}
-	void applyMult(Vec in, Vec out);
+	void applyMult(Vec in, Vec out, IterationManager *info = NULL);
 	bool isConverged(PetscInt itNum, PetscReal rNorm, PetscReal bNorm, Vec *vec);
 	void setSolverApp(SolverApp *sa) {
 		sApp = sa;
