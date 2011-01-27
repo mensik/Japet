@@ -79,9 +79,16 @@ public:
 	void setIsVerbose(bool verbose) {
 		isVerbose = verbose;
 	}
+	void saveIterationInfo(const char *fileName) {
+		outerSolver->saveIterationInfo(fileName);
+	}
 
-	PetscInt getOutIterations() { return outIterations; }
-	PetscInt getInIterations() { return inIterations; }
+	PetscInt getOutIterations() {
+		return outIterations;
+	}
+	PetscInt getInIterations() {
+		return inIterations;
+	}
 };
 
 /**

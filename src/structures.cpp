@@ -471,6 +471,104 @@ void Mesh::load(const char *filename, bool withEdges) {
 	}
 }
 
+void Mesh::loadHDF5(const char* filename) {
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+
+	if (!rank) {
+		char N_COORDS[] = "ENS_MAA/mesh/NOE/COO";
+		char N_FAM[] = "ENS_MAA/mesh/NOE/FAM";
+		char N_IDS[] = "ENS_MAA/mesh/NOE/NUM";
+		char ELEMENTS[] = "ENS_MAA/mesh/MAI/TR3/NOD";
+
+		hid_t file, dataset, datatype, dataspace;
+		hid_t root;
+
+		H5T_class_t t_class;
+		hsize_t dimsm[3]; /* memory space dimensions */
+		hsize_t dims_out[2]; /* dataset dimensions */
+		herr_t status;
+		int status_n;
+
+		file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+
+		dataset = H5Dopen2(file, N_COORDS, H5P_DEFAULT);
+		datatype = H5Dget_type(dataset);
+		dataspace = H5Dget_space(dataset);
+		status_n = H5Sget_simple_extent_dims(dataspace, dims_out, NULL);
+		H5Sclose(dataspace);
+
+		int size = (int) dims_out[0] / 2;
+		double coords[size * 2];
+		int ids[size];
+		int family[size];
+
+		status
+				= H5Dread(dataset, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, coords);
+		H5Dclose(dataset);
+
+		dataset = H5Dopen2(file, N_IDS, H5P_DEFAULT);
+		status
+				= H5Dread(dataset, H5T_STD_I32LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, ids);
+		H5Dclose(dataset);
+
+		dataset = H5Dopen2(file, N_FAM, H5P_DEFAULT);
+		status
+				= H5Dread(dataset, H5T_STD_I32LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, family);
+		H5Dclose(dataset);
+
+		dataset = H5Dopen2(file, ELEMENTS, H5P_DEFAULT);
+		dataspace = H5Dget_space(dataset);
+		status_n = H5Sget_simple_extent_dims(dataspace, dims_out, NULL);
+		H5Sclose(dataspace);
+
+		int eSize = (int) dims_out[0] / 3;
+		int eNodes[eSize * 3];
+
+		status
+				= H5Dread(dataset, H5T_STD_I32LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, eNodes);
+		H5Dclose(dataset);
+
+		//VETRICES OUT
+		for (int i = 0; i < size; i++) {
+			Point *newPoint = new Point(coords[i], coords[i + size]);
+			newPoint->family = family[i];
+			vetrices.insert(std::pair<PetscInt, Point*>(ids[i] - 1, newPoint));
+		}
+
+		for (int i = 0; i < eSize; i++) {
+
+			Element *newElement = new Element();
+			newElement->numVetrices = 3;
+			newElement->vetrices[0] = eNodes[i] - 1;
+			newElement->vetrices[1] = eNodes[i + eSize] - 1;
+			newElement->vetrices[2] = eNodes[i + 2 * eSize] - 1;
+
+			newElement->id = i; //TODO ids
+			elements.insert(std::pair<PetscInt, Element*>(i, newElement));
+		}
+
+		linkPointsToElements();
+		regenerateEdges();
+		findBorders();
+
+		std::set<PetscInt> dirchBorder;
+		for (std::set<PetscInt>::iterator e = borderEdges.begin(); e
+				!= borderEdges.end(); e++) {
+			Edge *bEdge = edges[*e];
+			if (vetrices[bEdge->vetrices[0]]->family == 0
+					|| vetrices[bEdge->vetrices[1]]->family == 0) {
+			} else {
+				dirchBorder.insert(*e);
+			}
+		}
+
+		PetscPrintf(PETSC_COMM_SELF, "Mesh loaded.DOF : %d;  Dirchlet boundary edges count: %d \n\n", vetrices.size(), dirchBorder.size());
+
+		borderEdges = dirchBorder;
+	}
+}
+
 void Mesh::linkPointsToElements() {
 	for (std::map<PetscInt, Element*>::iterator i = elements.begin(); i
 			!= elements.end(); i++) {
@@ -665,19 +763,29 @@ void Mesh::tear() {
 
 							//New point <-> elements
 							Point *originalPoint = vetrices[idPoint[i]];
+
+							std::set<Element*> temp;
 							for (std::set<Element*>::iterator pEl =
 									originalPoint->elements.begin(); pEl
 									!= originalPoint->elements.end(); pEl++) {
+
 								if (epart[(*pEl)->id] == tearedSDIndex) {
+
 									for (int iii = 0; iii < (*pEl)->numVetrices; iii++)
 										if ((*pEl)->vetrices[iii] == idPoint[i]) (*pEl)->vetrices[iii]
 												= idNewPoint[i];
 
 									newPoint->elements.insert(*pEl);
-									originalPoint->elements.erase(*pEl);
-
+									temp.insert(*pEl);
 								}
 							}
+							for (std::set<Element*>::iterator elEr = temp.begin(); elEr
+									!= temp.end(); elEr++) {
+								originalPoint->elements.erase(*elEr);
+							}
+							temp.empty();
+
+							std::set<Edge*> tempEd;
 							//New point <-> edges
 							for (std::set<Edge*>::iterator pEdge =
 									originalPoint->edges.begin(); pEdge
@@ -694,9 +802,15 @@ void Mesh::tear() {
 												= idNewPoint[i];
 
 									newPoint->edges.insert(*pEdge);
-									originalPoint->edges.erase(*pEdge);
+									tempEd.insert(*pEdge);
+									//@todo asi se preskakuje jedna hrana!!!
 								}
 							}
+							for (std::set<Edge*>::iterator erEd = tempEd.begin(); erEd
+									!= tempEd.end(); erEd++) {
+								originalPoint->edges.erase(*erEd);
+							}
+
 						}
 					}
 
@@ -751,10 +865,12 @@ void Mesh::tear() {
 		for (std::map<PetscInt, Element*>::iterator e = elements.begin(); e
 				!= elements.end(); e++) {
 			elementPerDom[epart[e->first]]++;
+
 			for (int i = 0; i < e->second->numVetrices; i++) {
 				vetSetPerDom[epart[e->first]].insert(e->second->vetrices[i]);
 				vetrices[e->second->vetrices[i]]->domainInd = epart[e->first];
 			}
+
 		}
 
 		//Refresh domain numbers for edges and gether sets of them for each domain
@@ -771,6 +887,7 @@ void Mesh::tear() {
 		PetscInt indexCounter = vetSetPerDom[0].size();
 		startIndexes[0] = 0;
 		PetscInt elIndexCounter = elementPerDom[0];
+
 		for (int i = 1; i < numOfPartitions; i++) {
 			int nv = vetSetPerDom[i].size();
 			startIndexes[i] = indexCounter;
@@ -903,7 +1020,6 @@ void Mesh::tear() {
 			MPI_Recv(coords, 3, MPI_DOUBLE, 0, 0, PETSC_COMM_WORLD, &stats); // RCV COORDINATES
 			vetrices.insert(std::pair<PetscInt, Point*>(i + startIndex, new Point(coords[0], coords[1], coords[2])));
 		}
-
 		AO procesOrdering;
 		IS oldIS, newIS;
 		ISCreateGeneral(PETSC_COMM_WORLD, nVetrices, glIndices, &oldIS);
@@ -937,6 +1053,7 @@ void Mesh::tear() {
 	}
 
 	MPI_Bcast(startIndexes, numOfPartitions, MPI_INT, 0, PETSC_COMM_WORLD);
+
 }
 
 void Mesh::evalInNodes(PetscReal(*f)(Point), Vec *fv) {
@@ -1018,10 +1135,20 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 
 		int edgecut;
 		part = new idxtype[numOfPartitions];
+		idxtype vtxdist[] = { 0, numOfPartitions };
+		int nCon = 1;
 
+		float *tpwgts = new float[nparts];
+		float *ubvec = new float[nparts];
+
+		for (int i = 0; i < nparts; i++) {
+			tpwgts[i] = 1.0 / nparts;
+			ubvec[i] = 1.05;
+		}
 		//Divide subdomains to clusters!!!
-		METIS_PartGraphKway(&numOfPartitions, xadj, adjncy, NULL, adjwgt, &wgtflag, &numFlag, &nparts, options, &edgecut, part);
-
+		//METIS_PartGraphKway(&numOfPartitions, xadj, adjncy, NULL, adjwgt, &wgtflag, &numFlag, &nparts, options, &edgecut, part);
+		MPI_Comm c = PETSC_COMM_SELF;
+		ParMETIS_V3_PartKway(vtxdist, xadj, adjncy, NULL, adjwgt, &wgtflag, &numFlag, &nCon, &nparts, tpwgts, ubvec, options, &edgecut, part, &c);
 		MPI_Scatter(part, 1, MPI_INT, &(cluster->clusterColor), 1, MPI_INT, 0, PETSC_COMM_WORLD);
 
 		cluster->subdomainColors = new PetscInt[numOfPartitions];
@@ -1037,7 +1164,8 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 			}
 
 		PetscPrintf(PETSC_COMM_SELF, "*** Clustering done *** \n");
-		PetscPrintf(PETSC_COMM_SELF, "Extra-cluster pair count: %d \n\n", edgeCutSum / 4);
+		PetscPrintf(PETSC_COMM_SELF, "Extra-cluster pair count: %d \n\n", edgeCutSum
+				/ 4);
 
 		delete[] tempCounter;
 
@@ -1101,7 +1229,8 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 				}
 			}
 
-		for (std::map<int,int>::iterator i = clusterMasters.begin(); i != clusterMasters.end(); i++) { //Message terminating sharing pairings
+		for (std::map<int, int>::iterator i = clusterMasters.begin(); i
+				!= clusterMasters.end(); i++) { //Message terminating sharing pairings
 			int msg = -1;
 			MPI_Send(&msg, 1, MPI_INT, i->second, 0, PETSC_COMM_WORLD);
 		}
@@ -1134,7 +1263,7 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 	MPI_Bcast(part, numOfPartitions, MPI_INT, 0, PETSC_COMM_WORLD);
 	MPI_Bcast(&(cluster->clusterCount), 1, MPI_INT, 0, PETSC_COMM_WORLD);
 
-	cluster->indexDiff= 0;
+	cluster->indexDiff = 0;
 	for (int i = 0; i < rank; i++) {
 		if (part[i] == cluster->clusterColor) {
 			cluster->indexDiff += startIndexes[i + 1] - startIndexes[i];
@@ -1157,7 +1286,7 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 			cluster->startIndexesDiff[origRank] = clusterStartIndexesDiff[i];
 		}
 
-		delete [] clusterStartIndexesDiff;
+		delete[] clusterStartIndexesDiff;
 	} else {
 		MPI_Gather(&(cluster->indexDiff), 1, MPI_INT, NULL, 1, MPI_INT, 0, cluster->clusterComm);
 		MPI_Send(&rank, 1, MPI_INT, 0, 0, cluster->clusterComm);

@@ -21,12 +21,15 @@ int main(int argc, char *argv[]) {
 	PetscPrintf(PETSC_COMM_WORLD, "Mesh preparation ...");
 
 	Mesh *mesh = new Mesh();
-	mesh->generateRectangularMesh(0, 1, 0, 1, 0.05);
+	//mesh->generateRectangularMesh(0,1,0,1,0.01);
+	mesh->loadHDF5("mesh.med");
 
 	PetscPrintf(PETSC_COMM_WORLD, "done\n\n Tearing ....");
 
 	mesh->partition(size);
 	mesh->tear();
+
+	mesh->save("outMesh.msh", false);
 	SubdomainCluster cluster;
 	PetscPrintf(PETSC_COMM_WORLD, "done\n\n");
 	mesh->createCluster(&cluster);

@@ -7,6 +7,7 @@
 #ifndef STRUCTURES_H
 #define STRUCTURES_H
 
+#include <hdf5.h>
 #include <math.h>
 #include <set>
 #include <map>
@@ -15,10 +16,6 @@
 #include "petscmat.h"
 #include "petscao.h"
 #include "parmetis.h"
-
-extern "C" {
-	#include "metis.h"
-}
 
 /**
  * @brief Keeps information needed for FETI about null space
@@ -115,6 +112,7 @@ struct Point {
 	std::set<Element*> elements;
 	std::set<Edge*> edges;
 
+	PetscInt family; ///< contains information about node border etc.
 	PetscInt domainInd;
 
 	Point(PetscReal xx = 0, PetscReal yy = 0, PetscReal zz = 0) {
@@ -122,6 +120,7 @@ struct Point {
 		y = yy;
 		z = zz;
 		domainInd = 0;
+		family = 0;
 	}
 	;
 	Point(const Point &p) {
@@ -187,6 +186,7 @@ public:
 	void dumpForMatlab(PetscViewer v);
 	void save(const char *filename, bool withEdges);
 	void load(const char *filename, bool withEdges);
+	void loadHDF5(const char* filename);
 	PetscErrorCode partition(int numDomains); ///< call Metis and divide elements among processes, only marks elements
 	/**
 	 * @brief Actually tear mesh to part, make new points and edges a distribute them among processes  by MPI

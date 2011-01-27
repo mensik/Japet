@@ -58,6 +58,9 @@ int main(int argc, char *argv[]) {
 		PetscViewer v;
 		Mesh *mesh = new Mesh();
 		mesh->generateRectangularMesh(m, n, k, l, h);
+
+		//mesh->loadHDF5("mesh.med");
+
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
 		mesh->dumpForMatlab(v);
 		PetscViewerDestroy(v);
@@ -67,8 +70,6 @@ int main(int argc, char *argv[]) {
 		Vec l;
 		Vec x;
 
-
-
 		FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, fList[2], fList[0]);
 		VecDuplicate(b, &l);
 		VecDuplicate(b, &x);
@@ -77,6 +78,7 @@ int main(int argc, char *argv[]) {
 		//VecSet(l, -0.04);
 		VecSet(x, 0);
 
+
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 
 		PetscReal ANorm;
@@ -84,8 +86,9 @@ int main(int argc, char *argv[]) {
 
 		PetscPrintf(PETSC_COMM_WORLD, "START\n");
 		MPRGP mprgp(A,b,l,x,1,2/ANorm);
-		mprgp.solve();
-		mprgp.saveIterationInfo("mprgp.dat");
+		CGSolver cg(A,b,x);
+		cg.solve();
+		cg.saveIterationInfo("mprgp.dat");
 		PetscPrintf(PETSC_COMM_WORLD, "END\n");
 		MatView(A, v);
 		VecView(b, v);
@@ -97,6 +100,7 @@ int main(int argc, char *argv[]) {
 		VecDestroy(b);
 		VecDestroy(l);
 		VecDestroy(x);
+
 	}
 
 

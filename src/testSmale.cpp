@@ -67,7 +67,8 @@ int main(int argc, char *argv[]) {
 		PetscLogStageRegister("Assembly", &assemblyStage);
 		PetscLogStagePush(assemblyStage);
 		Mesh *mesh = new Mesh();
-		mesh->generateRectangularMesh(m, n, k, l, h);
+		//mesh->generateRectangularMesh(m, n, k, l, h);
+		mesh->loadHDF5("mesh.med");
 		mesh->partition(size);
 		mesh->tear();
 
@@ -76,12 +77,15 @@ int main(int argc, char *argv[]) {
 		mesh->dumpForMatlab(v);
 		PetscViewerDestroy(v);
 		delete mesh;
+
 		PetscLogStagePop();
-		
+
 		Smale smale(&sdSystem,mi,ro,beta,M);
+
 		PetscLogStageRegister("Smale", &smaleStage);
 		PetscLogStagePush(smaleStage);
 		smale.solve();
+
 		PetscLogStagePop();
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 		smale.dumpSolution(v);

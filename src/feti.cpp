@@ -91,6 +91,8 @@ AFeti::~AFeti() {
 	}
 	VecDestroy(temp);
 	VecDestroy(tempLoc);
+
+	if (outerSolver != NULL) delete outerSolver;
 }
 
 void AFeti::dumpSolution(PetscViewer v) {
@@ -161,13 +163,12 @@ void AFeti::solve() {
 	}
 
 
-	Solver *solver = instanceOuterSolver(d, lmb);
-	solver->setSolverCtr(this);
-	solver->setIsVerbose(isVerbose);
+	outerSolver = instanceOuterSolver(d, lmb);
+	outerSolver->setSolverCtr(this);
+	outerSolver->setIsVerbose(isVerbose);
 	//Solve!!!
-	solver->solve();
-	solver->getX(lmb);
-	delete solver;
+	outerSolver->solve();
+	outerSolver->getX(lmb);
 
 	VecScale(lmb, -1);
 	MatMultTransposeAdd(B, lmb, b, u);

@@ -38,12 +38,12 @@ int main(int argc, char *argv[]) {
 	PetscTruth flg;
 	char fileName[PETSC_MAX_PATH_LEN] = "matlab/out.m";
 
-	PetscOptionsGetReal("-test_m", &m, PETSC_NULL);
-	PetscOptionsGetReal("-test_n", &n, PETSC_NULL);
-	PetscOptionsGetReal("-test_k", &k, PETSC_NULL);
-	PetscOptionsGetReal("-test_l", &l, PETSC_NULL);
-	PetscOptionsGetReal("-test_h", &h, PETSC_NULL);
-	PetscOptionsGetInt("-test_f", &f, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL,"-test_m", &m, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL,"-test_n", &n, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL,"-test_k", &k, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL,"-test_l", &l, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL,"-test_h", &h, PETSC_NULL);
+	PetscOptionsGetInt(PETSC_NULL,"-test_f", &f, PETSC_NULL);
 	PetscOptionsGetString(PETSC_NULL, "-test_out_file", fileName, PETSC_MAX_PATH_LEN
 			- 1, &flg);
 	//if (!flg) SETERRQ(1,"Must indicate binary file with the -test_out_file option");
@@ -57,6 +57,7 @@ int main(int argc, char *argv[]) {
 
 		PetscPrintf(PETSC_COMM_WORLD, "Generating mesh ... ");
 		mesh->generateRectangularMesh(m, n, k, l, h);
+		//mesh->loadHDF5("mesh.med");
 		PetscPrintf(PETSC_COMM_WORLD, "done.\n\nTearing mesh ...");
 		mesh->partition(size);
 
@@ -89,7 +90,7 @@ int main(int argc, char *argv[]) {
 		hFeti->solve();
 		//feti.dumpSolution(v);
 		//PetscViewerDestroy(v);
-
+		hFeti->saveIterationInfo("hFeti.log");
 		delete hFeti;
 	}
 
