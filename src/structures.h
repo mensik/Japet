@@ -185,6 +185,7 @@ public:
 			PetscReal l, PetscReal h); ///< generate rectangular mesh
 	void dumpForMatlab(PetscViewer v);
 	void save(const char *filename, bool withEdges);
+	void saveHDF5(const char *filename);
 	void load(const char *filename, bool withEdges);
 	void loadHDF5(const char* filename);
 	PetscErrorCode partition(int numDomains); ///< call Metis and divide elements among processes, only marks elements
