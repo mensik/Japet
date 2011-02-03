@@ -7,6 +7,7 @@ static char help[] = "My first own testing utility for PETSc\n\n";
 #include "solver.h"
 #include "petscmat.h"
 
+
 PetscReal funConst(Point n) {
 	return 1;
 }
@@ -29,7 +30,9 @@ int main(int argc, char *argv[]) {
 	mesh->partition(size);
 	mesh->tear();
 
-	mesh->save("outMesh.msh", false);
+	mesh->saveHDF5("outMesh.med");
+
+	/*
 	SubdomainCluster cluster;
 	PetscPrintf(PETSC_COMM_WORLD, "done\n\n");
 	mesh->createCluster(&cluster);
@@ -52,7 +55,7 @@ int main(int argc, char *argv[]) {
 	PetscViewerDestroy(v);
 
 	//mesh->save("testMesh.msh", false);
-
+*/
 	delete mesh;
 	PetscFinalize();
 	return 0;

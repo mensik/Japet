@@ -11,6 +11,10 @@
 #include <vector>
 #include <map>
 #include "petscsys.h"
+#include "petscvec.h"
+#include "hdf5.h"
+
+void saveScalarResultHDF5(const char *filename, const char *name, Vec v);
 
 struct IterationInfo {
 	int itNumber;

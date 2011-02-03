@@ -56,13 +56,15 @@ int main(int argc, char *argv[]) {
 		Mesh *mesh = new Mesh();
 
 		PetscPrintf(PETSC_COMM_WORLD, "Generating mesh ... ");
-		mesh->generateRectangularMesh(m, n, k, l, h);
-		//mesh->loadHDF5("mesh.med");
+		//mesh->generateRectangularMesh(m, n, k, l, h);
+		mesh->loadHDF5("mesh.med");
 		PetscPrintf(PETSC_COMM_WORLD, "done.\n\nTearing mesh ...");
 		mesh->partition(size);
 
 		mesh->tear();
 		PetscPrintf(PETSC_COMM_WORLD, "done.\n\n");
+
+		mesh->saveHDF5("outMesh.med");
 		SubdomainCluster cluster;
 		mesh->createCluster(&cluster);
 
@@ -80,18 +82,20 @@ int main(int argc, char *argv[]) {
 		Vec b;
 		FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, funConst, funConst);
 
-		HFeti *hFeti = new HFeti(A,b,Bg,Bl,lmbG, lmbL, &cluster, mesh->vetrices.size(), PETSC_COMM_WORLD);
+		//HFeti *hFeti = new HFeti(A,b,Bg,Bl,lmbG, lmbL, &cluster, mesh->vetrices.size(), PETSC_COMM_WORLD);
+
 
 		delete mesh;
 
 		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 		//feti.dumpSystem(v);
-		hFeti->setIsVerbose(true);
-		hFeti->solve();
+		//hFeti->setIsVerbose(true);
+		//hFeti->solve();
+		saveScalarResultHDF5("outMesh.med","nice",b);
 		//feti.dumpSolution(v);
 		//PetscViewerDestroy(v);
-		hFeti->saveIterationInfo("hFeti.log");
-		delete hFeti;
+		//hFeti->saveIterationInfo("hFeti.log");
+		//delete hFeti;
 	}
 
 	ierr = PetscFinalize();
