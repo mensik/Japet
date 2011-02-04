@@ -75,6 +75,7 @@ int main(int argc, char *argv[]) {
 		SDSystem sdSystem(mesh,fList[f],fList[0]);
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
 		mesh->dumpForMatlab(v);
+		mesh->saveHDF5("outmesh.med");
 		PetscViewerDestroy(v);
 		delete mesh;
 
@@ -87,6 +88,9 @@ int main(int argc, char *argv[]) {
 		smale.solve();
 
 		PetscLogStagePop();
+
+		saveScalarResultHDF5("outmesh.med","smale",smale.getx());
+
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 		smale.dumpSolution(v);
 		//smale.dumpSolution(matLabView);

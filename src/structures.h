@@ -4,10 +4,15 @@
  @date 	2010
  */
 
+#ifndef MESGERR
+#define MESGERR 1
+#endif
+
 #ifndef STRUCTURES_H
 #define STRUCTURES_H
 
-#include <hdf5.h>
+#include "med.h"
+#include "med_utils.h"
 #include <math.h>
 #include <set>
 #include <map>

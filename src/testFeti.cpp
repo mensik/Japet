@@ -79,19 +79,21 @@ int main(int argc, char *argv[]) {
 		PetscViewerDestroy(v);
 
 		Mat A;
-		Vec b;
+		Vec b,x;
 		FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, funConst, funConst);
 
-		//HFeti *hFeti = new HFeti(A,b,Bg,Bl,lmbG, lmbL, &cluster, mesh->vetrices.size(), PETSC_COMM_WORLD);
+		HFeti *hFeti = new HFeti(A,b,Bg,Bl,lmbG, lmbL, &cluster, mesh->vetrices.size(), PETSC_COMM_WORLD);
 
 
 		delete mesh;
 
 		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 		//feti.dumpSystem(v);
-		//hFeti->setIsVerbose(true);
-		//hFeti->solve();
-		saveScalarResultHDF5("outMesh.med","nice",b);
+		hFeti->setIsVerbose(true);
+		hFeti->solve();
+		VecDuplicate(b, &x);
+		hFeti->copySolution(x);
+		saveScalarResultHDF5("outMesh.med","nice",x);
 		//feti.dumpSolution(v);
 		//PetscViewerDestroy(v);
 		//hFeti->saveIterationInfo("hFeti.log");

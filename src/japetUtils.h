@@ -1,6 +1,9 @@
 /*
 
  */
+#ifndef MESGERR
+#define MESGERR 1
+#endif
 
 #ifndef JAPETUTILS_H_
 #define JAPETUTILS_H_
@@ -12,7 +15,9 @@
 #include <map>
 #include "petscsys.h"
 #include "petscvec.h"
-#include "hdf5.h"
+#include "mpi.h"
+#include "med.h"
+#include "med_utils.h"
 
 void saveScalarResultHDF5(const char *filename, const char *name, Vec v);
 

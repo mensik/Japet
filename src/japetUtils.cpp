@@ -59,84 +59,38 @@ void saveScalarResultHDF5(const char *filename, const char *name, Vec v) {
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
 
+	PetscInt localSize;
+	PetscReal *locArray;
+	VecGetLocalSize(v, &localSize);
+	VecGetArray(v, &locArray);
+
 	if (!rank) {
 
-		hid_t file = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);
-		hid_t gCha = H5Gcreate(file, "CHA", 0);
+		char NOM[4] = "y  ";
+		char UNI[4] = "m  ";
 
-		hid_t gResult = H5Gcreate(gCha, name, 0);
+		med_idt fid = MEDouvrir((char*) filename, MED_LECTURE_ECRITURE);
+		MEDchampCr(fid, (char*) name, MED_FLOAT64, NOM, UNI, 1);
 
-		hid_t aid, attr;
-		int NCO = 1, TYP = 6;
-		char NOM[] = "x";
-		char UNI[] = "K";
-		aid = H5Screate(H5S_SCALAR);
+		PetscInt globalSize, procCounts[size], displ[size];
 
-		hid_t strType = H5Tcopy(H5T_C_S1);
-		H5Tset_size(strType, 25);
+		VecGetSize(v, &globalSize);
+		MPI_Gather(&localSize, 1, MPI_INT, procCounts, 1, MPI_INT, 0, PETSC_COMM_WORLD);
 
-		attr = H5Acreate(gResult, "NCO", H5T_NATIVE_INT, aid, H5P_DEFAULT);
-		H5Awrite(attr, H5T_NATIVE_INT, &NCO);
-		H5Aclose(attr);
-		attr = H5Acreate(gResult, "TYP", H5T_NATIVE_INT, aid, H5P_DEFAULT);
-		H5Awrite(attr, H5T_NATIVE_INT, &TYP);
-		H5Aclose(attr);
-		attr = H5Acreate(gResult, "NOM", strType, aid, H5P_DEFAULT);
-		H5Awrite(attr, strType, &NOM);
-		H5Aclose(attr);
-		attr = H5Acreate(gResult, "UNI", strType, aid, H5P_DEFAULT);
-		H5Awrite(attr, strType, &UNI);
-		H5Aclose(attr);
+		displ[0] = 0;
+		for (int i = 1; i < size; i++) displ[i] = displ[i - 1] + procCounts[i - 1];
 
-		hid_t gNOE = H5Gcreate(gResult, "NOE", 0);
-		hid_t gZERO =
-				H5Gcreate(gNOE, "                   0                   -1", 0);
-		hid_t gMESH = H5Gcreate(gZERO, "mesh", 0);
+		PetscReal out[globalSize];
 
-		int size, NDT = 0, NOR = -1, NGA = 1;
-		double PDT = 0.0;
-		char MAI[] = "mesh", PFL[] = " ";
-		VecGetSize(v, &size);
+		for (int i = 0; i < globalSize; i++) out[i] = -1;
 
-		hsize_t dim[1];
-		dim[0] = (hsize_t) size;
-		hid_t dataspace = H5Screate_simple(1, dim, NULL);
-		hid_t datatype = H5Tcopy(H5T_IEEE_F64LE);
-		hid_t dataset = H5Dcreate(gMESH, "CO", datatype, dataspace, H5P_DEFAULT);
+		MPI_Gatherv(locArray, localSize, MPI_DOUBLE, out, procCounts, displ, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
 
-		attr = H5Acreate(gMESH, "NBR", H5T_NATIVE_INT, aid, H5P_DEFAULT);
-		H5Awrite(attr, H5T_NATIVE_INT, &size);
-		H5Aclose(attr);
-		attr = H5Acreate(gZERO, "NOR", H5T_NATIVE_INT, aid, H5P_DEFAULT);
-		H5Awrite(attr, H5T_NATIVE_INT, &NOR);
-		H5Aclose(attr);
-		attr = H5Acreate(gMESH, "NGA", H5T_NATIVE_INT, aid, H5P_DEFAULT);
-		H5Awrite(attr, H5T_NATIVE_INT, &NGA);
-		H5Aclose(attr);
-		attr = H5Acreate(gZERO, "NDT", H5T_NATIVE_INT, aid, H5P_DEFAULT);
-		H5Awrite(attr, H5T_NATIVE_INT, &NDT);
-		H5Aclose(attr);
-		attr = H5Acreate(gZERO, "PDT", H5T_IEEE_F64LE, aid, H5P_DEFAULT);
-		H5Awrite(attr, H5T_IEEE_F64LE, &PDT);
-		H5Aclose(attr);
-		H5Tset_size(strType, 33);
-		attr = H5Acreate(gZERO, "MAI", strType, aid, H5P_DEFAULT);
-		H5Awrite(attr, strType, &MAI);
-		H5Aclose(attr);
-		H5Tset_size(strType, 33);
-		attr = H5Acreate(gMESH, "PFL", strType, aid, H5P_DEFAULT);
-		H5Awrite(attr, strType, &PFL);
-		H5Aclose(attr);
-		attr = H5Acreate(gMESH, "GAU", strType, aid, H5P_DEFAULT);
-		H5Awrite(attr, strType, &PFL);
-		H5Aclose(attr);
-		H5Tset_size(strType, 9);
-		attr = H5Acreate(gZERO, "UNI", strType, aid, H5P_DEFAULT);
-		H5Awrite(attr, strType, &UNI);
-		H5Aclose(attr);
-
-		H5Dclose(dataset);
-
-		H5Fclose(file);
+		MEDchampEcr(fid, "mesh", (char*) name, (unsigned char *) out, MED_FULL_INTERLACE, globalSize, MED_NOGAUSS, 1, MED_NOPFL, MED_NO_PFLMOD, MED_NOEUD, MED_NONE, MED_NOPDT, "", 0.0, MED_NONOR);
+	} else {
+		MPI_Gather(&localSize, 1, MPI_INT, NULL, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+		MPI_Gatherv(locArray, localSize, MPI_DOUBLE, NULL, NULL, NULL, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
 	}
+
+	VecRestoreArray(v, &locArray);
 }
