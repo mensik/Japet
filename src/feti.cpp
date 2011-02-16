@@ -11,6 +11,8 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
 	isSingular = nullSpace->isDomainSingular;
 	R = nullSpace->R;
 
+	isVerbose = false;
+
 	if (isSingular) {
 		MatMatMult(B, R, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &G);
 
@@ -238,7 +240,7 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
 	//PetscPrintf(comm, "It.%d: residual norm:%f\n", itNumber, norm);
 	lastNorm = norm;
-	return norm < 1e-4 || itNumber > 500;
+	return norm < 1e-6 || itNumber > 300;
 }
 
 void Feti1::applyInvA(Vec in, IterationManager *itManager) {
@@ -328,6 +330,7 @@ void HFeti::applyInvA(Vec in, IterationManager *itManager) {
 	VecCopy(globTempGh, clustTempGh);
 	if (isLocalSingular) MatNullSpaceRemove(clusterNS, clustTemp, PETSC_NULL);
 
+	subClusterSystem->setRequiredPrecision(1e-8);
 	subClusterSystem->solve(clustTemp);
 	subClusterSystem->copySolution(clustTemp);
 
@@ -341,7 +344,7 @@ void HFeti::applyInvA(Vec in, IterationManager *itManager) {
 }
 
 Solver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
-	outerPrec = 1e-4;
+	outerPrec = 1e-6;
 	lastNorm = 1e-4;
 	inCounter = 0;
 	return new ASinStep(this, d, lmb);

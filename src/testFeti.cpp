@@ -84,16 +84,16 @@ int main(int argc, char *argv[]) {
 
 		HFeti *hFeti = new HFeti(A,b,Bg,Bl,lmbG, lmbL, &cluster, mesh->vetrices.size(), PETSC_COMM_WORLD);
 
-
 		delete mesh;
 
 		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
 		//feti.dumpSystem(v);
 		hFeti->setIsVerbose(true);
+		PetscPrintf(PETSC_COMM_WORLD, "Starting!!! \n\n");
 		hFeti->solve();
 		VecDuplicate(b, &x);
 		hFeti->copySolution(x);
-		saveScalarResultHDF5("outMesh.med","nice",x);
+		saveScalarResultHDF5("outMesh.med","hFetiResult",x);
 		//feti.dumpSolution(v);
 		//PetscViewerDestroy(v);
 		//hFeti->saveIterationInfo("hFeti.log");
