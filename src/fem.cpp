@@ -89,6 +89,61 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
 
 }
 
+PetscErrorCode FEMAssembleTotal2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
+		PetscReal(*f)(Point), PetscReal(*K)(Point)) {
+	PetscErrorCode ierr;
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+
+	PetscInt size = mesh->vetrices.size();
+
+	ierr
+			= MatCreateMPIAIJ(comm, size, size, PETSC_DECIDE, PETSC_DECIDE, 7, PETSC_NULL, 0, PETSC_NULL, &A);
+	CHKERRQ(ierr);
+	ierr = VecCreateMPI(comm, size, PETSC_DECIDE, &b);
+	CHKERRQ(ierr);
+
+
+	for (std::map<PetscInt, Element*>::iterator e = mesh->elements.begin(); e != mesh->elements.end(); e++) {
+		PetscScalar bl[3];
+		PetscScalar Al[9];
+		PetscReal R[4];
+
+		PetscInt elSize = e->second->numVetrices;
+		Point vetrices[elSize];
+		PetscInt ixs[elSize];
+		for (int j = 0; j < elSize; j++) {
+			ixs[j] = e->second->vetrices[j];
+			vetrices[j] = *(mesh->vetrices[ixs[j]]);
+		}
+
+		R[0] = vetrices[1].x - vetrices[0].x;
+		R[2] = vetrices[1].y - vetrices[0].y;
+		R[1] = vetrices[2].x - vetrices[0].x;
+		R[3] = vetrices[2].y - vetrices[0].y;
+
+		Point center = getCenterOfSet(vetrices, elSize);
+		bLoc(R, bl, f(center));
+		ALoc(R, Al, K(center));
+
+		ierr = VecSetValues(b, elSize, ixs, bl, ADD_VALUES);
+		CHKERRQ(ierr);
+		ierr = MatSetValues(A, elSize, ixs, elSize, ixs, Al, ADD_VALUES);
+		CHKERRQ(ierr);
+	}
+	ierr = VecAssemblyBegin(b);
+	CHKERRQ(ierr);
+	ierr = VecAssemblyEnd(b);
+	CHKERRQ(ierr);
+
+	ierr = MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+	CHKERRQ(ierr);
+	ierr = MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+	CHKERRQ(ierr);
+	return ierr;
+
+}
+
 Point getCenterOfSet(Point p[], PetscInt size) {
 	PetscReal x = 0;
 	PetscReal y = 0;

@@ -156,13 +156,20 @@ public:
 
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb);
 
+void GenerateTotalJumpOperator(Mesh *mesh, Mat &B, Vec &lmb);
+
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		Mat &BGlob, Vec &lmbGlob, Mat &BCluster, Vec &lmbCluster);
 
 void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 		bool &isLocalSingular, Mat *Rmat, MPI_Comm comm = PETSC_COMM_WORLD);
 
+void Generate2DLaplaceTotalNullSpace(Mesh *mesh, bool &isSingular,
+		bool &isLocalSingular, Mat *Rmat, MPI_Comm comm = PETSC_COMM_WORLD);
+
 void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
+
+
 
 void getLocalJumpPart(Mat B, Mat *Bloc);
 

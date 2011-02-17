@@ -33,5 +33,6 @@
 */
 
 PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscReal (*f)(Point), PetscReal (*K)(Point));
+PetscErrorCode FEMAssembleTotal2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscReal (*f)(Point), PetscReal (*K)(Point));
 
 #endif

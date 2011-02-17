@@ -1345,7 +1345,7 @@ void Mesh::evalInNodes(PetscReal(*f)(Point), Vec *fv) {
 }
 
 void Mesh::createCluster(SubdomainCluster *cluster) {
-	PetscInt rank, nparts = 0;
+	PetscInt rank, nparts;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	DomainPairings pairings;
 	idxtype *part;
@@ -1405,7 +1405,8 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 
 		int wgtflag = 1; //weights on edges
 		int numFlag = 0; //C style
-		nparts = int(floor(sqrt(numOfPartitions)));
+		nparts = floor(sqrt(numOfPartitions));
+
 		cluster->clusterCount = nparts;
 		int options[] = { 0, 0, 0, 0, 0 };
 
@@ -1428,8 +1429,10 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 		MPI_Scatter(part, 1, MPI_INT, &(cluster->clusterColor), 1, MPI_INT, 0, PETSC_COMM_WORLD);
 
 		cluster->subdomainColors = new PetscInt[numOfPartitions];
-		for (int i = 0; i < numOfPartitions; i++)
+		for (int i = 0; i < numOfPartitions; i++) {
 			cluster->subdomainColors[i] = part[i];
+			PetscPrintf(PETSC_COMM_SELF, "Color of %d is %d \n", i, part[i]);
+		}
 
 		PetscInt edgeCutSum = 0;
 		for (int i = 0; i < numOfPartitions; i++)

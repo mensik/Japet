@@ -1,1 +1,0 @@
-mpiexec -n 16 ./testSassi -test_x 4 -test_y 4 -test_h 0.1 -test_f 0 -test_r 0.01 -test_bounded_side_count 3 

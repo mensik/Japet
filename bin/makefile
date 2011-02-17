@@ -17,6 +17,7 @@ vpath %.h $(headerDir)
 
 testFeti: testFeti.o chkopts $(MYLIB)
 	-${CLINKER} -o testFeti testFeti.o $(MYLIB) ${PETSC_KSP_LIB}
+	mv testFeti ../deploy
 
 testMPRGP: testMPRGP.o chkopts $(MYLIB)
 	-${CLINKER} -o testMPRGP testMPRGP.o $(MYLIB) ${PETSC_KSP_LIB}

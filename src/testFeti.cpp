@@ -38,12 +38,12 @@ int main(int argc, char *argv[]) {
 	PetscTruth flg;
 	char fileName[PETSC_MAX_PATH_LEN] = "matlab/out.m";
 
-	PetscOptionsGetReal(PETSC_NULL,"-test_m", &m, PETSC_NULL);
-	PetscOptionsGetReal(PETSC_NULL,"-test_n", &n, PETSC_NULL);
-	PetscOptionsGetReal(PETSC_NULL,"-test_k", &k, PETSC_NULL);
-	PetscOptionsGetReal(PETSC_NULL,"-test_l", &l, PETSC_NULL);
-	PetscOptionsGetReal(PETSC_NULL,"-test_h", &h, PETSC_NULL);
-	PetscOptionsGetInt(PETSC_NULL,"-test_f", &f, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-test_m", &m, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-test_n", &n, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-test_k", &k, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-test_l", &l, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-test_h", &h, PETSC_NULL);
+	PetscOptionsGetInt(PETSC_NULL, "-test_f", &f, PETSC_NULL);
 	PetscOptionsGetString(PETSC_NULL, "-test_out_file", fileName, PETSC_MAX_PATH_LEN
 			- 1, &flg);
 	//if (!flg) SETERRQ(1,"Must indicate binary file with the -test_out_file option");
@@ -57,47 +57,55 @@ int main(int argc, char *argv[]) {
 
 		PetscPrintf(PETSC_COMM_WORLD, "Generating mesh ... ");
 		//mesh->generateRectangularMesh(m, n, k, l, h);
-		mesh->loadHDF5("mesh.med");
+		mesh->loadHDF5("benchmarks/rect_225_1side.med");
 		PetscPrintf(PETSC_COMM_WORLD, "done.\n\nTearing mesh ...");
 		mesh->partition(size);
 
 		mesh->tear();
 		PetscPrintf(PETSC_COMM_WORLD, "done.\n\n");
 
-		mesh->saveHDF5("outMesh.med");
-		SubdomainCluster cluster;
-		mesh->createCluster(&cluster);
-
-		Mat Bl, Bg;
-		Vec lmbG, lmbL;
-		//GenerateJumpOperator(mesh, Bg, lmbG);
-		GenerateClusterJumpOperator(mesh, &cluster, Bg, lmbG, Bl, lmbL);
-		Generate2DLaplaceClusterNullSpace(mesh, &cluster);
-
-		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
 		mesh->dumpForMatlab(v);
 		PetscViewerDestroy(v);
 
-		Mat A;
-		Vec b,x;
-		FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, funConst, funConst);
+		mesh->saveHDF5("outMesh.med");
 
-		HFeti *hFeti = new HFeti(A,b,Bg,Bl,lmbG, lmbL, &cluster, mesh->vetrices.size(), PETSC_COMM_WORLD);
+		Mat B;
+		Vec lmb;
+		GenerateTotalJumpOperator(mesh, B, lmb);
+
+		Laplace2DNullSpace nullSpace;
+		Generate2DLaplaceTotalNullSpace(mesh, nullSpace.isDomainSingular, nullSpace.isSubDomainSingular, &(nullSpace.R));
+
+		Mat A;
+		Vec b, x;
+		FEMAssembleTotal2DLaplace(PETSC_COMM_WORLD, mesh, A, b, funConst, funConst);
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/system.m", FILE_MODE_WRITE, &v);
+
+		MatView(A, v);
+		VecView(b, v);
+		MatView(B, v);
+		//MatView(nullSpace.R, v);
+
+		PetscViewerDestroy(v);
+
+		Feti1
+				*feti =
+						new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
 
 		delete mesh;
 
-		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileName, FILE_MODE_WRITE, &v);
-		//feti.dumpSystem(v);
-		hFeti->setIsVerbose(true);
-		PetscPrintf(PETSC_COMM_WORLD, "Starting!!! \n\n");
-		hFeti->solve();
-		VecDuplicate(b, &x);
-		hFeti->copySolution(x);
-		saveScalarResultHDF5("outMesh.med","hFetiResult",x);
-		//feti.dumpSolution(v);
+		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/system.m", FILE_MODE_WRITE, &v);
+		//feti->dumpSystem(v);
 		//PetscViewerDestroy(v);
-		//hFeti->saveIterationInfo("hFeti.log");
-		//delete hFeti;
+
+		feti->setIsVerbose(true);
+		feti->solve();
+
+		Vec xFeti;
+		VecDuplicate(b, &xFeti);
+		feti->copySolution(xFeti);
+		saveScalarResultHDF5("outMesh.med", "fetiResult", xFeti);
 	}
 
 	ierr = PetscFinalize();

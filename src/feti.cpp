@@ -164,7 +164,6 @@ void AFeti::solve() {
 		VecDestroy(ttlmb);
 	}
 
-
 	outerSolver = instanceOuterSolver(d, lmb);
 	outerSolver->setSolverCtr(this);
 	outerSolver->setIsVerbose(isVerbose);
@@ -251,7 +250,7 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 	PetscInt itNumber;
 	KSPGetIterationNumber(kspA, &itNumber);
-	inIterations+=itNumber;
+	inIterations += itNumber;
 
 	VecCopy(tempInvGhB, tempInvGh);
 	VecCopy(tempInv, in);
@@ -365,6 +364,55 @@ void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 			MatSetValue(B, i, mesh->pointPairing[i * 2], 1, INSERT_VALUES);
 			MatSetValue(B, i, mesh->pointPairing[i * 2 + 1], -1, INSERT_VALUES);
 		}
+	}
+
+	MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+
+	VecCreate(PETSC_COMM_WORLD, &lmb);
+	VecSetSizes(lmb, PETSC_DECIDE, mesh->nPairs);
+	VecSetFromOptions(lmb);
+	VecSet(lmb, 0);
+}
+
+void GenerateTotalJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
+	PetscInt rank, size;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_size(PETSC_COMM_WORLD, &size);
+
+	int dSize;
+	std::set<PetscInt> indDirchlet;
+	for (std::set<PetscInt>::iterator i = mesh->borderEdges.begin(); i
+			!= mesh->borderEdges.end(); i++) {
+
+		for (int j = 0; j < 2; j++) {
+			indDirchlet.insert(mesh->edges[*i]->vetrices[j]);
+		}
+	}
+	dSize = indDirchlet.size();
+
+	int dNodeCounts[size];
+	MPI_Allgather(&dSize, 1, MPI_INT, dNodeCounts, 1, MPI_INT, PETSC_COMM_WORLD);
+
+	int dSum = 0;
+	for (int i = 0; i < size; i++) dSum += dNodeCounts[i];
+
+	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, mesh->vetrices.size(), mesh->nPairs
+			+ dSum, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &B);
+
+	int sIndex = 0;
+	for (int i = 0; i < rank; i++) sIndex += dNodeCounts[i];
+
+	for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i != indDirchlet.end(); i++) {
+		MatSetValue(B, sIndex++, *i, 1, INSERT_VALUES);
+	}
+
+	if (!rank) {
+		for (int i = 0; i < mesh->nPairs; i++) {
+			MatSetValue(B, i + dSum, mesh->pointPairing[i * 2], 1, INSERT_VALUES);
+			MatSetValue(B, i + dSum, mesh->pointPairing[i * 2 + 1], -1, INSERT_VALUES);
+		}
+
 	}
 
 	MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
@@ -498,6 +546,29 @@ void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 		PetscPrintf(comm, "Null space dimension: %d \n", nullSpaceDim);
 	} else {
 		isSingular = false;
+	}
+}
+
+void Generate2DLaplaceTotalNullSpace(Mesh *mesh, bool &isSingular,
+		bool &isLocalSingular, Mat *R, MPI_Comm comm) {
+	PetscInt rank, size;
+	MPI_Comm_rank(comm, &rank);
+	MPI_Comm_size(comm, &size);
+
+	isLocalSingular = true;
+	isSingular = true;
+
+	//Creating of matrix R - null space basis
+	MatCreateMPIDense(comm, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, size, PETSC_NULL, R);
+	for (int i = 0; i < size; i++) {
+		if (i == rank) {
+			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
+					!= mesh->vetrices.end(); v++) {
+				MatSetValue(*R, v->first, i, 1, INSERT_VALUES);
+			}
+		}
+		MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
+		MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
 	}
 }
 
