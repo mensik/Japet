@@ -13,6 +13,59 @@ void bLoc(PetscReal *R, PetscReal *bl, PetscReal f);
  */
 void ALoc(PetscReal *R, PetscReal *Al, PetscReal K);
 
+void elastLoc(Point *vetrices[], PetscReal lambda,PetscReal mu, PetscReal *fs, PetscReal *stifMat, PetscReal *bL) {
+
+	PetscReal
+			T[] =
+					{ 1, 1, 1, vetrices[0]->x, vetrices[1]->x, vetrices[2]->x, vetrices[0]->y, vetrices[1]->y, vetrices[2]->y };
+
+	PetscReal phiGrad[] = { vetrices[1]->y - vetrices[2]->y, vetrices[2]->x
+			- vetrices[1]->x, vetrices[2]->y - vetrices[0]->y, vetrices[0]->x
+			- vetrices[2]->x, vetrices[0]->y - vetrices[1]->y, vetrices[1]->x
+			- vetrices[0]->x };
+
+	PetscReal detT = matrixDet(T, 3);
+	matrixSum(phiGrad, 1 / (2 * detT), phiGrad, 0, phiGrad, 3, 2);
+
+	PetscReal phiGradT[6];
+	matrixTranspose(phiGrad, 3, 2, phiGradT);
+
+	double Cmu[] = { 2, 0, 0, 0, 2, 0, 0, 0, 1 };
+	double Clm[] = { 1, 1, 0, 1, 1, 0, 0, 0, 0 };
+	PetscReal C[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+	matrixSum(Cmu, mu, Clm, lambda, C, 3, 3);
+
+	double R[18], RT[18];
+	for (int i = 0; i < 18; i++)
+		R[i] = 0;
+
+	int idxR1[] = { 0, 2 };
+	int idxC1[] = { 0, 2, 4 };
+	int idxR2[] = { 2, 1 };
+	int idxC2[] = { 1, 3, 5 };
+
+	matrixSetSub(R, 3, 6, idxR1, 2, idxC1, 3, phiGradT);
+	matrixSetSub(R, 3, 6, idxR2, 2, idxC2, 3, phiGradT);
+
+	matrixTranspose(R, 3, 6, RT);
+
+	PetscReal temp[18];
+
+	matrixMult(C, 3, 3, R, 3, 6, temp);
+	matrixMult(RT, 6, 3, temp, 3, 6, stifMat);
+
+	matrixSum(stifMat, detT / 2, stifMat, 0, stifMat, 6, 6);
+
+	//Volume Force
+	for (int i = 0; i < 3; i++) {
+		bL[i*2] = detT / 6 * fs[0];
+		bL[i*2 + 1] = detT / 6 * fs[1];
+	}
+
+	//@TODO Edge Force!!!
+}
+
 Point getCenterOfSet(Point points[], PetscInt size);
 
 PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
@@ -37,7 +90,8 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
 		}
 	}
 
-	for (std::map<PetscInt, Element*>::iterator e = mesh->elements.begin(); e != mesh->elements.end(); e++) {
+	for (std::map<PetscInt, Element*>::iterator e = mesh->elements.begin(); e
+			!= mesh->elements.end(); e++) {
 		PetscScalar bl[3];
 		PetscScalar Al[9];
 		PetscReal R[4];
@@ -89,8 +143,50 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
 
 }
 
-PetscErrorCode FEMAssembleTotal2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
-		PetscReal(*f)(Point), PetscReal(*K)(Point)) {
+void FEMAssemble2DElasticity(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b) {
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+
+	PetscInt size = mesh->vetrices.size();
+
+	MatCreateMPIAIJ(comm, size * 2, size * 2, PETSC_DECIDE, PETSC_DECIDE, 12, PETSC_NULL, 0, PETSC_NULL, &A);
+	VecCreateMPI(comm, size * 2, PETSC_DECIDE, &b);
+
+	for (std::map<PetscInt, Element*>::iterator e = mesh->elements.begin(); e
+			!= mesh->elements.end(); e++) {
+
+		Point* vetrices[3];
+		PetscInt vIndex[3];
+		for (int i = 0; i < 3; i++) {
+			vIndex[i] = e->second->vetrices[i];
+			vetrices[i] = mesh->vetrices[vIndex[i]];
+		}
+		PetscReal lStiff[36];
+		PetscReal bLoc[6];
+
+		PetscReal fs[] = {0,-9.8};
+
+		elastLoc(vetrices, 1, 3, fs, lStiff,bLoc);
+
+		PetscInt idx[6];
+		for (int i = 0; i < 3; i++) {
+			idx[i * 2] = vIndex[i] * 2;
+			idx[i * 2 + 1] = vIndex[i] * 2 + 1;
+		}
+
+		MatSetValues(A, 6, idx, 6, idx, lStiff, ADD_VALUES);
+		VecSetValues(b, 6, idx, bLoc, ADD_VALUES);
+	}
+
+	VecAssemblyBegin(b);
+	VecAssemblyEnd(b);
+
+	MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+}
+
+PetscErrorCode FEMAssembleTotal2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A,
+		Vec &b, PetscReal(*f)(Point), PetscReal(*K)(Point)) {
 	PetscErrorCode ierr;
 	PetscInt rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -103,8 +199,8 @@ PetscErrorCode FEMAssembleTotal2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec 
 	ierr = VecCreateMPI(comm, size, PETSC_DECIDE, &b);
 	CHKERRQ(ierr);
 
-
-	for (std::map<PetscInt, Element*>::iterator e = mesh->elements.begin(); e != mesh->elements.end(); e++) {
+	for (std::map<PetscInt, Element*>::iterator e = mesh->elements.begin(); e
+			!= mesh->elements.end(); e++) {
 		PetscScalar bl[3];
 		PetscScalar Al[9];
 		PetscReal R[4];
@@ -181,16 +277,16 @@ void ALoc(PetscReal *R, PetscReal *Al, PetscReal k) {
 	//printf("%f\t%f\n",iR[0],iR[1]);
 	//printf("%f\t%f\n\n",iR[2],iR[3]);
 
-	//printf("%f\t%f\t%f\n",B[0],B[1],B[2]);	
-	//printf("%f\t%f\t%f\n\n",B[3],B[4],B[5]);	
+	//printf("%f\t%f\t%f\n",B[0],B[1],B[2]);
+	//printf("%f\t%f\t%f\n\n",B[3],B[4],B[5]);
 
 	for (int i = 0; i < 3; i++) {
 		for (int j = 0; j < 3; j++) {
 			Al[i * 3 + j] = k * fabs(dR) / 2 * (B[i] * B[j] + B[i + 3] * B[j + 3]);
 		}
 	}
-	//printf("%f\t%f\t%f\n",Al[0],Al[1],Al[2]);	
-	//printf("%f\t%f\t%f\n",Al[3],Al[4],Al[5]);	
-	//printf("%f\t%f\t%f\n",Al[6],Al[7],Al[8]);	
+	//printf("%f\t%f\t%f\n",Al[0],Al[1],Al[2]);
+	//printf("%f\t%f\t%f\n",Al[3],Al[4],Al[5]);
+	//printf("%f\t%f\t%f\n",Al[6],Al[7],Al[8]);
 }
 

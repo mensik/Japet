@@ -1,5 +1,5 @@
 #include "feti.h"
-AFeti::AFeti(Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
+AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 		PetscInt localNodeCount, MPI_Comm c) {
 
 	comm = c;
@@ -66,6 +66,7 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
 		VecCreateMPI(comm, PETSC_DECIDE, gN, &tgA);
 		VecDuplicate(tgA, &tgB);
 	}
+
 	//Priprava ghostovaneho vektoru TEMP a kopie vektoru b do lokalnich casti bloc	
 	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &temp);
 	VecCopy(b, temp);
@@ -151,13 +152,17 @@ void AFeti::solve() {
 	if (isSingular) projectGOrth(d);
 
 	//Priprava vektoru lambda
+
 	VecCreateMPI(comm, PETSC_DECIDE, locSizeM, &lmb);
 	if (isSingular) { //Je li singularni, je treba pripavit vhodne vstupni lambda
 		Vec tlmb, ttlmb;
 		VecCreateMPI(comm, PETSC_DECIDE, gN, &tlmb);
 		MatMultTranspose(R, b, tlmb);
+
 		VecDuplicate(tlmb, &ttlmb);
-		KSPSolve(kspG, tlmb, ttlmb);
+
+		KSPSolve(kspG, tlmb, ttlmb); //POZOR!!! (G'G) muze byt singularni v pripade, ze je system neukotveny
+
 		MatMult(G, ttlmb, lmb);
 
 		VecDestroy(tlmb);
@@ -200,7 +205,7 @@ void AFeti::copySolution(Vec out) {
 	VecCopy(u, out);
 }
 
-Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
+Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 		PetscInt localNodeCount, MPI_Comm comm) :
 	AFeti(b, B, lmb, nullSpace, localNodeCount, comm) {
 
@@ -239,7 +244,7 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
 	//PetscPrintf(comm, "It.%d: residual norm:%f\n", itNumber, norm);
 	lastNorm = norm;
-	return norm < 1e-6 || itNumber > 300;
+	return norm < 1e-6 || itNumber > 50;
 }
 
 void Feti1::applyInvA(Vec in, IterationManager *itManager) {
@@ -257,7 +262,7 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 }
 
 InexactFeti1::InexactFeti1(Mat A, Vec b, Mat B, Vec lmb,
-		Laplace2DNullSpace *nullSpace, PetscInt localNodeCount, MPI_Comm comm) :
+		NullSpaceInfo *nullSpace, PetscInt localNodeCount, MPI_Comm comm) :
 	Feti1(A, b, B, lmb, nullSpace, localNodeCount, comm) {
 	KSPSetType(kspA, KSPCG);
 
@@ -309,13 +314,14 @@ HFeti::HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
 	VecCopy(globTempGh, clustTempGh);
 	VecCopy(clustTemp, clustb);
 
-	clustNullSpace = new Laplace2DNullSpace();
+	clustNullSpace = new NullSpaceInfo();
 	clustNullSpace->R = cluster->Rin;
 	clustNullSpace->isDomainSingular = cluster->isClusterSingular;
 	clustNullSpace->isSubDomainSingular = cluster->isSubDomainSingular;
 
 	subClusterSystem
 			= new Feti1(A, clustb, BClust, lmbCl, clustNullSpace, localNodeCount, cluster->clusterComm);
+	subClusterSystem->setSystemSingular();
 
 	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
 	if (isLocalSingular) {
@@ -328,8 +334,7 @@ void HFeti::applyInvA(Vec in, IterationManager *itManager) {
 	VecCopy(in, globTemp);
 	VecCopy(globTempGh, clustTempGh);
 	if (isLocalSingular) MatNullSpaceRemove(clusterNS, clustTemp, PETSC_NULL);
-
-	subClusterSystem->setRequiredPrecision(1e-8);
+	subClusterSystem->setRequiredPrecision(outerPrec);
 	subClusterSystem->solve(clustTemp);
 	subClusterSystem->copySolution(clustTemp);
 
@@ -343,7 +348,7 @@ void HFeti::applyInvA(Vec in, IterationManager *itManager) {
 }
 
 Solver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
-	outerPrec = 1e-6;
+	outerPrec = 1e-3;
 	lastNorm = 1e-4;
 	inCounter = 0;
 	return new ASinStep(this, d, lmb);
@@ -375,7 +380,7 @@ void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 	VecSet(lmb, 0);
 }
 
-void GenerateTotalJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
+void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Vec &lmb) {
 	PetscInt rank, size;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
@@ -395,22 +400,29 @@ void GenerateTotalJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 	MPI_Allgather(&dSize, 1, MPI_INT, dNodeCounts, 1, MPI_INT, PETSC_COMM_WORLD);
 
 	int dSum = 0;
-	for (int i = 0; i < size; i++) dSum += dNodeCounts[i];
+	for (int i = 0; i < size; i++)
+		dSum += dNodeCounts[i];
 
-	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, mesh->vetrices.size(), mesh->nPairs
-			+ dSum, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &B);
+	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, mesh->vetrices.size() * d, (mesh->nPairs
+			+ dSum) * d, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &B);
 
 	int sIndex = 0;
-	for (int i = 0; i < rank; i++) sIndex += dNodeCounts[i];
+	for (int i = 0; i < rank; i++)
+		sIndex += dNodeCounts[i] * d;
 
-	for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i != indDirchlet.end(); i++) {
-		MatSetValue(B, sIndex++, *i, 1, INSERT_VALUES);
+	for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i
+			!= indDirchlet.end(); i++) {
+		for (int j = 0; j < d; j++)
+			MatSetValue(B, sIndex++, *i * d + j, 1, INSERT_VALUES);
 	}
 
 	if (!rank) {
 		for (int i = 0; i < mesh->nPairs; i++) {
-			MatSetValue(B, i + dSum, mesh->pointPairing[i * 2], 1, INSERT_VALUES);
-			MatSetValue(B, i + dSum, mesh->pointPairing[i * 2 + 1], -1, INSERT_VALUES);
+			for (int j = 0; j < d; j++) {
+				MatSetValue(B, (i + dSum) * d + j, mesh->pointPairing[i * 2] * d + j, 1, INSERT_VALUES);
+				MatSetValue(B, (i + dSum) * d + j, mesh->pointPairing[i * 2 + 1] * d
+						+ j, -1, INSERT_VALUES);
+			}
 		}
 
 	}
@@ -419,16 +431,36 @@ void GenerateTotalJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 	MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
 
 	VecCreate(PETSC_COMM_WORLD, &lmb);
-	VecSetSizes(lmb, PETSC_DECIDE, mesh->nPairs);
+	VecSetSizes(lmb, PETSC_DECIDE, (mesh->nPairs + dSum) * d);
 	VecSetFromOptions(lmb);
 	VecSet(lmb, 0);
 }
 
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		Mat &BGlob, Vec &lmbGlob, Mat &BCluster, Vec &lmbCluster) {
-	PetscInt rank, subRank;
+	PetscInt rank, subRank, size;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_rank(cluster->clusterComm, &subRank);
+
+	MPI_Comm_size(PETSC_COMM_WORLD, &size);
+
+	int dSize;
+	std::set<PetscInt> indDirchlet;
+	for (std::set<PetscInt>::iterator i = mesh->borderEdges.begin(); i
+			!= mesh->borderEdges.end(); i++) {
+
+		for (int j = 0; j < 2; j++) {
+			indDirchlet.insert(mesh->edges[*i]->vetrices[j]);
+		}
+	}
+	dSize = indDirchlet.size();
+
+	int dNodeCounts[size];
+	MPI_Allgather(&dSize, 1, MPI_INT, dNodeCounts, 1, MPI_INT, PETSC_COMM_WORLD);
+
+	int dSum = 0;
+	for (int i = 0; i < size; i++)
+		dSum += dNodeCounts[i];
 
 	//Preparation - scatter of the informations
 	PetscInt globalPairCount, localPairCount;
@@ -441,14 +473,24 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 	}
 	MPI_Bcast(&localPairCount, 1, MPI_INT, 0, cluster->clusterComm);
 
-	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, mesh->vetrices.size(), globalPairCount, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BGlob);
+	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, mesh->vetrices.size(), globalPairCount
+			+ dSum, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BGlob);
 	VecCreateMPI(PETSC_COMM_WORLD, mesh->vetrices.size(), PETSC_DECIDE, &lmbGlob);
+
+	int sIndex = 0;
+	for (int i = 0; i < rank; i++)
+		sIndex += dNodeCounts[i];
+
+	for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i
+			!= indDirchlet.end(); i++) {
+		MatSetValue(BGlob, sIndex++, *i, 1, INSERT_VALUES);
+	}
 
 	if (!rank) {
 		std::vector<PetscInt>::iterator i = cluster->globalPairing.begin();
 		for (int rowCounter = 0; rowCounter < globalPairCount; rowCounter++) {
-			MatSetValue(BGlob, rowCounter, *(i++), 1, INSERT_VALUES);
-			MatSetValue(BGlob, rowCounter, *(i++), -1, INSERT_VALUES);
+			MatSetValue(BGlob, rowCounter + dSum, *(i++), 1, INSERT_VALUES);
+			MatSetValue(BGlob, rowCounter + dSum, *(i++), -1, INSERT_VALUES);
 		}
 	}
 
@@ -572,60 +614,71 @@ void Generate2DLaplaceTotalNullSpace(Mesh *mesh, bool &isSingular,
 	}
 }
 
+void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
+		MPI_Comm comm) {
+
+	PetscInt rank, size;
+	MPI_Comm_rank(comm, &rank);
+	MPI_Comm_size(comm, &size);
+
+	nullSpace->localDimension = 3;
+
+	//Creating of matrix R - null space basis
+	Mat *R = &(nullSpace->R);
+	MatCreateMPIDense(comm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, size
+			* 3, PETSC_NULL, R);
+
+	nullSpace->localBasis = new Vec[3];
+	for (int i = 0; i < 3; i++) {
+		VecCreateSeq(mesh->vetrices.size() * 2, &(nullSpace->localBasis[i]));
+	}
+
+	for (int i = 0; i < size; i++) {
+		if (i == rank) {
+			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
+					!= mesh->vetrices.end(); v++) {
+				MatSetValue(*R, v->first * 2, i * 3, 1, INSERT_VALUES);
+				MatSetValue(*R, v->first * 2 + 1, i * 3 + 1, 1, INSERT_VALUES);
+				MatSetValue(*R, v->first * 2, i * 3 + 2, -v->second->y, INSERT_VALUES);
+				MatSetValue(*R, v->first * 2 + 1, i * 3 + 2, v->second->x, INSERT_VALUES);
+
+				VecSetValue(nullSpace->localBasis[0], (v->first - mesh->startIndexes[i])
+						* 2, 1, INSERT_VALUES);
+				VecSetValue(nullSpace->localBasis[1], (v->first - mesh->startIndexes[i])
+						* 2 + 1, 1, INSERT_VALUES);
+				VecSetValue(nullSpace->localBasis[2], (v->first - mesh->startIndexes[i])
+						* 2, -v->second->y, INSERT_VALUES);
+				VecSetValue(nullSpace->localBasis[2], (v->first - mesh->startIndexes[i])
+						* 2 + 1, v->second->x, INSERT_VALUES);
+			}
+		}
+	}
+	MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
+}
+
 void genClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster, Mat *R) {
 	PetscInt rank, size;
 	MPI_Comm comm = cluster->clusterComm;
 	MPI_Comm_rank(comm, &rank);
 	MPI_Comm_size(comm, &size);
 
-	//Zjisti, zda ma subdomena na tomto procesoru dirchletovu hranici (zda je regularni)
-	PetscInt hasDirchBound = 0;
 	cluster->isSubDomainSingular = true;
 
-	if (mesh->borderEdges.size() > 0) {
-		hasDirchBound = 1;
-		cluster->isSubDomainSingular = false;
-	}
-
-	PetscInt nullSpaceDim;
-	MPI_Allreduce(&hasDirchBound, &nullSpaceDim, 1, MPI_INT, MPI_SUM, comm); //Sum number of regular subdomains
-	nullSpaceDim = size - nullSpaceDim; //Dimnesion of null space is number of subdomains without dirch. border
-	PetscInt nsDomInd[nullSpaceDim];
-
-	if (nullSpaceDim > 0) {
-		if (!rank) { //Master gathers array of singular domain indexes and sends it to all proceses
-			MPI_Status stats;
-			PetscInt counter = 0;
-			if (hasDirchBound == 0) {
-				nsDomInd[counter++] = rank;
-			}
-
-			for (; counter < nullSpaceDim; counter++)
-				MPI_Recv(nsDomInd + counter, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, comm, &stats);
-		} else {
-			if (hasDirchBound == 0) MPI_Send(&rank, 1, MPI_INT, 0, 0, comm);
-		}
-		MPI_Bcast(nsDomInd, nullSpaceDim, MPI_INT, 0, comm);
-
-		//Creating of matrix R - null space basis
-		MatCreateMPIDense(comm, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, nullSpaceDim, PETSC_NULL, R);
-		for (int i = 0; i < nullSpaceDim; i++) {
-			if (nsDomInd[i] == rank) {
-				for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
-						!= mesh->vetrices.end(); v++) {
-
-					MatSetValue(*R, v->first + cluster->indexDiff, i, 1, INSERT_VALUES);
-				}
+	//Creating of matrix R - null space basis
+	MatCreateMPIDense(comm, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, size, PETSC_NULL, R);
+	for (int i = 0; i < size; i++) {
+		if (i == rank) {
+			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
+					!= mesh->vetrices.end(); v++) {
+				MatSetValue(*R, v->first + cluster->indexDiff, i, 1, INSERT_VALUES);
 			}
 		}
-
-		MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
-		MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
-		cluster->isClusterSingular = true;
-		PetscPrintf(comm, "Cluster %d (size %d) null space dimension: %d \n", cluster->clusterColor, size, nullSpaceDim);
-	} else {
-		cluster->isClusterSingular = false;
 	}
+
+	MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
+	cluster->isClusterSingular = true;
 }
 
 void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster) {
@@ -638,60 +691,25 @@ void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster) {
 
 	genClusterNullSpace(mesh, cluster, &RClust);
 
-	PetscInt nullSpaceDim, hasDirchBound = clusterRank ? 0 : 1; //Only cluster rank add to the null space
-
-	if (cluster->isClusterSingular) {
-		PetscInt clusterNullSpaceDim, n;
-		MPI_Comm_size(cluster->clusterComm, &clusterSize);
-		MatGetSize(RClust, &n, &clusterNullSpaceDim);
-		if (clusterNullSpaceDim == clusterSize) hasDirchBound = 0;
-	}
-
-	MPI_Allreduce(&hasDirchBound, &nullSpaceDim, 1, MPI_INT, MPI_SUM, PETSC_COMM_WORLD); //Sum number of regular subdomains
-	nullSpaceDim = cluster->clusterCount - nullSpaceDim; //Dimnesion of null space is number of subdomains without dirch. border
-	PetscInt nsDomInd[nullSpaceDim];
-
-	if (nullSpaceDim > 0) {
-		if (!rank) { //Master gathers array of singular domain indexes and sends it to all proceses
-			MPI_Status stats;
-			PetscInt counter = 0;
-			if (hasDirchBound == 0) {
-				nsDomInd[counter++] = cluster->clusterColor;
-			}
-
-			for (; counter < nullSpaceDim; counter++)
-				MPI_Recv(nsDomInd + counter, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, PETSC_COMM_WORLD, &stats);
-
-		} else if (!clusterRank) {
-			if (hasDirchBound == 0) MPI_Send(&(cluster->clusterColor), 1, MPI_INT, 0, 0, PETSC_COMM_WORLD);
-		}
-
-		MPI_Bcast(nsDomInd, nullSpaceDim, MPI_INT, 0, PETSC_COMM_WORLD);
-
-		//Creating of matrix R - null space basis
-		MatCreateMPIDense(PETSC_COMM_WORLD, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, nullSpaceDim, PETSC_NULL, &RGlob);
-		for (int i = 0; i < nullSpaceDim; i++) {
-			if (nsDomInd[i] == cluster->clusterColor) {
-				for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
-						!= mesh->vetrices.end(); v++) {
-					MatSetValue(RGlob, v->first, i, 1, INSERT_VALUES);
-				}
+	//Creating of matrix R - null space basis
+	MatCreateMPIDense(PETSC_COMM_WORLD, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, cluster->clusterCount, PETSC_NULL, &RGlob);
+	for (int i = 0; i < cluster->clusterCount; i++) {
+		if (i == cluster->clusterColor) {
+			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
+					!= mesh->vetrices.end(); v++) {
+				MatSetValue(RGlob, v->first, i, 1, INSERT_VALUES);
 			}
 		}
-
-		MatAssemblyBegin(RGlob, MAT_FINAL_ASSEMBLY);
-		MatAssemblyEnd(RGlob, MAT_FINAL_ASSEMBLY);
-		cluster->isDomainSingular = true;
-		PetscPrintf(PETSC_COMM_WORLD, "Null space dimension: %d \n", nullSpaceDim);
-	} else {
-		PetscPrintf(PETSC_COMM_WORLD, "Clusters are not singular\n");
-		cluster->isDomainSingular = false;
 	}
 
-	Laplace2DNullSpace *outNullSpace = new Laplace2DNullSpace();
+	MatAssemblyBegin(RGlob, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(RGlob, MAT_FINAL_ASSEMBLY);
+	cluster->isDomainSingular = true;
+
+	NullSpaceInfo *outNullSpace = new NullSpaceInfo();
 	outNullSpace->R = RGlob;
-	outNullSpace->isDomainSingular = cluster->isDomainSingular;
-	outNullSpace->isSubDomainSingular = cluster->isClusterSingular;
+	outNullSpace->isDomainSingular = true;
+	outNullSpace->isSubDomainSingular = true;
 
 	cluster->outerNullSpace = outNullSpace;
 	cluster->Rin = RClust;
@@ -701,7 +719,7 @@ Feti1* createFeti(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point),
 		MPI_Comm comm) {
 	Mat A, B;
 	Vec b, lmb;
-	Laplace2DNullSpace nullSpace;
+	NullSpaceInfo nullSpace;
 	FEMAssemble2DLaplace(PETSC_COMM_WORLD, mesh, A, b, f, K);
 	GenerateJumpOperator(mesh, B, lmb);
 	Generate2DLaplaceNullSpace(mesh, nullSpace.isDomainSingular, nullSpace.isSubDomainSingular, &(nullSpace.R));

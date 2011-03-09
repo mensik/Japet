@@ -25,10 +25,12 @@
 /**
  * @brief Keeps information needed for FETI about null space
  **/
-struct Laplace2DNullSpace {
+struct NullSpaceInfo {
+	int localDimension;
 	bool isSubDomainSingular;	///< is sub-part associated with current process singular
 	bool isDomainSingular;		///< is there any singular sub-part
 	Mat R;										///< matrix with null space basis
+	Vec *localBasis;
 };
 
 class MyMultiMap {
@@ -74,7 +76,7 @@ public:
 
 	PetscInt indexDiff;				///< Cluster - global index difference [local]
 
-	Laplace2DNullSpace *outerNullSpace; ///< Domain outer null space info for FETI [global]
+	NullSpaceInfo *outerNullSpace; ///< Domain outer null space info for FETI [global]
 	Mat Rin;									///< Cluster null space basis [cluster]
 
 	//Root only

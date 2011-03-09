@@ -1,63 +1,51 @@
 static char help[] = "My first own testing utility for PETSc\n\n";
 
 #include <iostream>
+#include "japetLa.h"
 #include "fem.h"
-#include "structures.h"
-#include "solver.h"
-#include "petscmat.h"
+#include "feti.h"
 
-PetscReal funConst(Point n) {
-	return 1;
-}
+using namespace std;
 
 int main(int argc, char *argv[]) {
+	PetscMPIInt rank, size;
+	PetscInitialize(&argc, &argv, 0, help);
+	PetscViewer v;
 
-	PetscInitialize(&argc, &argv, (char *) 0, help);
-	PetscInt size, rank;
-	PetscTruth 			flg;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
 
-	PetscPrintf(PETSC_COMM_WORLD, "STARTING\n");
+	Mesh *mesh = new Mesh();
+	mesh->loadHDF5("benchmarks/rect_small.med");
 
-	PetscReal prec = 1e-3;
-	char fileNameA[PETSC_MAX_PATH_LEN]="A.m";
-	char fileNameB[PETSC_MAX_PATH_LEN]="b.m";
+	mesh->partition(size);
+	mesh->tear();
 
-
-	PetscOptionsGetReal(PETSC_NULL, "-jpt_prec", &prec, PETSC_NULL);
-	PetscOptionsGetString(PETSC_NULL, "-jpt_file_A", fileNameA, PETSC_MAX_PATH_LEN-1, &flg);
-	PetscOptionsGetString(PETSC_NULL, "-jpt_file_b", fileNameB, PETSC_MAX_PATH_LEN-1, &flg);
+	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
+	mesh->dumpForMatlab(v);
+	PetscViewerDestroy(v);
 
 	Mat A;
 	Vec b;
-	PetscViewer v;
-	PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileNameA, FILE_MODE_READ, &v);
-	MatLoad(v, MATSEQAIJ, &A);
+
+	FEMAssemble2DElasticity(PETSC_COMM_WORLD, mesh, A, b);
+
+	Mat B;
+	Vec lmb;
+
+	GenerateTotalJumpOperator(mesh, 2, B, lmb);
+
+	NullSpaceInfo nullSpace;
+
+	Generate2DElasticityNullSpace(mesh, &nullSpace, PETSC_COMM_WORLD);
+
+	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/elast.m", FILE_MODE_WRITE, &v);
+	MatView(A, v);
+	VecView(b, v);
+	MatView(B, v);
 	PetscViewerDestroy(v);
-	PetscViewerBinaryOpen(PETSC_COMM_WORLD, fileNameB, FILE_MODE_READ, &v);
-	VecLoad(v, VECSEQ, &b);
-	PetscViewerDestroy(v);
-
-
-	PetscPrintf(PETSC_COMM_WORLD, "Computing...\n");
-
-	Vec x, x2;
-	VecDuplicate(b, &x);
-	VecDuplicate(b, &x2);
-/*	Solver *solver = new CGSolver(A, b, x);
-	solver->setPrecision(prec);
-	solver->setIsVerbose(true);
-	solver->solve();
-	solver->saveIterationInfo("cg.dat");*/
-
-	Solver *solver2 = new ASinStep(A, b, x2);
-	solver2->setPrecision(prec);
-	solver2->setIsVerbose(true);
-	solver2->solve();
-	solver2->saveIterationInfo("asin.dat");
-
 
 	PetscFinalize();
+
 	return 0;
 }

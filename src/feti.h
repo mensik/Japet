@@ -56,7 +56,7 @@ protected:
 	PetscInt inIterations;
 
 public:
-	AFeti(Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
+	AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 			PetscInt localNodeCount, MPI_Comm comm);
 	~AFeti();
 
@@ -81,6 +81,12 @@ public:
 	}
 	void saveIterationInfo(const char *fileName) {
 		outerSolver->saveIterationInfo(fileName);
+	}
+
+	void setSystemSingular() {
+		MatNullSpace NS;
+		MatNullSpaceCreate(comm, PETSC_TRUE, 0, PETSC_NULL, &NS);
+		KSPSetNullSpace(kspG, NS);
 	}
 
 	PetscInt getOutIterations() {
@@ -110,7 +116,7 @@ protected:
 
 	Vec tempInv, tempInvGh, tempInvGhB;
 public:
-	Feti1(Mat A, Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
+	Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 			PetscInt localNodeCount, MPI_Comm comm);
 	~Feti1();
 	virtual void applyInvA(Vec in, IterationManager *itManager);
@@ -120,7 +126,7 @@ class InexactFeti1: public Feti1 {
 	PetscReal outerPrec;
 	PetscInt inCounter;
 public:
-	InexactFeti1(Mat A, Vec b, Mat B, Vec lmb, Laplace2DNullSpace *nullSpace,
+	InexactFeti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 			PetscInt localNodeCount, MPI_Comm comm);
 
 	virtual void applyInvA(Vec in, IterationManager *itManager);
@@ -137,7 +143,7 @@ class HFeti: public AFeti {
 
 	Vec clustTemp, clustTempGh;
 	Vec clustb;
-	Laplace2DNullSpace *clustNullSpace;
+	NullSpaceInfo *clustNullSpace;
 	MatNullSpace clusterNS;
 
 	Vec globTemp, globTempGh;
@@ -156,7 +162,7 @@ public:
 
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb);
 
-void GenerateTotalJumpOperator(Mesh *mesh, Mat &B, Vec &lmb);
+void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Vec &lmb);
 
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		Mat &BGlob, Vec &lmbGlob, Mat &BCluster, Vec &lmbCluster);
@@ -167,9 +173,9 @@ void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 void Generate2DLaplaceTotalNullSpace(Mesh *mesh, bool &isSingular,
 		bool &isLocalSingular, Mat *Rmat, MPI_Comm comm = PETSC_COMM_WORLD);
 
+void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace, MPI_Comm comm = PETSC_COMM_WORLD);
+
 void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
-
-
 
 void getLocalJumpPart(Mat B, Mat *Bloc);
 
