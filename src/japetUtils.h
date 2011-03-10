@@ -20,6 +20,7 @@
 #include "med_utils.h"
 
 void saveScalarResultHDF5(const char *filename, const char *name, Vec v);
+void save2DResultHDF5(const char *filename, const char *name, Vec v);
 
 struct IterationInfo {
 	int itNumber;

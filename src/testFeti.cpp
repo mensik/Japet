@@ -57,7 +57,7 @@ int main(int argc, char *argv[]) {
 
 		PetscPrintf(PETSC_COMM_WORLD, "Generating mesh ... ");
 		//mesh->generateRectangularMesh(m, n, k, l, h);
-		mesh->loadHDF5("benchmarks/mesh.med");
+		mesh->loadHDF5("benchmarks/rect_small.med");
 		PetscPrintf(PETSC_COMM_WORLD, "done.\n\nTearing mesh ...");
 		mesh->partition(size);
 
@@ -70,32 +70,39 @@ int main(int argc, char *argv[]) {
 
 		mesh->saveHDF5("outMesh.med");
 
-		SubdomainCluster cluster;
-		mesh->createCluster(&cluster);
-
-		Mat Bl, Bg;
-		Vec lmbG, lmbL;
-		GenerateClusterJumpOperator(mesh, &cluster, Bg, lmbG, Bl, lmbL);
-		Generate2DLaplaceClusterNullSpace(mesh, &cluster);
+		//***********************************************************************************************
 
 		Mat A;
-		Vec b, x;
-		FEMAssembleTotal2DLaplace(PETSC_COMM_WORLD, mesh, A, b, funConst, funConst);
+		Vec b;
 
-		HFeti *hFeti;
-		hFeti
-				= new HFeti(A, b, Bg, Bl, lmbG, lmbL, &cluster, mesh->vetrices.size(), PETSC_COMM_WORLD);
+		FEMAssemble2DElasticity(PETSC_COMM_WORLD, mesh, A, b);
 
-		hFeti->setIsVerbose(true);
-		hFeti->solve();
+		Mat B;
+		Vec lmb;
 
-		PetscPrintf(PETSC_COMM_WORLD, "DONE \n\n\n");
+		GenerateTotalJumpOperator(mesh, 2, B, lmb);
 
-		VecDuplicate(b, &x);
-		hFeti->copySolution(x);
-		saveScalarResultHDF5("outMesh.med", "hFetiResult", x);
+		NullSpaceInfo nullSpace;
+
+		Generate2DElasticityNullSpace(mesh, &nullSpace, PETSC_COMM_WORLD);
+
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/elast.m", FILE_MODE_WRITE, &v);
+		MatView(A, v);
+		VecView(b, v);
+		MatView(B, v);
+		PetscViewerDestroy(v);
+
+		Feti1 *feti = new Feti1(A,b,B,lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
+
+		feti->setIsVerbose(true);
+		feti->solve();
 
 		delete mesh;
+
+		Vec x;
+		VecDuplicate(b, &x);
+		feti->copySolution(x);
+		save2DResultHDF5("outMesh.med", "fetiResult", x);
 	}
 
 	ierr = PetscFinalize();

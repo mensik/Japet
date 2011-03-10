@@ -1,6 +1,5 @@
 #include "feti.h"
-AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
-		PetscInt localNodeCount, MPI_Comm c) {
+AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 
 	comm = c;
 	this->b = b;
@@ -67,13 +66,16 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 		VecDuplicate(tgA, &tgB);
 	}
 
+	PetscInt lNodeCount;
+	VecGetLocalSize(b, &lNodeCount);
+
 	//Priprava ghostovaneho vektoru TEMP a kopie vektoru b do lokalnich casti bloc	
-	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &temp);
+	VecCreateGhost(comm, lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &temp);
 	VecCopy(b, temp);
 	VecGhostGetLocalForm(temp, &tempLoc);
 
 	//Ghostovany vektor reseni
-	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &u);
+	VecCreateGhost(comm, lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &u);
 	VecSet(u, 0);
 }
 
@@ -207,21 +209,26 @@ void AFeti::copySolution(Vec out) {
 
 Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 		PetscInt localNodeCount, MPI_Comm comm) :
-	AFeti(b, B, lmb, nullSpace, localNodeCount, comm) {
+	AFeti(b, B, lmb, nullSpace, comm) {
+
+	PetscInt lNodeCount;
+	VecGetLocalSize(b, &lNodeCount);
 
 	this->A = A;
 	extractLocalAPart(A, &Aloc);
 
 	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
 	if (isLocalSingular) {
-		MatNullSpaceCreate(PETSC_COMM_SELF, PETSC_TRUE, 0, PETSC_NULL, &locNS);
+		MatNullSpaceCreate(PETSC_COMM_SELF, PETSC_TRUE, nullSpace->localDimension, nullSpace->localBasis, &locNS);
 	}
 
 	KSPCreate(PETSC_COMM_SELF, &kspA);
+	//KSPSetTolerances(kspA, 1e-10,1e-10, 1e7, 550);
+	KSPSetFromOptions(kspA);
 	KSPSetOperators(kspA, Aloc, Aloc, SAME_PRECONDITIONER);
 	if (isLocalSingular) KSPSetNullSpace(kspA, locNS);
 
-	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &tempInv);
+	VecCreateGhost(comm, lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &tempInv);
 	VecSet(tempInv, 0);
 	VecGhostGetLocalForm(tempInv, &tempInvGh);
 	VecDuplicate(tempInvGh, &tempInvGhB);
@@ -244,13 +251,14 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
 	//PetscPrintf(comm, "It.%d: residual norm:%f\n", itNumber, norm);
 	lastNorm = norm;
-	return norm < 1e-6 || itNumber > 50;
+	return norm < 1e-7 || itNumber > 300;
 }
 
 void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 	VecCopy(in, tempInv);
 	if (isLocalSingular) MatNullSpaceRemove(locNS, tempInvGh, PETSC_NULL);
+
 	KSPSolve(kspA, tempInvGh, tempInvGhB);
 
 	PetscInt itNumber;
@@ -299,7 +307,7 @@ void InexactFeti1::setRequiredPrecision(PetscReal reqPrecision) {
 
 HFeti::HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
 		SubdomainCluster *cluster, PetscInt localNodeCount, MPI_Comm comm) :
-	AFeti(b, BGlob, lmbGl, cluster->outerNullSpace, localNodeCount, comm) {
+	AFeti(b, BGlob, lmbGl, cluster->outerNullSpace,comm) {
 
 	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &globTemp);
 	VecSet(globTemp, 0);
@@ -622,6 +630,8 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 	MPI_Comm_size(comm, &size);
 
 	nullSpace->localDimension = 3;
+	nullSpace->isDomainSingular = true;
+	nullSpace->isSubDomainSingular = true;
 
 	//Creating of matrix R - null space basis
 	Mat *R = &(nullSpace->R);
@@ -655,6 +665,19 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 	}
 	MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
 	MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
+
+	//Null space ortonormalization
+	PetscReal vecNorm1 = VecNorm(nullSpace->localBasis[0]);
+	VecScale(nullSpace->localBasis[0], 1/vecNorm1);
+	VecScale(nullSpace->localBasis[1], 1/vecNorm1);
+
+	for (int i = 0; i < 2; i++) {
+		PetscReal a0 = VecDot(nullSpace->localBasis[i],nullSpace->localBasis[2]);
+		VecAXPY(nullSpace->localBasis[2], -a0,nullSpace->localBasis[i]);
+	}
+
+	PetscReal vecNorm2 = VecNorm(nullSpace->localBasis[2]);
+	VecScale(nullSpace->localBasis[2], 1/vecNorm2);
 }
 
 void genClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster, Mat *R) {

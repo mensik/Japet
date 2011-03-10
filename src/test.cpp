@@ -28,6 +28,8 @@ int main(int argc, char *argv[]) {
 	Mat A;
 	Vec b;
 
+
+
 	FEMAssemble2DElasticity(PETSC_COMM_WORLD, mesh, A, b);
 
 	Mat B;

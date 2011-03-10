@@ -56,8 +56,7 @@ protected:
 	PetscInt inIterations;
 
 public:
-	AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
-			PetscInt localNodeCount, MPI_Comm comm);
+	AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm comm);
 	~AFeti();
 
 	virtual void applyInvA(Vec in, IterationManager *itManager) = 0;

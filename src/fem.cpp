@@ -63,6 +63,8 @@ void elastLoc(Point *vetrices[], PetscReal lambda,PetscReal mu, PetscReal *fs, P
 		bL[i*2 + 1] = detT / 6 * fs[1];
 	}
 
+	PetscPrintf(PETSC_COMM_WORLD, "%f \n", detT);
+
 	//@TODO Edge Force!!!
 }
 
@@ -164,9 +166,9 @@ void FEMAssemble2DElasticity(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b) {
 		PetscReal lStiff[36];
 		PetscReal bLoc[6];
 
-		PetscReal fs[] = {0,-9.8};
+		PetscReal fs[] = {0,-9810};
 
-		elastLoc(vetrices, 1, 3, fs, lStiff,bLoc);
+		elastLoc(vetrices, 2.5e11, 0.3, fs, lStiff,bLoc);
 
 		PetscInt idx[6];
 		for (int i = 0; i < 3; i++) {
