@@ -13,7 +13,15 @@ void bLoc(PetscReal *R, PetscReal *bl, PetscReal f);
  */
 void ALoc(PetscReal *R, PetscReal *Al, PetscReal K);
 
-void elastLoc(Point *vetrices[], PetscReal lambda,PetscReal mu, PetscReal *fs, PetscReal *stifMat, PetscReal *bL) {
+/**
+	@param[in] vetrices array of vetrices (so far only for 3)
+	@param[in] E material constatn E
+	@param[in] mi material constatn mi
+	@param[in] fs volume force vector
+	@param[out] stifMat stifness matrix (array 36 long)
+	@param[out] 
+*/
+void elastLoc(Point *vetrices[], PetscReal E,PetscReal mi, PetscReal *fs, PetscReal *stifMat, PetscReal *bL) {
 
 	PetscReal
 			T[] =
@@ -24,17 +32,16 @@ void elastLoc(Point *vetrices[], PetscReal lambda,PetscReal mu, PetscReal *fs, P
 			- vetrices[2]->x, vetrices[0]->y - vetrices[1]->y, vetrices[1]->x
 			- vetrices[0]->x };
 
-	PetscReal detT = matrixDet(T, 3);
-	matrixSum(phiGrad, 1 / (2 * detT), phiGrad, 0, phiGrad, 3, 2);
+	PetscReal detT = abs(matrixDet(T, 3));
 
 	PetscReal phiGradT[6];
 	matrixTranspose(phiGrad, 3, 2, phiGradT);
 
 	double Cmu[] = { 2, 0, 0, 0, 2, 0, 0, 0, 1 };
 	double Clm[] = { 1, 1, 0, 1, 1, 0, 0, 0, 0 };
-	PetscReal C[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+	PetscReal C[] = { 1 - mi, mi, 0, mi, 1 - mi, 0, 0, 0, (1 - 2 * mi) / 2 };
 
-	matrixSum(Cmu, mu, Clm, lambda, C, 3, 3);
+	matrixSum(C, E / ((1 + mi)*(1 - 2*mi)), Cmu, 0, C, 3, 3);
 
 	double R[18], RT[18];
 	for (int i = 0; i < 18; i++)
@@ -55,15 +62,13 @@ void elastLoc(Point *vetrices[], PetscReal lambda,PetscReal mu, PetscReal *fs, P
 	matrixMult(C, 3, 3, R, 3, 6, temp);
 	matrixMult(RT, 6, 3, temp, 3, 6, stifMat);
 
-	matrixSum(stifMat, detT / 2, stifMat, 0, stifMat, 6, 6);
+	matrixSum(stifMat, 1 / (2 * detT), stifMat, 0, stifMat, 6, 6);
 
 	//Volume Force
 	for (int i = 0; i < 3; i++) {
 		bL[i*2] = detT / 6 * fs[0];
 		bL[i*2 + 1] = detT / 6 * fs[1];
 	}
-
-	PetscPrintf(PETSC_COMM_WORLD, "%f \n", detT);
 
 	//@TODO Edge Force!!!
 }
@@ -145,7 +150,7 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
 
 }
 
-void FEMAssemble2DElasticity(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b) {
+void FEMAssemble2DElasticity(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscReal E, PetscReal mi, PetscReal (*dens)(Element *), void (*f)(Element*, PetscReal, PetscReal*)) {
 	PetscInt rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 
@@ -166,9 +171,10 @@ void FEMAssemble2DElasticity(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b) {
 		PetscReal lStiff[36];
 		PetscReal bLoc[6];
 
-		PetscReal fs[] = {0,-9810};
-
-		elastLoc(vetrices, 2.5e11, 0.3, fs, lStiff,bLoc);
+		//Local stiffness matrix and force vector assembly
+		PetscReal fs[2];
+		f(e->second, dens(e->second), fs);
+		elastLoc(vetrices, E, mi, fs, lStiff,bLoc);
 
 		PetscInt idx[6];
 		for (int i = 0; i < 3; i++) {

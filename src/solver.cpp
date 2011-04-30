@@ -104,7 +104,7 @@ void CGSolver::solve() {
 		nextIteration();
 
 		PetscScalar pAp;
-		sApp->applyMult(p, temp);
+		sApp->applyMult(p, temp, &itManager);
 		VecDot(p, temp, &pAp);
 
 		PetscReal a = (rNorm * rNorm) / pAp;

@@ -8,44 +8,25 @@ static char help[] = "My first own testing utility for PETSc\n\n";
 using namespace std;
 
 int main(int argc, char *argv[]) {
-	PetscMPIInt rank, size;
+
 	PetscInitialize(&argc, &argv, 0, help);
-	PetscViewer v;
 
-	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-	MPI_Comm_size(PETSC_COMM_WORLD, &size);
+	Point a(0,0,0);
+	Point b(1,0,0);
+	Point c(0,1,0);
 
-	Mesh *mesh = new Mesh();
-	mesh->loadHDF5("benchmarks/rect_small.med");
+	Point *vetrices[] = {&a, &b, &c};
 
-	mesh->partition(size);
-	mesh->tear();
+	double stifMat[36];
+	PetscReal bL[6];
 
-	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
-	mesh->dumpForMatlab(v);
-	PetscViewerDestroy(v);
+	PetscReal fs[] = {0, 9810 * 7.85e-9}; //V milimetrech
 
-	Mat A;
-	Vec b;
+	elastLoc(vetrices, 2.1e5, 0.3, fs, stifMat, bL);
 
+	display(stifMat, 6,6);
 
-
-	FEMAssemble2DElasticity(PETSC_COMM_WORLD, mesh, A, b);
-
-	Mat B;
-	Vec lmb;
-
-	GenerateTotalJumpOperator(mesh, 2, B, lmb);
-
-	NullSpaceInfo nullSpace;
-
-	Generate2DElasticityNullSpace(mesh, &nullSpace, PETSC_COMM_WORLD);
-
-	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/elast.m", FILE_MODE_WRITE, &v);
-	MatView(A, v);
-	VecView(b, v);
-	MatView(B, v);
-	PetscViewerDestroy(v);
+	display(bL, 6,1);
 
 	PetscFinalize();
 

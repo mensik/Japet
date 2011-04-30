@@ -20,7 +20,8 @@
 #include "petscmat.h"
 #include "structures.h"
 #include "japetLa.h"
- 
+
+void FEMAssemble2DElasticity(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscReal E, PetscReal mi, PetscReal (*dens)(Element*), void (*f)(Element*, PetscReal, PetscReal*)); 
 
 /**
 	@brief Assemble mass matrix A and right side vector b
@@ -32,8 +33,8 @@
 	@param[in] K	"material" function  	
 */
 
-void FEMAssemble2DElasticity(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b);
 PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscReal (*f)(Point), PetscReal (*K)(Point));
+
 PetscErrorCode FEMAssembleTotal2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscReal (*f)(Point), PetscReal (*K)(Point));
 
 #endif

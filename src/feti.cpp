@@ -12,6 +12,7 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 
 	isVerbose = false;
 
+	//If the matrix A is singular, the matrix G and G'G has to be prepared.
 	if (isSingular) {
 		MatMatMult(B, R, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &G);
 
@@ -142,19 +143,17 @@ void AFeti::solve() {
 
 	VecCopy(b, temp);
 
+	//Preparation of the right-hand side vector d=PBA^+b
+	//The matrix P is projector on the space orthogonal to range(G)
 	PetscInt locSizeA, locSizeM;
 	MatGetSize(B, &locSizeM, &locSizeA);
-
 	applyInvA(temp, NULL);
-
 	Vec d;
 	VecCreateMPI(comm, PETSC_DECIDE, locSizeM, &d);
 	MatMult(B, temp, d);
+	if (isSingular) projectGOrth(d); //Projection
 
-	if (isSingular) projectGOrth(d);
-
-	//Priprava vektoru lambda
-
+	//Feasible lambda_0 preparation
 	VecCreateMPI(comm, PETSC_DECIDE, locSizeM, &lmb);
 	if (isSingular) { //Je li singularni, je treba pripavit vhodne vstupni lambda
 		Vec tlmb, ttlmb;
@@ -174,15 +173,16 @@ void AFeti::solve() {
 	outerSolver = instanceOuterSolver(d, lmb);
 	outerSolver->setSolverCtr(this);
 	outerSolver->setIsVerbose(isVerbose);
+
 	//Solve!!!
 	outerSolver->solve();
 	outerSolver->getX(lmb);
 
+	//Solution reconstruction
 	VecScale(lmb, -1);
 	MatMultTransposeAdd(B, lmb, b, u);
 
 	applyInvA(u, NULL);
-
 	if (isSingular) {
 		Vec tLmb, bAlp, alpha;
 		VecDuplicate(lmb, &tLmb);
@@ -207,6 +207,12 @@ void AFeti::copySolution(Vec out) {
 	VecCopy(u, out);
 }
 
+bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
+		Vec *vec) {
+	lastNorm = norm;
+	return norm < 1e-5 || itNumber > 60;
+}
+
 Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 		PetscInt localNodeCount, MPI_Comm comm) :
 	AFeti(b, B, lmb, nullSpace, comm) {
@@ -222,9 +228,15 @@ Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 		MatNullSpaceCreate(PETSC_COMM_SELF, PETSC_TRUE, nullSpace->localDimension, nullSpace->localBasis, &locNS);
 	}
 
+	PC pc;
+	PCCreate(PETSC_COMM_SELF, &pc);
+	PCSetOperators(pc, Aloc, Aloc, SAME_PRECONDITIONER);
+	PCSetFromOptions(pc);
+	PCSetUp(pc);
+
 	KSPCreate(PETSC_COMM_SELF, &kspA);
-	//KSPSetTolerances(kspA, 1e-10,1e-10, 1e7, 550);
-	KSPSetFromOptions(kspA);
+	KSPSetTolerances(kspA, 1e-12, 1e-12, 1e7, 5000);
+	KSPSetPC(kspA, pc);
 	KSPSetOperators(kspA, Aloc, Aloc, SAME_PRECONDITIONER);
 	if (isLocalSingular) KSPSetNullSpace(kspA, locNS);
 
@@ -247,13 +259,6 @@ Feti1::~Feti1() {
 	VecDestroy(tempInvGhB);
 }
 
-bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
-		Vec *vec) {
-	//PetscPrintf(comm, "It.%d: residual norm:%f\n", itNumber, norm);
-	lastNorm = norm;
-	return norm < 1e-7 || itNumber > 300;
-}
-
 void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 	VecCopy(in, tempInv);
@@ -263,10 +268,15 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 	PetscInt itNumber;
 	KSPGetIterationNumber(kspA, &itNumber);
+
 	inIterations += itNumber;
 
 	VecCopy(tempInvGhB, tempInvGh);
 	VecCopy(tempInv, in);
+
+	if (itManager != NULL) {
+		itManager->setIterationData("InCG.count", itNumber);
+	}
 }
 
 InexactFeti1::InexactFeti1(Mat A, Vec b, Mat B, Vec lmb,
@@ -299,6 +309,11 @@ void InexactFeti1::applyInvA(Vec in, IterationManager *itManager) {
 	PetscInt itNumber;
 	KSPGetIterationNumber(kspA, &itNumber);
 	inCounter += itNumber;
+
+	if (itManager != NULL) {
+		itManager->setIterationData("OuterPrecision", outerPrec);
+		itManager->setIterationData("Inner CG it. count", itNumber);
+	}
 }
 
 void InexactFeti1::setRequiredPrecision(PetscReal reqPrecision) {
@@ -307,7 +322,7 @@ void InexactFeti1::setRequiredPrecision(PetscReal reqPrecision) {
 
 HFeti::HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
 		SubdomainCluster *cluster, PetscInt localNodeCount, MPI_Comm comm) :
-	AFeti(b, BGlob, lmbGl, cluster->outerNullSpace,comm) {
+	AFeti(b, BGlob, lmbGl, cluster->outerNullSpace, comm) {
 
 	VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &globTemp);
 	VecSet(globTemp, 0);
@@ -640,7 +655,7 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 
 	nullSpace->localBasis = new Vec[3];
 	for (int i = 0; i < 3; i++) {
-		VecCreateSeq(mesh->vetrices.size() * 2, &(nullSpace->localBasis[i]));
+		VecCreateSeq(PETSC_COMM_SELF, mesh->vetrices.size() * 2, &(nullSpace->localBasis[i]));
 	}
 
 	for (int i = 0; i < size; i++) {
@@ -667,17 +682,20 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 	MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
 
 	//Null space ortonormalization
-	PetscReal vecNorm1 = VecNorm(nullSpace->localBasis[0]);
-	VecScale(nullSpace->localBasis[0], 1/vecNorm1);
-	VecScale(nullSpace->localBasis[1], 1/vecNorm1);
+	PetscReal vecNorm1, vecNorm2;
+	
+	VecNorm(nullSpace->localBasis[0], NORM_2, &vecNorm1);
+	VecScale(nullSpace->localBasis[0], 1 / vecNorm1);
+	VecScale(nullSpace->localBasis[1], 1 / vecNorm1);
 
 	for (int i = 0; i < 2; i++) {
-		PetscReal a0 = VecDot(nullSpace->localBasis[i],nullSpace->localBasis[2]);
-		VecAXPY(nullSpace->localBasis[2], -a0,nullSpace->localBasis[i]);
+		PetscReal a0;
+		VecDot(nullSpace->localBasis[i], nullSpace->localBasis[2], &a0);
+		VecAXPY(nullSpace->localBasis[2], -a0, nullSpace->localBasis[i]);
 	}
 
-	PetscReal vecNorm2 = VecNorm(nullSpace->localBasis[2]);
-	VecScale(nullSpace->localBasis[2], 1/vecNorm2);
+	VecNorm(nullSpace->localBasis[2], NORM_2, &vecNorm2);
+	VecScale(nullSpace->localBasis[2], 1 / vecNorm2);
 }
 
 void genClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster, Mat *R) {

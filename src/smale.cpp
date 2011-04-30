@@ -109,7 +109,7 @@ void Smale::solve() {
 			MatMultTranspose(sd->getB(), tempMSize, temp);
 			VecScale(temp, ro);
 			
-			MatMultAdd(sd->getA(), lp,ltemp);	
+			MatMultAdd(sd->getA(), lp,ltemp, ltemp);	
 			
 			PetscReal pAp;
 			VecDot(p, temp, &pAp);
@@ -168,7 +168,7 @@ PetscReal Smale::L() {
 	PetscReal L = 0;
 	
 	PetscReal xAx;
-	MatMultAdd(sd->getA(), lx,ltemp);
+	MatMult(sd->getA(), lx,ltemp);
 	VecDot(x,temp,&xAx);
 	
 	PetscReal lbx;
