@@ -210,7 +210,7 @@ void AFeti::copySolution(Vec out) {
 bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
 	lastNorm = norm;
-	return norm < 1e-5 || itNumber > 60;
+	return norm < 1e-6 || itNumber > 60;
 }
 
 Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
@@ -281,39 +281,39 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 InexactFeti1::InexactFeti1(Mat A, Vec b, Mat B, Vec lmb,
 		NullSpaceInfo *nullSpace, PetscInt localNodeCount, MPI_Comm comm) :
-	Feti1(A, b, B, lmb, nullSpace, localNodeCount, comm) {
-	KSPSetType(kspA, KSPCG);
+	  Feti1(A, b, B, lmb, nullSpace, localNodeCount, comm) {
+//	KSPSetType(kspA, KSPCG);
 
-	PC prec;
-	KSPGetPC(kspA, &prec);
-	PCSetType(prec, PCILU);
-	PCSetUp(prec);
-	KSPSetPC(kspA, prec);
-	KSPSetUp(kspA);
+//	PC prec;
+//	KSPGetPC(kspA, &prec);
+//	PCSetType(prec, PCILU);
+//	PCSetUp(prec);
+//	KSPSetPC(kspA, prec);
+//	KSPSetUp(kspA);
 
 	outerPrec = 1e-7;
 }
 
 Solver* InexactFeti1::instanceOuterSolver(Vec d, Vec lmb) {
-	outerPrec = 1e-4;
-	lastNorm = 1e-4;
-	inCounter = 0;
+	//outerPrec = 1e-4;
+	//lastNorm = 1e-4;
+	//inCounter = 0;
 	return new ASinStep(this, d, lmb);
 }
 
 void InexactFeti1::applyInvA(Vec in, IterationManager *itManager) {
 
-	KSPSetTolerances(kspA, outerPrec, outerPrec, 1e10, 1000);
+//	KSPSetTolerances(kspA, outerPrec, outerPrec, 1e10, 1000);
 	Feti1::applyInvA(in, itManager);
 
-	PetscInt itNumber;
-	KSPGetIterationNumber(kspA, &itNumber);
-	inCounter += itNumber;
+//	PetscInt itNumber;
+//	KSPGetIterationNumber(kspA, &itNumber);
+//	inCounter += itNumber;
 
-	if (itManager != NULL) {
-		itManager->setIterationData("OuterPrecision", outerPrec);
-		itManager->setIterationData("Inner CG it. count", itNumber);
-	}
+//	if (itManager != NULL) {
+//		itManager->setIterationData("OuterPrecision", outerPrec);
+//		itManager->setIterationData("Inner CG it. count", itNumber);
+//	}
 }
 
 void InexactFeti1::setRequiredPrecision(PetscReal reqPrecision) {

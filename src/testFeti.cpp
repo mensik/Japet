@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
 	PetscReal E = 2.1e5, mu = 0.3;
 	PetscInitialize(&argc, &argv, 0, help);
 	PetscTruth flg;
-	char fileName[PETSC_MAX_PATH_LEN] = "benchmarks/mesh.med";
+	char fileName[PETSC_MAX_PATH_LEN] = "benchmarks/rect_225_1side.med";
 
 	PetscOptionsGetReal(PETSC_NULL, "-japet_E", &E, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_mu", &mu, PETSC_NULL);
@@ -78,10 +78,11 @@ int main(int argc, char *argv[]) {
 
 		Feti1
 				*feti =
-						new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
+						new InexactFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
 
 		feti->setIsVerbose(true);
 		feti->solve();
+		feti->saveIterationInfo("feti.log");
 
 		delete mesh;
 
