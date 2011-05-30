@@ -1,8 +1,8 @@
 #
-LINKERFLAGS = -lpetsc -lparmetis -lmed -g
+LINKERFLAGS = -lpetsc -lparmetis
 CPPCOMP = mpic++
 CLINKER = mpic++
-CPPFLAGS = -Wno-unused-result -I/usr/include/petsc -I/usr/include/ -g 
+CPPFLAGS = -Wno-unused-result -I/usr/include/petsc -I/usr/include/  
 
 headerDir = ../src
 MYLIB = structures.o fem.o feti.o solver.o japetUtils.o japetLa.o

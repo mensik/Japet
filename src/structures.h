@@ -11,8 +11,6 @@
 #ifndef STRUCTURES_H
 #define STRUCTURES_H
 
-#include "med.h"
-#include "med_utils.h"
 #include <math.h>
 #include <set>
 #include <map>
@@ -197,9 +195,7 @@ public:
 			PetscReal y1, PetscReal h, PetscInt m, PetscInt n, bool *bounded);
 	void dumpForMatlab(PetscViewer v);
 	void save(const char *filename, bool withEdges);
-	void saveHDF5(const char *filename);
 	void load(const char *filename, bool withEdges);
-	void loadHDF5(const char* filename);
 	PetscErrorCode partition(int numDomains); ///< call Metis and divide elements among processes, only marks elements
 	/**
 	 * @brief Actually tear mesh to part, make new points and edges a distribute them among processes  by MPI
