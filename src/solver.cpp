@@ -47,6 +47,7 @@ void Solver::init() {
 	VecDestroy(temp);
 
 	VecNorm(g, NORM_2, &rNorm);
+	r0Norm = rNorm;
 }
 
 void Solver::applyMult(Vec in, Vec out, IterationManager *info) {
@@ -60,6 +61,7 @@ bool Solver::isConverged(PetscInt itNumber, PetscReal rNorm, PetscReal bNorm,
 
 void Solver::nextIteration() {
 	itManager.setIterationData("!normG", rNorm);
+	itManager.setIterationData("R", pow(rNorm / r0Norm, 2.0 / (double)itManager.getItCount()) );
 	itManager.nextIteration();
 }
 

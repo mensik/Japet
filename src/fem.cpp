@@ -156,7 +156,7 @@ void FEMAssemble2DElasticity(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b, PetscRea
 
 	PetscInt size = mesh->vetrices.size();
 
-	MatCreateMPIAIJ(comm, size * 2, size * 2, PETSC_DECIDE, PETSC_DECIDE, 12, PETSC_NULL, 0, PETSC_NULL, &A);
+	MatCreateMPIAIJ(comm, size * 2, size * 2, PETSC_DECIDE, PETSC_DECIDE, 14, PETSC_NULL, 2, PETSC_NULL, &A);
 	VecCreateMPI(comm, size * 2, PETSC_DECIDE, &b);
 
 	for (std::map<PetscInt, Element*>::iterator e = mesh->elements.begin(); e

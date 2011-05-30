@@ -14,8 +14,10 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 
 	//If the matrix A is singular, the matrix G and G'G has to be prepared.
 	if (isSingular) {
-		MatMatMult(B, R, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &G);
 
+		PetscPrintf(comm, "BR mult ...");
+		MatMatMult(B, R, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &G);
+		PetscPrintf(comm, "done. \n");
 		PetscInt rank;
 		MPI_Comm_rank(comm, &rank);
 		Mat GTG;
@@ -25,10 +27,12 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 			ISCreateStride(PETSC_COMM_SELF, gM, 0, 1, &ISrows);
 			ISCreateStride(PETSC_COMM_SELF, gN, 0, 1, &IScols);
 			Mat *gl;
+
 			MatGetSubMatrices(G, 1, &ISrows, &IScols, MAT_INITIAL_MATRIX, &gl);
 
 			Mat GLOC, GTGloc;
 			GLOC = *gl;
+
 
 			MatMatMultTranspose(GLOC, GLOC, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GTGloc);
 			MatCreateMPIDense(comm, PETSC_DECIDE, PETSC_DECIDE, gN, gN, PETSC_NULL, &GTG);
@@ -59,8 +63,10 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 		MatAssemblyBegin(GTG, MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(GTG, MAT_FINAL_ASSEMBLY);
 
+
 		KSPCreate(comm, &kspG);
 		KSPSetOperators(kspG, GTG, GTG, SAME_PRECONDITIONER);
+
 		MatDestroy(GTG);
 
 		VecCreateMPI(comm, PETSC_DECIDE, gN, &tgA);
@@ -210,7 +216,7 @@ void AFeti::copySolution(Vec out) {
 bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
 	lastNorm = norm;
-	return norm < 1e-6 || itNumber > 60;
+	return norm < 1e-5 || itNumber > 60;
 }
 
 Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
@@ -281,15 +287,15 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 InexactFeti1::InexactFeti1(Mat A, Vec b, Mat B, Vec lmb,
 		NullSpaceInfo *nullSpace, PetscInt localNodeCount, MPI_Comm comm) :
-	  Feti1(A, b, B, lmb, nullSpace, localNodeCount, comm) {
-//	KSPSetType(kspA, KSPCG);
+	Feti1(A, b, B, lmb, nullSpace, localNodeCount, comm) {
+	//	KSPSetType(kspA, KSPCG);
 
-//	PC prec;
-//	KSPGetPC(kspA, &prec);
-//	PCSetType(prec, PCILU);
-//	PCSetUp(prec);
-//	KSPSetPC(kspA, prec);
-//	KSPSetUp(kspA);
+	//	PC prec;
+	//	KSPGetPC(kspA, &prec);
+	//	PCSetType(prec, PCILU);
+	//	PCSetUp(prec);
+	//	KSPSetPC(kspA, prec);
+	//	KSPSetUp(kspA);
 
 	outerPrec = 1e-7;
 }
@@ -303,17 +309,17 @@ Solver* InexactFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 
 void InexactFeti1::applyInvA(Vec in, IterationManager *itManager) {
 
-//	KSPSetTolerances(kspA, outerPrec, outerPrec, 1e10, 1000);
+	//	KSPSetTolerances(kspA, outerPrec, outerPrec, 1e10, 1000);
 	Feti1::applyInvA(in, itManager);
 
-//	PetscInt itNumber;
-//	KSPGetIterationNumber(kspA, &itNumber);
-//	inCounter += itNumber;
+	//	PetscInt itNumber;
+	//	KSPGetIterationNumber(kspA, &itNumber);
+	//	inCounter += itNumber;
 
-//	if (itManager != NULL) {
-//		itManager->setIterationData("OuterPrecision", outerPrec);
-//		itManager->setIterationData("Inner CG it. count", itNumber);
-//	}
+	//	if (itManager != NULL) {
+	//		itManager->setIterationData("OuterPrecision", outerPrec);
+	//		itManager->setIterationData("Inner CG it. count", itNumber);
+	//	}
 }
 
 void InexactFeti1::setRequiredPrecision(PetscReal reqPrecision) {
@@ -417,6 +423,7 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Vec &lmb) {
 			indDirchlet.insert(mesh->edges[*i]->vetrices[j]);
 		}
 	}
+
 	dSize = indDirchlet.size();
 
 	int dNodeCounts[size];
@@ -435,19 +442,21 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Vec &lmb) {
 
 	for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i
 			!= indDirchlet.end(); i++) {
-		for (int j = 0; j < d; j++)
+		for (int j = 0; j < d; j++) {
+
 			MatSetValue(B, sIndex++, *i * d + j, 1, INSERT_VALUES);
+		}
 	}
 
 	if (!rank) {
 		for (int i = 0; i < mesh->nPairs; i++) {
 			for (int j = 0; j < d; j++) {
+
 				MatSetValue(B, (i + dSum) * d + j, mesh->pointPairing[i * 2] * d + j, 1, INSERT_VALUES);
 				MatSetValue(B, (i + dSum) * d + j, mesh->pointPairing[i * 2 + 1] * d
 						+ j, -1, INSERT_VALUES);
 			}
 		}
-
 	}
 
 	MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
@@ -457,6 +466,7 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Vec &lmb) {
 	VecSetSizes(lmb, PETSC_DECIDE, (mesh->nPairs + dSum) * d);
 	VecSetFromOptions(lmb);
 	VecSet(lmb, 0);
+
 }
 
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
@@ -678,12 +688,13 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 			}
 		}
 	}
+
 	MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
 	MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
 
 	//Null space ortonormalization
 	PetscReal vecNorm1, vecNorm2;
-	
+
 	VecNorm(nullSpace->localBasis[0], NORM_2, &vecNorm1);
 	VecScale(nullSpace->localBasis[0], 1 / vecNorm1);
 	VecScale(nullSpace->localBasis[1], 1 / vecNorm1);
@@ -696,6 +707,7 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 
 	VecNorm(nullSpace->localBasis[2], NORM_2, &vecNorm2);
 	VecScale(nullSpace->localBasis[2], 1 / vecNorm2);
+
 }
 
 void genClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster, Mat *R) {

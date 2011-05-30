@@ -21,8 +21,9 @@ void DomainPairings::insert(PetscInt domA, PetscInt domB, PetscInt *pair) {
 	data[domA][domB].push_back(pair[1]);
 }
 
-void DomainPairings::getPairs(PetscInt domA, PetscInt domB, std::vector<
-		PetscInt>::iterator &begin, std::vector<PetscInt>::iterator &end) {
+void DomainPairings::getPairs(PetscInt domA, PetscInt domB,
+		std::vector<PetscInt>::iterator &begin,
+		std::vector<PetscInt>::iterator &end) {
 	if (domA > domB) {
 		PetscInt temp = domA;
 		domA = domB;
@@ -168,6 +169,7 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 	VecAssemblyEnd(dual);
 	VecAssemblyBegin(corner);
 	VecAssemblyEnd(corner);
+
 	MatView(x, v);
 	MatView(e, v);
 	VecView(dirch, v);
@@ -178,6 +180,183 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 	MatDestroy(e);
 	VecDestroy(dirch);
 	VecDestroy(dual);
+}
+
+void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
+		PetscReal y1, PetscReal h, PetscInt m, PetscInt n, bool *bound) {
+
+	PetscInt rank, size;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_size(PETSC_COMM_WORLD, &size);
+
+	if (size != m * n) {
+		PetscErrorPrintfDefault("Bad number of subdomains!!");
+	}
+
+	PetscReal Hx = (x1 - x0) / m;
+	PetscReal Hy = (y1 - y0) / n;
+
+	PetscInt xEdges = (PetscInt) ceil(Hx / h);
+	PetscInt yEdges = (PetscInt) ceil(Hy / h);
+
+	PetscInt *bNodes = new PetscInt[xEdges + 1];
+	PetscInt *tNodes = new PetscInt[xEdges + 1];
+	PetscInt *lNodes = new PetscInt[yEdges + 1];
+	PetscInt *rNodes = new PetscInt[yEdges + 1];
+
+	PetscInt subDomainNodeCount = (xEdges + 1) * (yEdges + 1);
+	PetscInt subDomainElementCount = xEdges * yEdges * 2;
+
+	PetscReal hx = Hx / xEdges;
+	PetscReal hy = Hy / yEdges;
+
+	PetscInt nodeIndex = rank * subDomainNodeCount;
+	PetscInt elementIndex = rank * subDomainElementCount;
+
+	PetscInt sdX = rank % m;
+	PetscInt sdY = (rank - sdX) / n;
+
+	PetscReal xStart = sdX * Hx;
+	PetscReal yStart = sdY * Hy;
+
+	PetscInt edgeIndex = 0;
+
+	PetscInt lnCounter = 0;
+	PetscInt rnCounter = 0;
+	PetscInt bnCounter = 0;
+	PetscInt tnCounter = 0;
+
+	startIndexes = new PetscInt[size];
+	startIndexes[0] = 0;
+	for (int i = 1; i < size; i++) {
+		startIndexes[i] = startIndexes[i-1] + subDomainNodeCount;
+	}
+
+	for (PetscInt j = 0; j < yEdges + 1; j++)
+		for (PetscInt i = 0; i < xEdges + 1; i++) {
+			PetscReal xPos = xStart + i * hx;
+			PetscReal yPos = yStart + j * hy;
+
+			Point *node = new Point(xPos, yPos);
+			vetrices.insert(std::pair<PetscInt, Point*>(nodeIndex, node));
+
+			if (i == 0) {
+				lNodes[lnCounter++] = nodeIndex;
+				if (j < yEdges) {
+					Edge *e = new Edge();
+					e->id = edgeIndex;
+					e->vetrices[0] = nodeIndex;
+					e->vetrices[1] = nodeIndex + 1 + xEdges;
+
+					edges.insert(std::pair<PetscInt, Edge*>(edgeIndex, e));
+					if (bound[3] && sdX == 0) borderEdges.insert(edgeIndex);
+
+					edgeIndex++;
+				}
+			}
+			if (j == 0) {
+				bNodes[bnCounter++] = nodeIndex;
+				if (i < xEdges) {
+					Edge *e = new Edge();
+					e->id = edgeIndex;
+					e->vetrices[0] = nodeIndex;
+					e->vetrices[1] = nodeIndex + 1;
+
+					edges.insert(std::pair<PetscInt, Edge*>(edgeIndex, e));
+					if (bound[2] && sdY == 0) borderEdges.insert(edgeIndex);
+
+					edgeIndex++;
+				}
+			}
+			if (i == xEdges) {
+				rNodes[rnCounter++] = nodeIndex;
+				if (j < yEdges) {
+					Edge *e = new Edge();
+					e->id = edgeIndex;
+					e->vetrices[0] = nodeIndex;
+					e->vetrices[1] = nodeIndex + 1 + xEdges;
+
+					edges.insert(std::pair<PetscInt, Edge*>(edgeIndex, e));
+					if (bound[1] && sdX == m - 1) borderEdges.insert(edgeIndex);
+
+					edgeIndex++;
+				}
+			}
+			if (j == yEdges) {
+				tNodes[tnCounter++] = nodeIndex;
+				if (i < xEdges) {
+					Edge *e = new Edge();
+					e->id = edgeIndex;
+					e->vetrices[0] = nodeIndex;
+					e->vetrices[1] = nodeIndex + 1;
+
+					edges.insert(std::pair<PetscInt, Edge*>(edgeIndex, e));
+					if (bound[0] && sdY == n - 1) borderEdges.insert(edgeIndex);
+
+					edgeIndex++;
+				}
+			}
+
+			//Element creation
+			if (j < yEdges && i < xEdges) {
+				Element *el1, *el2;
+				el1 = new Element();
+				el2 = new Element();
+
+				el1->numVetrices = 3;
+				el1->numEdges = 0;
+				el1->id = elementIndex++;
+				el1->vetrices[0] = nodeIndex;
+				el1->vetrices[1] = nodeIndex + xEdges + 2;
+				el1->vetrices[2] = nodeIndex + 1;
+
+				el2->numVetrices = 3;
+				el2->numEdges = 0;
+				el2->id = elementIndex++;
+				el2->vetrices[0] = nodeIndex;
+				el2->vetrices[1] = nodeIndex + xEdges + 2;
+				el2->vetrices[2] = nodeIndex + xEdges + 1;
+
+				elements.insert(std::pair<PetscInt, Element*>(el1->id, el1));
+				elements.insert(std::pair<PetscInt, Element*>(el2->id, el2));
+			}
+
+			nodeIndex++;
+		}
+
+	if (!rank) { //Pairings
+
+		std::vector<PetscInt> pairings;
+
+		for (int i = 0; i < m; i++)
+			for (int j = 0; j < n; j++) {
+				if (i < m - 1) for (int k = 0; k < yEdges + 1; k++) {
+					if (j == 0 && bound[2] && k == 0) continue;
+					if (j == n - 1 && bound[0] && k == yEdges) continue;
+					pairings.push_back(rNodes[k] + (j * m + i) * subDomainNodeCount);
+					pairings.push_back(lNodes[k] + (j * m + i + 1) * subDomainNodeCount);
+				}
+				if (j < n - 1) for (int k = 0; k < xEdges + 1; k++) {
+					if (i > 0 && k == 0) continue;
+					if (i == 0 && bound[3] && k == 0) continue;
+					if (i == m -1 && bound[1] && k == xEdges) continue;
+					pairings.push_back(tNodes[k] + (j * m + i) * subDomainNodeCount);
+					pairings.push_back(bNodes[k] + ((j + 1) * m + i) * subDomainNodeCount);
+				}
+			}
+
+		nPairs = pairings.size() / 2;
+		pointPairing = new PetscInt[nPairs * 2];
+
+		PetscInt counter = 0;
+		for (int i = 0; i < pairings.size(); i++) {
+			pointPairing[i] = pairings[i];
+		}
+	}
+	MPI_Bcast(&nPairs, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+
+
+	delete[] bNodes, lNodes, rNodes, tNodes;
 }
 
 void Mesh::generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k,
@@ -469,7 +648,6 @@ void Mesh::saveHDF5(const char *filename) {
 		attr = H5Acreate(dataset, "UNI", strType, aid, H5P_DEFAULT);
 		H5Awrite(attr, strType, UNI);
 		H5Aclose(attr);
-
 
 		//fprintf(f, "#Vetrices (id:x y z domID)\n");
 		//fprintf(f, "Num: %d\n", vAllSize);

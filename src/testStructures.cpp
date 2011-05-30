@@ -22,40 +22,20 @@ int main(int argc, char *argv[]) {
 	PetscPrintf(PETSC_COMM_WORLD, "Mesh preparation ...");
 
 	Mesh *mesh = new Mesh();
-	//mesh->generateRectangularMesh(0,1,0,1,0.01);
-	mesh->loadHDF5("mesh.med");
 
-	PetscPrintf(PETSC_COMM_WORLD, "done\n\n Tearing ....");
+	bool bound[] = {true, true, true, true};
 
-	mesh->partition(size);
-	mesh->tear();
+	mesh->generateTearedRectMesh(0, 200, 0, 200, 10, 3, 3, bound);
 
-	mesh->saveHDF5("outMesh.med");
+	PetscPrintf(PETSC_COMM_WORLD, " done\n\n");
 
-	/*
-	SubdomainCluster cluster;
-	PetscPrintf(PETSC_COMM_WORLD, "done\n\n");
-	mesh->createCluster(&cluster);
+	PetscPrintf(PETSC_COMM_WORLD, "Node count: %d \n", mesh->vetrices.size() * size);
 
-	Mat Bl, Bg;
-	Vec lmbG, lmbL;
-	//GenerateJumpOperator(mesh, Bg, lmbG);
-
-	GenerateClusterJumpOperator(mesh, &cluster, Bg, lmbG, Bl, lmbL);
-
-	Generate2DLaplaceClusterNullSpace(mesh, &cluster);
 	PetscViewer v;
-
-	PetscViewerASCIIOpen(PETSC_COMM_WORLD, "matlab/R.m", &v);
-	//MatView(Rg, v);
-	PetscViewerDestroy(v);
-
-	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "matlab/mesh.m", FILE_MODE_WRITE, &v);
+	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
 	mesh->dumpForMatlab(v);
 	PetscViewerDestroy(v);
 
-	//mesh->save("testMesh.msh", false);
-*/
 	delete mesh;
 	PetscFinalize();
 	return 0;

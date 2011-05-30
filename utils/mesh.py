@@ -161,8 +161,8 @@ class App:
 
 def main():
     m = Mesh()
-    #m.loadH5F("ctverec2.med")
-    m.load("outMesh.msh")
+    m.loadH5F("../deploy/test.med")
+    #m.load("outMesh.msh")
     
     root = Tk()
     App(root, m)

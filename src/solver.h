@@ -50,6 +50,7 @@ protected:
 
 	PetscReal rNorm;
 	PetscReal bNorm;
+	PetscReal r0Norm;
 
 	SolverApp *sApp;
 	SolverCtr *sCtr;
