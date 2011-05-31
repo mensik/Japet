@@ -352,6 +352,8 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 		for (int i = 0; i < pairings.size(); i++) {
 			pointPairing[i] = pairings[i];
 		}
+
+		PetscPrintf(PETSC_COMM_SELF, "Mesh build. Nodes: %d \t Domains: %d \t Pairings: %d \n", vetrices.size() * size, size, nPairs);
 	}
 	MPI_Bcast(&nPairs, 1, MPI_INT, 0, PETSC_COMM_WORLD);
 

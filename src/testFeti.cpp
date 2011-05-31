@@ -22,18 +22,23 @@ PetscReal funDensity(Element* e) {
 int main(int argc, char *argv[]) {
 	PetscErrorCode ierr;
 	PetscMPIInt rank, size;
-	PetscReal E = 2.1e5, mu = 0.3;
+	PetscReal E = 2.1e5, mu = 0.3, h = 2.0;
+	PetscInt m = 3, n = 3;
 	PetscInitialize(&argc, &argv, 0, help);
 	PetscTruth flg;
+	PetscLogStage meshing, assembly, fetiStage;
 	char fileName[PETSC_MAX_PATH_LEN] = "benchmarks/arc.med";
 
-	PetscOptionsGetReal(PETSC_NULL, "-japet_E", &E, PETSC_NULL);
-	PetscOptionsGetReal(PETSC_NULL, "-japet_mu", &mu, PETSC_NULL);
-	PetscOptionsGetReal(PETSC_NULL, "-japet_dens", &den, PETSC_NULL);
+	PetscOptionsGetInt(PETSC_NULL, "-japet_m", &m, PETSC_NULL);
+	PetscOptionsGetInt(PETSC_NULL, "-japet_n", &n, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-japet_h", &h, PETSC_NULL);
 	PetscOptionsGetString(PETSC_NULL, "-japet_mesh", fileName, PETSC_MAX_PATH_LEN
 			- 1, &flg);
 	{
 
+		PetscPrintf(PETSC_COMM_WORLD, "***************************************************\n");
+		PetscPrintf(PETSC_COMM_WORLD, "                    TEST FETI \n");
+		PetscPrintf(PETSC_COMM_WORLD, "***************************************************\n");
 		ierr = MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 		CHKERRQ(ierr);
 		MPI_Comm_size(PETSC_COMM_WORLD, &size);
@@ -42,38 +47,35 @@ int main(int argc, char *argv[]) {
 
 		bool bound[] = { false, false, false, true };
 
-		mesh->generateTearedRectMesh(0, 500, 0, 500, 1, 3, 3, bound);
-		/*
-		 PetscPrintf(PETSC_COMM_WORLD, "Loading mesh ... ");
-		 //mesh->generateRectangularMesh(m, n, k, l, h);
-		 mesh->loadHDF5(fileName);
-		 PetscPrintf(PETSC_COMM_WORLD, "done.\n\nTearing mesh ...");
-		 mesh->partition(size);
-		 mesh->tear();
-		 */
-		PetscPrintf(PETSC_COMM_WORLD, "done.\n\n");
+		PetscLogStageRegister("Meshing", &meshing);
+		PetscLogStagePush(meshing);
+		mesh->generateTearedRectMesh(0, 300, 0, 300, h, m, n, bound);
+		PetscLogStagePop();
 
 		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
 		//mesh->dumpForMatlab(v);
 		//PetscViewerDestroy(v);
 
-		//mesh->saveHDF5("outMesh.med");
-
 		//***********************************************************************************************
 
+		PetscLogStageRegister("Assembly", &assembly);
+		PetscLogStagePush(assembly);
 		Mat A;
 		Vec b;
 
 		FEMAssemble2DElasticity(PETSC_COMM_WORLD, mesh, A, b, E, mu, funDensity, funGravity);
 
-		PetscPrintf(PETSC_COMM_WORLD, "Mass matrix assembled \n");
+		PetscPrintf(PETSC_COMM_WORLD, "\nMass matrix assembled \n");
 
 		Mat B;
 		Vec lmb;
 
 		GenerateTotalJumpOperator(mesh, 2, B, lmb);
 
-		PetscPrintf(PETSC_COMM_WORLD, "Hump assembled \n");
+		PetscPrintf(PETSC_COMM_WORLD, "Jump operator assembled \n");
+		PetscLogStagePop();
+
+
 
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/elast.m", FILE_MODE_WRITE, &v);
 		MatView(A, v);
@@ -87,24 +89,27 @@ int main(int argc, char *argv[]) {
 
 		Generate2DElasticityNullSpace(mesh, &nullSpace, PETSC_COMM_WORLD);
 
-		Feti1
-		*feti =
-		new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
+		PetscLogStageRegister("FETI", &fetiStage);
+		PetscLogStagePush(fetiStage);
+		//Feti1
+		//*feti =
+		//new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
 
-		//AFeti
-		//		*ifeti =
-		//				new InexactFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
+		AFeti
+				*ifeti =
+						new InexactFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
 
-		feti->setIsVerbose(true);
-		feti->solve();
-		feti->saveIterationInfo("feti.log");
+		//feti->setIsVerbose(true);
+		//feti->solve();
+
+		//feti->saveIterationInfo("feti.log");
 
 
 		//PetscPrintf(PETSC_COMM_WORLD, "Ready to solve \n");
-		//ifeti->setIsVerbose(true);
-		//ifeti->solve();
-		//ifeti->saveIterationInfo("ifeti.log");
-
+		ifeti->setIsVerbose(true);
+		ifeti->solve();
+		ifeti->saveIterationInfo("ifeti.log");
+		PetscLogStagePop();
 		delete mesh;
 
 		//Vec x;
