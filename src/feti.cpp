@@ -213,10 +213,15 @@ void AFeti::copySolution(Vec out) {
 	VecCopy(u, out);
 }
 
+void AFeti::copyLmb(Vec out) {
+
+	VecCopy(lmb, out);
+}
+
 bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
 	lastNorm = norm;
-	return norm / bNorm < 10 || itNumber > 60;
+	return norm / bNorm < 2.5 || itNumber > 60;
 }
 
 Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,

@@ -22,7 +22,7 @@ PetscReal funDensity(Element* e) {
 int main(int argc, char *argv[]) {
 	PetscErrorCode ierr;
 	PetscMPIInt rank, size;
-	PetscReal E = 2.1e5, mu = 0.3, h = 2.0;
+	PetscReal E = 2.1e5, mu = 0.3, h = 2.0, H = 100;
 	PetscInt m = 3, n = 3;
 	PetscInitialize(&argc, &argv, 0, help);
 	PetscTruth flg;
@@ -32,6 +32,7 @@ int main(int argc, char *argv[]) {
 	PetscOptionsGetInt(PETSC_NULL, "-japet_m", &m, PETSC_NULL);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_n", &n, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_h", &h, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-japet_HH", &H, PETSC_NULL);
 	PetscOptionsGetString(PETSC_NULL, "-japet_mesh", fileName, PETSC_MAX_PATH_LEN
 			- 1, &flg);
 	{
@@ -49,7 +50,7 @@ int main(int argc, char *argv[]) {
 
 		PetscLogStageRegister("Meshing", &meshing);
 		PetscLogStagePush(meshing);
-		mesh->generateTearedRectMesh(0, 300, 0, 300, h, m, n, bound);
+		mesh->generateTearedRectMesh(0, m * H, 0, n * H, h, m, n, bound);
 		PetscLogStagePop();
 
 		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
@@ -77,11 +78,6 @@ int main(int argc, char *argv[]) {
 
 
 
-		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/elast.m", FILE_MODE_WRITE, &v);
-		MatView(A, v);
-		VecView(b, v);
-		MatView(B, v);
-		PetscViewerDestroy(v);
 
 
 		NullSpaceInfo nullSpace;
@@ -91,13 +87,13 @@ int main(int argc, char *argv[]) {
 
 		PetscLogStageRegister("FETI", &fetiStage);
 		PetscLogStagePush(fetiStage);
-		//Feti1
-		//*feti =
-		//new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
+		Feti1
+		*feti =
+		new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
 
-		AFeti
-				*ifeti =
-						new InexactFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
+		//AFeti
+		//		*ifeti =
+		//				new InexactFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
 
 		//feti->setIsVerbose(true);
 		//feti->solve();
@@ -106,16 +102,24 @@ int main(int argc, char *argv[]) {
 
 
 		//PetscPrintf(PETSC_COMM_WORLD, "Ready to solve \n");
-		ifeti->setIsVerbose(true);
-		ifeti->solve();
-		ifeti->saveIterationInfo("ifeti.log");
+		feti->setIsVerbose(true);
+		feti->solve();
+		feti->saveIterationInfo("ifeti.log");
 		PetscLogStagePop();
 		delete mesh;
 
-		//Vec x;
-		//VecDuplicate(b, &x);
-		//ifeti->copySolution(x);
-		//save2DResultHDF5("outMesh.med", "fetiResult", x);
+		Vec x;
+		VecDuplicate(b, &x);
+		feti->copySolution(x);
+		feti->copyLmb(lmb);	
+
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/elast.m", FILE_MODE_WRITE, &v);
+		MatView(A, v);
+		VecView(b, v);
+		MatView(B, v);
+		VecView(x, v);
+		VecView(lmb, v);
+		PetscViewerDestroy(v);
 
 	}
 

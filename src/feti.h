@@ -75,6 +75,7 @@ public:
 	void dumpSystem(PetscViewer v);
 	void projectGOrth(Vec in); ///< Remove space spaned by G from vec in
 	void copySolution(Vec out); /// <Copy solution to vector out
+	void copyLmb(Vec out);
 	void setIsVerbose(bool verbose) {
 		isVerbose = verbose;
 	}
