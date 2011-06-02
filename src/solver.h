@@ -23,7 +23,8 @@ public:
 
 class SolverCtr {
 public:
-	virtual bool isConverged(PetscInt itNum, PetscReal rNorm, PetscReal bNorm, Vec *vec) = 0;
+	virtual bool isConverged(PetscInt itNum, PetscReal rNorm, PetscReal bNorm,
+			Vec *vec) = 0;
 };
 
 class SolverPreconditioner {
@@ -35,11 +36,10 @@ enum StepType {
 	CG, Expansion, Proportion
 };
 
-class Solver: public SolverApp, public SolverCtr {
+class Solver: public SolverApp, public SolverCtr, public SolverPreconditioner {
 private:
 	Mat A; ///< Matrix A in problem A*x = b
 	PetscReal precision;
-
 
 	void init();
 protected:
@@ -47,6 +47,7 @@ protected:
 	Vec x; ///< Vector x in problem A*x = b
 	Vec b; ///< Vector b in problem A*x = b
 	Vec g; ///< residual vector
+	Vec z; ///< PC vector
 
 	PetscReal rNorm;
 	PetscReal bNorm;
@@ -55,13 +56,16 @@ protected:
 	SolverApp *sApp;
 	SolverCtr *sCtr;
 
+	SolverPreconditioner *sPC;
+	bool isPCset;
+
 	void nextIteration();
 
 public:
 	IterationManager itManager;
 
 	Solver(Mat A, Vec b, Vec x);
-	Solver(SolverApp *sa, Vec b, Vec x);
+	Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC = NULL);
 	~Solver();
 
 	void setIterationData(std::string name, PetscReal value) {
@@ -74,6 +78,7 @@ public:
 		return itManager.getItCount();
 	}
 	void applyMult(Vec in, Vec out, IterationManager *info = NULL);
+	void applyPC(Vec r, Vec z);
 	bool isConverged(PetscInt itNum, PetscReal rNorm, PetscReal bNorm, Vec *vec);
 	void setSolverApp(SolverApp *sa) {
 		sApp = sa;
@@ -90,7 +95,9 @@ public:
 	void setTitle(std::string title) {
 		itManager.setTitle(title);
 	}
-	PetscReal getNormG() { return rNorm; }
+	PetscReal getNormG() {
+		return rNorm;
+	}
 	Vec getX() {
 		return x;
 	} ///< @return solution
@@ -105,7 +112,11 @@ class RichardsSolver: public Solver {
 	PetscReal alpha;
 
 public:
-	RichardsSolver(SolverApp *sa, Vec b, Vec x, PetscReal alpha) : Solver(sa,b,x) { this->alpha = alpha;};
+	RichardsSolver(SolverApp *sa, Vec b, Vec x, PetscReal alpha) :
+		Solver(sa, b, x) {
+		this->alpha = alpha;
+	}
+	;
 
 	void solve();
 };
@@ -122,8 +133,8 @@ public:
 		initSolver();
 	}
 	;
-	CGSolver(SolverApp *sa, Vec b, Vec x) :
-		Solver(sa, b, x) {
+	CGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL) :
+		Solver(sa, b, x, pc) {
 		initSolver();
 	}
 	;
@@ -195,7 +206,9 @@ public:
 	;
 	~MPRGP();
 
-	void setPC(SolverPreconditioner *pc) { this->sPC = pc; }
+	void setPC(SolverPreconditioner *pc) {
+		this->sPC = pc;
+	}
 
 	void solve();
 };

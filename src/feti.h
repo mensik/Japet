@@ -21,7 +21,7 @@
  object G matrix and computation of the projector P = I - G inv(G'G) G'
  *
  **/
-class AFeti: public SolverApp, public SolverCtr {
+class AFeti: public SolverApp, public SolverCtr, public SolverPreconditioner {
 protected:
 
 	Solver *outerSolver; ///< Solver class for outer loop (default is CGSolver)
@@ -70,6 +70,10 @@ public:
 	isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm, Vec *vec);
 
 	virtual Solver* instanceOuterSolver(Vec d, Vec l);
+	virtual void applyPC(Vec g, Vec z) {
+		VecCopy(g, z);
+	}
+	;
 
 	void dumpSolution(PetscViewer v);
 	void dumpSystem(PetscViewer v);
@@ -120,6 +124,7 @@ public:
 			PetscInt localNodeCount, MPI_Comm comm);
 	~Feti1();
 	virtual void applyInvA(Vec in, IterationManager *itManager);
+	virtual void applyPC(Vec g, Vec z);
 };
 
 class InexactFeti1: public Feti1 {
@@ -173,7 +178,8 @@ void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 void Generate2DLaplaceTotalNullSpace(Mesh *mesh, bool &isSingular,
 		bool &isLocalSingular, Mat *Rmat, MPI_Comm comm = PETSC_COMM_WORLD);
 
-void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace, MPI_Comm comm = PETSC_COMM_WORLD);
+void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
+		MPI_Comm comm = PETSC_COMM_WORLD);
 
 void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
 

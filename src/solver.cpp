@@ -15,10 +15,17 @@ Solver::Solver(Mat A, Vec b, Vec x) {
 	init();
 }
 
-Solver::Solver(SolverApp *sa, Vec b, Vec x) {
+Solver::Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC) {
 	this->sApp = sa;
 	this->b = b;
 	this->x = x;
+
+	if (PC == NULL) {
+		this->sPC = this;
+	} else {
+		this->sPC = PC;
+	}
+
 	init();
 }
 
@@ -34,6 +41,7 @@ void Solver::init() {
 	VecNorm(b, NORM_2, &bNorm);
 
 	VecDuplicate(b, &g);
+	VecDuplicate(b, &z);
 
 	Vec temp;
 	VecDuplicate(b, &temp);
@@ -45,13 +53,20 @@ void Solver::init() {
 	VecAYPX(g, -1, temp);
 
 	VecDestroy(temp);
+	sPC->applyPC(g, z);
 
-	VecNorm(g, NORM_2, &rNorm);
+	VecDot(g, z, &rNorm);
+	rNorm = sqrt(rNorm);
+
 	r0Norm = rNorm;
 }
 
 void Solver::applyMult(Vec in, Vec out, IterationManager *info) {
 	MatMult(A, in, out);
+}
+
+void Solver::applyPC(Vec r, Vec z) {
+	VecCopy(r, z);
 }
 
 bool Solver::isConverged(PetscInt itNumber, PetscReal rNorm, PetscReal bNorm,
@@ -90,7 +105,7 @@ void RichardsSolver::solve() {
 void CGSolver::initSolver() {
 	VecDuplicate(b, &temp);
 	VecDuplicate(g, &p);
-	VecCopy(g, p);
+	VecCopy(z, p);
 	setTitle("CG");
 }
 
@@ -101,7 +116,9 @@ CGSolver::~CGSolver() {
 
 void CGSolver::solve() {
 
-	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
+	PetscReal xNorm = 0.001;
+	//VecNorm(x, NORM_2, &xNorm);
+	while (!sCtr->isConverged(getItCount(), rNorm, xNorm, &g)) {
 
 		nextIteration();
 
@@ -113,14 +130,17 @@ void CGSolver::solve() {
 		VecAXPY(x, -a, p);
 		VecAXPY(g, -a, temp);
 
-		PetscReal rNormS;
-		VecNorm(g, NORM_2, &rNormS);
+		sPC->applyPC(g, z);
 
-		PetscReal beta = (rNormS * rNormS) / (rNorm * rNorm);
-		VecAYPX(p, beta, g);
+		PetscReal gDOTz;
+		VecDot(g, z, &gDOTz);
 
-		rNorm = rNormS;
 
+		PetscReal beta = gDOTz / (rNorm * rNorm);
+		VecAYPX(p, beta, z);
+
+		rNorm = sqrt(gDOTz);
+		VecNorm(x, NORM_2,  &xNorm);
 	}
 }
 

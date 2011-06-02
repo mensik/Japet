@@ -33,7 +33,6 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 			Mat GLOC, GTGloc;
 			GLOC = *gl;
 
-
 			MatMatMultTranspose(GLOC, GLOC, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GTGloc);
 			MatCreateMPIDense(comm, PETSC_DECIDE, PETSC_DECIDE, gN, gN, PETSC_NULL, &GTG);
 
@@ -62,7 +61,6 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 
 		MatAssemblyBegin(GTG, MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(GTG, MAT_FINAL_ASSEMBLY);
-
 
 		KSPCreate(comm, &kspG);
 		KSPSetOperators(kspG, GTG, GTG, SAME_PRECONDITIONER);
@@ -139,7 +137,7 @@ void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
 }
 
 Solver* AFeti::instanceOuterSolver(Vec d, Vec l) {
-	return new CGSolver(this, d, l);
+	return new CGSolver(this, d, l, this);
 }
 
 void AFeti::solve() {
@@ -221,7 +219,7 @@ void AFeti::copyLmb(Vec out) {
 bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
 	lastNorm = norm;
-	return norm / bNorm < 2.5 || itNumber > 60;
+	return norm / bNorm < 1e-6 || itNumber > 60;
 }
 
 Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
@@ -288,6 +286,20 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 	if (itManager != NULL) {
 		itManager->setIterationData("InCG.count", itNumber);
 	}
+}
+
+void Feti1::applyPC(Vec g, Vec z) {
+	VecCopy(g, z);
+	/*
+	MatMultTranspose(B, g, tempInv);
+
+	MatMult(Aloc, tempInvGh, tempInvGhB);
+	VecCopy(tempInvGhB, tempInvGh);
+
+	MatMult(B, tempInv, z);
+
+	if (isSingular) projectGOrth(z);
+	*/
 }
 
 InexactFeti1::InexactFeti1(Mat A, Vec b, Mat B, Vec lmb,
