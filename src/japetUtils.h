@@ -52,6 +52,11 @@ public:
 	int getItCount() {
 		return itCounter;
 	}
+	void reset() {
+		itCounter = 0;
+		itInfo.clear();
+	}
+
 };
 
 #endif /* JAPETUTILS_H_ */

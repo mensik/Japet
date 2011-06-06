@@ -186,7 +186,13 @@ void AFeti::solve() {
 	VecScale(lmb, -1);
 	MatMultTransposeAdd(B, lmb, b, u);
 
+	PetscViewer v;
+	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/u.m", FILE_MODE_WRITE, &v);
+	VecView(u, v);
+	PetscViewerDestroy(v);
+
 	applyInvA(u, NULL);
+
 	if (isSingular) {
 		Vec tLmb, bAlp, alpha;
 		VecDuplicate(lmb, &tLmb);
@@ -203,6 +209,8 @@ void AFeti::solve() {
 		VecDestroy(bAlp);
 		VecDestroy(alpha);
 	}
+
+	VecScale(lmb, -1);
 	VecDestroy(d);
 }
 
@@ -219,7 +227,17 @@ void AFeti::copyLmb(Vec out) {
 bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
 	lastNorm = norm;
-	return norm / bNorm < 1e-6 || itNumber > 60;
+
+	Vec z;
+	PetscReal pNorm, outBNorm;
+	VecDuplicate(*vec, &z);
+	applyPC(*vec, z);
+	VecDot(z, *vec, &pNorm);
+	VecDestroy(z);
+	VecNorm(b, NORM_2, &outBNorm);
+	PetscPrintf(PETSC_COMM_WORLD, "Pirmal Norm: %f \n", sqrt(pNorm) / outBNorm);
+
+	return sqrt(pNorm) / outBNorm < 1e-2 || itNumber > 60;
 }
 
 Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
@@ -255,6 +273,36 @@ Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 	VecDuplicate(tempInvGh, &tempInvGhB);
 }
 
+void Feti1::solve() {
+	AFeti::solve();
+
+	//Precision control!!!
+
+	Vec precTempV, pTV, tLmb;
+	VecDuplicate(b, &precTempV);
+	VecDuplicate(b, &pTV);
+	VecDuplicate(lmb, &tLmb);
+
+	VecCopy(u, tempInv);
+	MatMult(Aloc, tempInvGh, tempInvGhB);
+	VecCopy(tempInvGhB, tempInvGh);
+
+	VecAXPY(tempInv, -1, b);
+	MatMultTransposeAdd(B, lmb, tempInv, tempInv);
+
+	PetscReal error, bNorm, feasErr, uNorm;
+	VecNorm(tempInv, NORM_2, &error);
+	VecNorm(b, NORM_2, &bNorm);
+
+	MatMult(B, u, tLmb);
+	VecNorm(temp, NORM_2, &feasErr);
+	VecNorm(u, NORM_2, &uNorm);
+
+	PetscPrintf(PETSC_COMM_WORLD, "******************\n Gradient res: %f \n Feasibility err: %f \n****************** \n", error
+			/ bNorm, feasErr / uNorm);
+
+}
+
 Feti1::~Feti1() {
 
 	MatDestroy(A);
@@ -271,7 +319,7 @@ Feti1::~Feti1() {
 void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 	VecCopy(in, tempInv);
-	if (isLocalSingular) MatNullSpaceRemove(locNS, tempInvGh, PETSC_NULL);
+	//if (isLocalSingular) MatNullSpaceRemove(locNS, tempInvGh, PETSC_NULL);
 
 	KSPSolve(kspA, tempInvGh, tempInvGhB);
 
@@ -289,8 +337,8 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 }
 
 void Feti1::applyPC(Vec g, Vec z) {
-	VecCopy(g, z);
-	/*
+	//VecCopy(g, z);
+
 	MatMultTranspose(B, g, tempInv);
 
 	MatMult(Aloc, tempInvGh, tempInvGhB);
@@ -299,7 +347,7 @@ void Feti1::applyPC(Vec g, Vec z) {
 	MatMult(B, tempInv, z);
 
 	if (isSingular) projectGOrth(z);
-	*/
+
 }
 
 InexactFeti1::InexactFeti1(Mat A, Vec b, Mat B, Vec lmb,
@@ -315,6 +363,13 @@ InexactFeti1::InexactFeti1(Mat A, Vec b, Mat B, Vec lmb,
 	//	KSPSetUp(kspA);
 
 	outerPrec = 1e-7;
+}
+
+Solver* mFeti1::instanceOuterSolver(Vec d, Vec lmb) {
+	//outerPrec = 1e-4;
+	//lastNorm = 1e-4;
+	//inCounter = 0;
+	return new ReCGSolver(this, d, lmb);
 }
 
 Solver* InexactFeti1::instanceOuterSolver(Vec d, Vec lmb) {
@@ -641,27 +696,35 @@ void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 	}
 }
 
-void Generate2DLaplaceTotalNullSpace(Mesh *mesh, bool &isSingular,
-		bool &isLocalSingular, Mat *R, MPI_Comm comm) {
+void Generate2DLaplaceTotalNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
+		MPI_Comm comm) {
 	PetscInt rank, size;
 	MPI_Comm_rank(comm, &rank);
 	MPI_Comm_size(comm, &size);
 
-	isLocalSingular = true;
-	isSingular = true;
+	nullSpace->localDimension = 1;
+	nullSpace->isDomainSingular = true;
+	nullSpace->isSubDomainSingular = true;
 
+	nullSpace->localBasis = new Vec[1];
+
+	VecCreateSeq(PETSC_COMM_SELF, mesh->vetrices.size(), &(nullSpace->localBasis[0]));
+	VecSet(nullSpace->localBasis[0], 1 / sqrt((double)mesh->vetrices.size()));
+
+	Mat *R = &(nullSpace->R);
 	//Creating of matrix R - null space basis
 	MatCreateMPIDense(comm, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, size, PETSC_NULL, R);
 	for (int i = 0; i < size; i++) {
 		if (i == rank) {
 			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
 					!= mesh->vetrices.end(); v++) {
-				MatSetValue(*R, v->first, i, 1, INSERT_VALUES);
+				MatSetValue(*R, v->first, i, 1 / sqrt((double)mesh->vetrices.size()), INSERT_VALUES);
 			}
 		}
 		MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
 	}
+
 }
 
 void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,

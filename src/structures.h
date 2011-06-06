@@ -188,11 +188,27 @@ public:
 
 	void generateRectangularMesh(PetscReal m, PetscReal n, PetscReal k,
 			PetscReal l, PetscReal h); ///< generate rectangular mesh
+
 	/**
+	 * Generate rectangular mesh in paralel - only bidings all all on master
+	 *
+	 * @param[in] m number of subdomains along X
+	 * @param[in] n number of subdomains along Y
 	 * @param[in] bounded array with information about bounding sided [U, L, B, R]
 	 */
+
 	void generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 			PetscReal y1, PetscReal h, PetscInt m, PetscInt n, bool *bounded);
+
+	/**
+	 * Generate cluster above rectangular mesh
+	 *
+	 * /note works best with generateTearedRectMesh
+	 *
+	 * @param[in] m,n original rect.mesh layout
+	 * @param[in] M,N cluster division m = k * M; n = j * N
+	 */
+	void generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m, PetscInt n, PetscInt M, PetscInt N);
 	void dumpForMatlab(PetscViewer v);
 	void save(const char *filename, bool withEdges);
 	void load(const char *filename, bool withEdges);

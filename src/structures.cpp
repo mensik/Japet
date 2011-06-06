@@ -193,6 +193,8 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 		PetscErrorPrintfDefault("Bad number of subdomains!!");
 	}
 
+	numOfPartitions = size;
+
 	PetscReal Hx = (x1 - x0) / m;
 	PetscReal Hy = (y1 - y0) / n;
 
@@ -229,7 +231,7 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 	startIndexes = new PetscInt[size];
 	startIndexes[0] = 0;
 	for (int i = 1; i < size; i++) {
-		startIndexes[i] = startIndexes[i-1] + subDomainNodeCount;
+		startIndexes[i] = startIndexes[i - 1] + subDomainNodeCount;
 	}
 
 	for (PetscInt j = 0; j < yEdges + 1; j++)
@@ -339,7 +341,7 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 				if (j < n - 1) for (int k = 0; k < xEdges + 1; k++) {
 					if (i > 0 && k == 0) continue;
 					if (i == 0 && bound[3] && k == 0) continue;
-					if (i == m -1 && bound[1] && k == xEdges) continue;
+					if (i == m - 1 && bound[1] && k == xEdges) continue;
 					pairings.push_back(tNodes[k] + (j * m + i) * subDomainNodeCount);
 					pairings.push_back(bNodes[k] + ((j + 1) * m + i) * subDomainNodeCount);
 				}
@@ -348,15 +350,14 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 		nPairs = pairings.size() / 2;
 		pointPairing = new PetscInt[nPairs * 2];
 
-		PetscInt counter = 0;
 		for (int i = 0; i < pairings.size(); i++) {
 			pointPairing[i] = pairings[i];
 		}
 
-		PetscPrintf(PETSC_COMM_SELF, "Mesh build. Nodes: %d \t Domains: %d \t Pairings: %d \n", vetrices.size() * size, size, nPairs);
+		PetscPrintf(PETSC_COMM_SELF, "Mesh build. Nodes: %d \t Domains: %d \t Pairings: %d \n", vetrices.size()
+				* size, size, nPairs);
 	}
 	MPI_Bcast(&nPairs, 1, MPI_INT, 0, PETSC_COMM_WORLD);
-
 
 	delete[] bNodes, lNodes, rNodes, tNodes;
 }
@@ -1380,6 +1381,152 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 
 	delete[] part;
 
+}
+
+void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
+		PetscInt n, PetscInt M, PetscInt N) {
+
+	PetscInt rank;
+	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+
+	PetscInt k = m / M;
+	PetscInt l = n / N;
+
+	PetscInt subX = rank % m;
+	PetscInt subY = rank / m;
+
+	cluster->clusterColor = (subY / l) * M + subX / k;
+	cluster->clusterCount = M*N;
+
+	PetscPrintf(PETSC_COMM_SELF, "[%d] %d %d -> %d\n", rank, subX, subY, cluster->clusterColor);
+
+	cluster->subdomainColors = new PetscInt[numOfPartitions];
+	for (int i = 0; i < numOfPartitions; i++) {
+
+		subX = i % m;
+		subY = i / m;
+
+		cluster->subdomainColors[i] = (subY / l) * M + subX / k;
+	}
+
+	MPI_Comm subComm;
+	MPI_Comm_split(PETSC_COMM_WORLD, cluster->clusterColor, rank, &subComm);
+	cluster->clusterComm = subComm;
+	PetscInt subRank;
+	MPI_Comm_rank(cluster->clusterComm, &subRank);
+
+	PetscInt nparts = M*N;
+
+	if (!rank) {
+
+		DomainPairings pairings;
+
+		//Save all pairings in relation to subdomains they bound
+		for (int i = 0; i < nPairs; i++) {
+			PetscInt *pair = pointPairing + i * 2;
+			pairings.insert(getNodeDomain(pair[0]), getNodeDomain(pair[1]), pair);
+		}
+
+		std::map<int, int> clusterMasters;
+		MPI_Status status;
+		for (int i = 1; i < nparts; i++) {
+			int temp[2];
+			MPI_Recv(temp, 2, MPI_INT, MPI_ANY_SOURCE, 0, PETSC_COMM_WORLD, &status);
+
+			clusterMasters[temp[0]] = temp[1];
+		}
+
+		//Distribution of pairings to cluster masters
+
+		typedef std::map<PetscInt, std::vector<PetscInt> > mapIn;
+		typedef std::map<PetscInt, mapIn> mapOut;
+		for (mapOut::iterator i = pairings.data.begin(); i != pairings.data.end(); i++)
+			for (mapIn::iterator j = (*i).second.begin(); j != (*i).second.end(); j++) {
+				int aColor = cluster->subdomainColors[i->first];
+				int bColor = cluster->subdomainColors[j->first];
+
+				if (aColor == bColor) {
+					if (aColor == cluster->clusterColor) { //local cluster
+						for (std::vector<PetscInt>::iterator p = j->second.begin(); p
+								!= j->second.end(); p++)
+							cluster->localPairing.push_back(*p);
+
+					} else { //send pairings to other cluster roots
+						int vSize = j->second.size();
+						PetscInt *temp = new PetscInt[vSize];
+						std::vector<PetscInt>::iterator p = j->second.begin();
+						for (int k = 0; k < vSize; k++, p++)
+							temp[k] = *p;
+
+						MPI_Send(&vSize, 1, MPI_INT, clusterMasters[aColor], 0, PETSC_COMM_WORLD);
+						MPI_Send(temp, vSize, MPI_INT, clusterMasters[aColor], 0, PETSC_COMM_WORLD);
+
+						delete[] temp;
+					}
+				} else { //global pairing is saved here, on global root
+					for (std::vector<PetscInt>::iterator p = j->second.begin(); p
+							!= j->second.end(); p++)
+						cluster->globalPairing.push_back(*p);
+				}
+			}
+
+		for (std::map<int, int>::iterator i = clusterMasters.begin(); i
+				!= clusterMasters.end(); i++) { //Message terminating sharing pairings
+			int msg = -1;
+			MPI_Send(&msg, 1, MPI_INT, i->second, 0, PETSC_COMM_WORLD);
+		}
+	} else {
+		if (!subRank) {
+			//Send info about master on the cluster == [color, masterRank (in global comm)]
+			PetscInt info[] = { cluster->clusterColor, rank };
+			MPI_Send(info, 2, MPI_INT, 0, 0, PETSC_COMM_WORLD);
+
+			while (true) { //Receive pairings belonging only to cluster
+				int vSize;
+				MPI_Status status;
+				MPI_Recv(&vSize, 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &status);
+				if (vSize == -1) break;
+
+				PetscInt *temp = new PetscInt[vSize];
+				MPI_Recv(temp, vSize, MPI_INT, 0, 0, PETSC_COMM_WORLD, &status);
+
+				for (int i = 0; i < vSize; i++)
+					cluster->localPairing.push_back(temp[i]);
+			}
+		}
+	}
+
+	// cluster indexing difference
+
+
+	cluster->indexDiff = 0;
+	for (int i = 0; i < rank; i++) {
+		if (cluster->subdomainColors[i] == cluster->clusterColor) {
+			cluster->indexDiff += startIndexes[i + 1] - startIndexes[i];
+		}
+	}
+
+	cluster->indexDiff -= startIndexes[rank];
+
+	if (!subRank) {
+		int clusterSize;
+		MPI_Comm_size(cluster->clusterComm, &clusterSize);
+		PetscInt *clusterStartIndexesDiff = new PetscInt[clusterSize];
+		MPI_Gather(&(cluster->indexDiff), 1, MPI_INT, clusterStartIndexesDiff, 1, MPI_INT, 0, cluster->clusterComm);
+
+		MPI_Status status;
+		cluster->startIndexesDiff[rank] = cluster->indexDiff;
+		for (int i = 1; i < clusterSize; i++) { //Receive original rank from all cluster workers
+			PetscInt origRank;
+			MPI_Recv(&origRank, 1, MPI_INT, i, 0, cluster->clusterComm, &status);
+			cluster->startIndexesDiff[origRank] = clusterStartIndexesDiff[i];
+		}
+
+		delete[] clusterStartIndexesDiff;
+	} else {
+		MPI_Gather(&(cluster->indexDiff), 1, MPI_INT, NULL, 1, MPI_INT, 0, cluster->clusterComm);
+		MPI_Send(&rank, 1, MPI_INT, 0, 0, cluster->clusterComm);
+	}
 }
 
 PetscInt Mesh::getNodeDomain(PetscInt index) {

@@ -125,6 +125,19 @@ public:
 	~Feti1();
 	virtual void applyInvA(Vec in, IterationManager *itManager);
 	virtual void applyPC(Vec g, Vec z);
+
+	virtual void solve();
+};
+
+class mFeti1: public Feti1 {
+public:
+	mFeti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
+			PetscInt localNodeCount, MPI_Comm comm) :
+		Feti1(A, b, B, lmb, nullSpace, localNodeCount, comm) {
+	}
+
+	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);
+
 };
 
 class InexactFeti1: public Feti1 {
@@ -175,8 +188,8 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 		bool &isLocalSingular, Mat *Rmat, MPI_Comm comm = PETSC_COMM_WORLD);
 
-void Generate2DLaplaceTotalNullSpace(Mesh *mesh, bool &isSingular,
-		bool &isLocalSingular, Mat *Rmat, MPI_Comm comm = PETSC_COMM_WORLD);
+void Generate2DLaplaceTotalNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
+		MPI_Comm comm = PETSC_COMM_WORLD);
 
 void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 		MPI_Comm comm = PETSC_COMM_WORLD);

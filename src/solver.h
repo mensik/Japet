@@ -8,6 +8,7 @@
 #define SOLVER_H
 
 #include <cmath>
+#include <vector>
 #include "japetUtils.h"
 #include "petscmat.h"
 #include "petscksp.h"
@@ -64,7 +65,7 @@ protected:
 public:
 	IterationManager itManager;
 
-	Solver(Mat A, Vec b, Vec x);
+	Solver(Mat A, Vec b, Vec x, SolverPreconditioner *PC = NULL);
 	Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC = NULL);
 	~Solver();
 
@@ -106,6 +107,7 @@ public:
 	} ///< @return copy of solution
 
 	virtual void solve() = 0;
+	void solve(Vec newB, Vec newX);
 };
 
 class RichardsSolver: public Solver {
@@ -141,6 +143,59 @@ public:
 	~CGSolver();
 
 	void solve(); ///< begin solving
+};
+
+class ReCGSolver: public Solver {
+
+	std::vector<Vec> P;
+	std::vector<Vec> AP;
+	std::vector<PetscReal> PAP;
+
+	void initSolver();
+	void project();
+public:
+
+	static const int MAX_SPACE_SIZE = 200;
+
+	ReCGSolver(Mat A, Vec b, Vec x, SolverPreconditioner *pc = NULL) :
+		Solver(A, b, x, pc) {
+		initSolver();
+	}
+	ReCGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL) :
+		Solver(sa, b, x, pc) {
+		initSolver();
+	}
+
+	void solve();
+
+};
+
+class GLanczos: public Solver {
+
+	PetscInt prevSize;
+	Mat Vprev;
+	PetscReal *lambda, *mju, *beta;
+
+	MPI_Comm comm;
+
+public:
+	static const PetscInt MAXSTEPS = 500;
+
+	GLanczos(MPI_Comm cm, Mat A, Vec b, Vec x) :
+		Solver(A, b, x) {
+		comm = cm;
+		prevSize = 0;
+	}
+	;
+	GLanczos(MPI_Comm cm, SolverApp *sa, Vec b, Vec x) :
+		Solver(sa, b, x) {
+		prevSize = 0;
+		comm = cm;
+	}
+	;
+
+	void solve();
+
 };
 
 class ASinStep: public Solver {

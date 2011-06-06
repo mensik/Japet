@@ -4,13 +4,19 @@ void SolverApp::setRequiredPrecision(PetscReal reqPrecision) {
 
 }
 
-Solver::Solver(Mat A, Vec b, Vec x) {
+Solver::Solver(Mat A, Vec b, Vec x, SolverPreconditioner *PC) {
 
 	this->A = A;
 	this->b = b;
 	this->x = x;
 
 	sApp = this;
+
+	if (PC == NULL) {
+		this->sPC = this;
+	} else {
+		this->sPC = PC;
+	}
 
 	init();
 }
@@ -50,9 +56,10 @@ void Solver::init() {
 
 	sApp->setRequiredPrecision(MAXPREC);
 	sApp->applyMult(x, temp, &itManager);
-	VecAYPX(g, -1, temp);
+	VecAYPX(g, -1, temp); // g = Ax - b
 
 	VecDestroy(temp);
+
 	sPC->applyPC(g, z);
 
 	VecDot(g, z, &rNorm);
@@ -65,8 +72,9 @@ void Solver::applyMult(Vec in, Vec out, IterationManager *info) {
 	MatMult(A, in, out);
 }
 
-void Solver::applyPC(Vec r, Vec z) {
-	VecCopy(r, z);
+void Solver::applyPC(Vec r, Vec rz) {
+
+	VecCopy(r, rz);
 }
 
 bool Solver::isConverged(PetscInt itNumber, PetscReal rNorm, PetscReal bNorm,
@@ -76,7 +84,8 @@ bool Solver::isConverged(PetscInt itNumber, PetscReal rNorm, PetscReal bNorm,
 
 void Solver::nextIteration() {
 	itManager.setIterationData("!normG", rNorm);
-	itManager.setIterationData("R", pow(rNorm / r0Norm, 2.0 / (double)itManager.getItCount()) );
+	itManager.setIterationData("R", pow(rNorm / r0Norm, 2.0
+			/ (double) itManager.getItCount()));
 	itManager.nextIteration();
 }
 
@@ -118,7 +127,24 @@ void CGSolver::solve() {
 
 	PetscReal xNorm = 0.001;
 	//VecNorm(x, NORM_2, &xNorm);
-	while (!sCtr->isConverged(getItCount(), rNorm, xNorm, &g)) {
+	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
+
+		if (getItCount() % 20 == 0) {
+			Vec temp;
+			VecDuplicate(b, &temp);
+			sApp->setRequiredPrecision(MAXPREC);
+			sApp->applyMult(x, temp, &itManager);
+			VecAYPX(g, -1, temp);
+			VecDestroy(temp);
+
+			sPC->applyPC(g, z);
+
+			VecDot(g, z, &rNorm);
+			rNorm = sqrt(rNorm);
+
+			VecCopy(z, p);
+
+		}
 
 		nextIteration();
 
@@ -135,13 +161,276 @@ void CGSolver::solve() {
 		PetscReal gDOTz;
 		VecDot(g, z, &gDOTz);
 
-
 		PetscReal beta = gDOTz / (rNorm * rNorm);
 		VecAYPX(p, beta, z);
 
 		rNorm = sqrt(gDOTz);
-		VecNorm(x, NORM_2,  &xNorm);
+		VecNorm(x, NORM_2, &xNorm);
 	}
+}
+
+void ReCGSolver::initSolver() {
+	VecScale(g, -1);
+
+	itManager.setTitle("ReCG");
+}
+
+void ReCGSolver::project() {
+
+	PetscPrintf(PETSC_COMM_WORLD, "RE - projection\n\n");
+
+	for (int i = 0; i < P.size(); i++) {
+
+			PetscReal a;
+			VecDot(P[i], g, &a);
+			VecAXPY(x, a / PAP[i], P[i]);
+			VecAXPY(g, -a / PAP[i], AP[i]);
+		}
+
+		VecNorm(g, NORM_2, &rNorm);
+}
+
+void ReCGSolver::solve() {
+
+	project();
+
+	//spaceSize = 0;
+
+	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
+
+		sPC->applyPC(g, z);
+
+		Vec p, Ap;
+
+		VecDuplicate(b, &p);
+		VecDuplicate(b, &Ap);
+
+		VecCopy(z, p);
+
+		//A-Ortogonalization to previous directions
+
+		for (int i = 0; i < P.size(); i++) {
+			PetscReal a;
+			VecDot(z, AP[i], &a);
+			VecAXPY(p, -a / PAP[i], P[i]);
+		}
+
+		sApp->applyMult(p, Ap, &itManager);
+
+		PetscReal pg, pAp;
+		VecDot(p, g, &pg);
+		VecDot(p, Ap, &pAp);
+
+		PetscReal alpha = pg / pAp;
+
+		VecAXPY(x, alpha, p);
+		VecAXPY(g, -alpha, Ap);
+
+		P.push_back(p);
+		AP.push_back(Ap);
+		PAP.push_back(pAp);
+
+		nextIteration();
+
+		VecNorm(g, NORM_2, &rNorm);
+	}
+}
+
+void Solver::solve(Vec newB, Vec newX) {
+
+	VecCopy(newX, x);
+	VecCopy(newB, b);
+
+	VecCopy(b, g);
+
+	Vec temp;
+	VecDuplicate(b, &temp);
+	sApp->setRequiredPrecision(MAXPREC);
+	sApp->applyMult(x, temp, &itManager);
+	VecAYPX(g, -1, temp);
+	VecDestroy(temp);
+
+	sPC->applyPC(g, z);
+
+	VecDot(g, z, &rNorm);
+	rNorm = sqrt(rNorm);
+
+	r0Norm = rNorm;
+
+	itManager.reset();
+
+	solve();
+}
+
+void GLanczos::solve() {
+	PetscInt n, locN, low, high;
+
+	PetscReal *tempArr;
+	VecGetSize(b, &n);
+	VecGetLocalSize(b, &locN);
+	VecGetOwnershipRange(b, &low, &high);
+
+	Vec p;
+	VecDuplicate(b, &p);
+
+	VecScale(g, -1);
+
+	if (prevSize > 0) {
+		Vec v;
+		VecCreateSeq(PETSC_COMM_SELF, prevSize, &v);
+		MatMultTranspose(Vprev, g, v);
+
+		PetscReal *vArr;
+		PetscReal *tArr = new PetscReal[prevSize];
+
+		VecGetArray(v, &vArr);
+
+		tArr[0] = vArr[0];
+		for (int i = 1; i < prevSize; i++) {
+			tArr[i] = vArr[i] - lambda[i] * tArr[i - 1];
+			//	PetscPrintf(comm, "tArr[%d] %f \n", i-1, tArr[i-1]);
+		}
+
+		vArr[prevSize - 1] = tArr[prevSize - 1] / mju[prevSize - 1];
+		for (int i = prevSize - 2; i >= 0; i--) {
+			vArr[i] = (tArr[i] - beta[i + 1] * vArr[i + 1]) / mju[i];
+			//PetscPrintf(comm, "%f %f %f\n", tArr[i], beta[i], mju[i]);
+		}
+
+		VecRestoreArray(v, &vArr);
+
+		PetscViewer vv;
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/y.m", FILE_MODE_WRITE, &vv);
+		VecView(v, vv);
+		PetscViewerDestroy(vv);
+
+		MatMult(Vprev, v, p);
+		VecAXPY(x, 1, p);
+
+		sApp->applyMult(x, g, &itManager);
+		VecAXPY(g, -1, b);
+
+		PetscReal normProj;
+		VecNorm(g, NORM_2, &normProj);
+		PetscPrintf(comm, "********************************\n  %f \n **********************\n", normProj);
+
+		rNorm = normProj;
+
+		if (sCtr->isConverged(itManager.getItCount(), rNorm, r0Norm, &g)) {
+			PetscPrintf(comm, "Cinverged in the projection phase!!! (BRAVO) \n");
+			return;
+		}
+
+		delete[] lambda, mju, beta;
+	}
+
+	Vec vNew, vCur, vPrev;
+	VecDuplicate(b, &vNew);
+	VecDuplicate(b, &vCur);
+	VecDuplicate(b, &vPrev);
+
+	VecSet(p, 0);
+
+	PetscInt *lVecInd = new PetscInt[locN];
+	for (int i = 0; i < locN; i++) {
+		lVecInd[i] = i + low;
+	}
+
+	Mat V;
+
+	MatCreateMPIDense(comm, locN, PETSC_DECIDE, PETSC_DECIDE, MAXSTEPS, PETSC_NULL, &V);
+	PetscReal alpha[MAXSTEPS], phi[MAXSTEPS];
+
+	lambda = new PetscReal[MAXSTEPS];
+	mju = new PetscReal[MAXSTEPS];
+	beta = new PetscReal[MAXSTEPS];
+
+	VecCopy(g, vCur);
+	VecCopy(g, vNew);
+
+	VecNorm(vCur, NORM_2, beta);
+	VecScale(vCur, 1 / beta[0]);
+	lambda[0] = 0;
+	phi[0] = beta[0];
+
+	int k = 0;
+	rNorm = fabs(phi[k]);
+
+	VecGetArray(vCur, &tempArr);
+	MatSetValues(V, locN, lVecInd, 1, &k, tempArr, INSERT_VALUES);
+	MatAssemblyBegin(V, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(V, MAT_FINAL_ASSEMBLY);
+	VecRestoreArray(vCur, &tempArr);
+
+	while (!sCtr->isConverged(itManager.getItCount(), rNorm, r0Norm, &vNew)) {
+
+		sApp->applyMult(vCur, vNew, &itManager);
+
+		if (k > 0) {
+			VecAXPY(vNew, -beta[k], vPrev);
+		}
+
+		VecDot(vNew, vCur, alpha + k);
+
+		if (k > 0) {
+			lambda[k] = beta[k] / mju[k - 1];
+			phi[k] = -lambda[k] * phi[k - 1];
+		}
+		mju[k] = alpha[k] - lambda[k] * beta[k];
+
+		VecAYPX(p, -beta[k], vCur);
+		VecScale(p, 1 / mju[k]);
+		VecAXPY(x, phi[k], p);
+
+		VecAXPY(vNew, -alpha[k], vCur);
+
+		VecNorm(vNew, NORM_2, beta + k + 1);
+		if (beta[k + 1] < 1e-7) {
+			k++; // < to maintain the correct step number count for extracting V
+			break;
+		}
+		VecScale(vNew, 1 / beta[k + 1]);
+
+		rNorm = fabs(phi[k]); //Absolute value of phi is equal to residual norm
+		k++;
+
+		//Insert new vector to the V matrix as a column
+		VecGetArray(vNew, &tempArr);
+		MatSetValues(V, locN, lVecInd, 1, &k, tempArr, INSERT_VALUES);
+		MatAssemblyBegin(V, MAT_FINAL_ASSEMBLY);
+		MatAssemblyEnd(V, MAT_FINAL_ASSEMBLY);
+		VecRestoreArray(vNew, &tempArr);
+
+		//Proceed to the next step
+		VecCopy(vCur, vPrev);
+		VecCopy(vNew, vCur);
+
+		VecCopy(p, vNew);
+		VecScale(vNew, phi[k - 1]); // For error estimation
+
+		nextIteration();
+
+		if (k == MAXSTEPS) break;
+	}
+
+	if (k > 1) {
+		IS IScol, ISrow;
+		ISCreateStride(PETSC_COMM_SELF, k - 1, 0, 1, &IScol);
+		ISCreateStride(comm, locN, low, 1, &ISrow);
+		MatGetSubMatrix(V, ISrow, IScol, MAT_INITIAL_MATRIX, &Vprev);
+
+		prevSize = k - 1;
+
+		ISDestroy(ISrow);
+		ISDestroy(IScol);
+	}
+
+	MatDestroy(V);
+	VecDestroy(vNew);
+	VecDestroy(vCur);
+	VecDestroy(vPrev);
+	VecDestroy(p);
+	delete[] lVecInd;
 }
 
 void ASinStep::initSolver() {
@@ -159,7 +448,6 @@ void ASinStep::solve() {
 
 	int gradRestartLoop = 2;
 	PetscReal outNorm = 1e-1;
-
 
 	for (int i = 0; i < 2; i++) {
 
@@ -191,17 +479,20 @@ void ASinStep::solve() {
 		nextIteration();
 		VecNorm(g, NORM_2, &rNorm);
 	}
-	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
+
+	PetscReal xNorm;
+	VecNorm(x, NORM_2, &xNorm);
+
+	while (!sCtr->isConverged(getItCount(), rNorm, xNorm, &g)) {
 
 		outNorm = outNorm * 0.66;
 
 		PetscReal reqPrec = fmax(fmin(outNorm, rNorm * 1e-1), 1e-6);
 		sApp->setRequiredPrecision(reqPrec);
-		if (reqPrec < pow((float)10,(int)-1*(gradRestartLoop))) {
+		if (reqPrec < pow((float) 10, (int) -1 * (gradRestartLoop))) {
 			gradRestartLoop++;
 		}
 		setIterationData("reqPrec", reqPrec);
-
 
 		if (getItCount() % gradRestartLoop == 0) {
 			//sApp->applyMult(x, Ax);
@@ -241,7 +532,7 @@ void ASinStep::solve() {
 		setIterationData("beta", beta);
 
 		nextIteration();
-
+		VecNorm(x, NORM_2, &xNorm);
 	}
 
 	VecDestroy(Ag);
