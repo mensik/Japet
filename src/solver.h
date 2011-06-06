@@ -151,8 +151,12 @@ class ReCGSolver: public Solver {
 	std::vector<Vec> AP;
 	std::vector<PetscReal> PAP;
 
+	Vec p; ///< direction vector
+	Vec Ap; ///< temp Vector
+
 	void initSolver();
 	void project();
+	void clearSubspace();
 public:
 
 	static const int MAX_SPACE_SIZE = 200;

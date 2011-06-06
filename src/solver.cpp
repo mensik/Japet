@@ -170,69 +170,88 @@ void CGSolver::solve() {
 }
 
 void ReCGSolver::initSolver() {
-	VecScale(g, -1);
+	VecDuplicate(b, &Ap);
+	VecDuplicate(g, &p);
+	VecCopy(z, p);
 
 	itManager.setTitle("ReCG");
 }
 
 void ReCGSolver::project() {
 
-	PetscPrintf(PETSC_COMM_WORLD, "RE - projection\n\n");
+	PetscPrintf(PETSC_COMM_WORLD, "RE - projection\n");
 
 	for (int i = 0; i < P.size(); i++) {
 
-			PetscReal a;
-			VecDot(P[i], g, &a);
-			VecAXPY(x, a / PAP[i], P[i]);
-			VecAXPY(g, -a / PAP[i], AP[i]);
-		}
+		PetscReal a;
+		VecDot(P[i], g, &a);
+		VecAXPY(x, a / PAP[i], P[i]);
+		VecAXPY(g, -a / PAP[i], AP[i]);
+	}
 
-		VecNorm(g, NORM_2, &rNorm);
+	VecNorm(g, NORM_2, &rNorm);
+}
+
+void ReCGSolver::clearSubspace() {
+	for (int i = 0; i < P.size(); i++) {
+		VecDestroy(P[i]);
+		VecDestroy(AP[i]);
+	}
+	P.clear();
+	AP.clear();
+	PAP.clear();
 }
 
 void ReCGSolver::solve() {
 
 	project();
 
-	//spaceSize = 0;
+	Vec temp;
+	VecDuplicate(b, &temp);
+	sApp->setRequiredPrecision(MAXPREC);
+	sApp->applyMult(x, temp, &itManager);
+	VecAYPX(g, -1, temp);
+	VecDestroy(temp);
+
+	sPC->applyPC(g, z);
+
+	VecDot(g, z, &rNorm);
+	rNorm = sqrt(rNorm);
+
+	VecCopy(z, p);
 
 	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
 
-		sPC->applyPC(g, z);
-
-		Vec p, Ap;
-
-		VecDuplicate(b, &p);
-		VecDuplicate(b, &Ap);
-
-		VecCopy(z, p);
-
-		//A-Ortogonalization to previous directions
-
-		for (int i = 0; i < P.size(); i++) {
-			PetscReal a;
-			VecDot(z, AP[i], &a);
-			VecAXPY(p, -a / PAP[i], P[i]);
-		}
-
-		sApp->applyMult(p, Ap, &itManager);
-
-		PetscReal pg, pAp;
-		VecDot(p, g, &pg);
-		VecDot(p, Ap, &pAp);
-
-		PetscReal alpha = pg / pAp;
-
-		VecAXPY(x, alpha, p);
-		VecAXPY(g, -alpha, Ap);
-
-		P.push_back(p);
-		AP.push_back(Ap);
-		PAP.push_back(pAp);
-
 		nextIteration();
 
-		VecNorm(g, NORM_2, &rNorm);
+		PetscReal pAp;
+		sApp->applyMult(p, Ap, &itManager);
+		VecDot(p, Ap, &pAp);
+
+		//Save for reortogonalization or projection
+		//	Vec pT, ApT;
+		//	VecDuplicate(p, &pT);
+		//	VecCopy(p, pT);
+		//	VecDuplicate(Ap, &ApT);
+		//	VecCopy(Ap, ApT);
+
+		//	P.push_back(pT);
+		//	AP.push_back(ApT);
+		//	PAP.push_back(pAp);
+
+		PetscReal a = (rNorm * rNorm) / pAp;
+		VecAXPY(x, -a, p);
+		VecAXPY(g, -a, Ap);
+
+		sPC->applyPC(g, z);
+
+		PetscReal gDOTz;
+		VecDot(g, z, &gDOTz);
+
+		PetscReal beta = gDOTz / (rNorm * rNorm);
+		VecAYPX(p, beta, z);
+
+		rNorm = sqrt(gDOTz);
 	}
 }
 

@@ -130,6 +130,8 @@ public:
 };
 
 class mFeti1: public Feti1 {
+
+
 public:
 	mFeti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 			PetscInt localNodeCount, MPI_Comm comm) :

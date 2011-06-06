@@ -262,7 +262,7 @@ Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 	PCSetUp(pc);
 
 	KSPCreate(PETSC_COMM_SELF, &kspA);
-	KSPSetTolerances(kspA, 1e-12, 1e-12, 1e7, 5000);
+	KSPSetTolerances(kspA, 1e-10, 1e-10, 1e7, 5000);
 	KSPSetPC(kspA, pc);
 	KSPSetOperators(kspA, Aloc, Aloc, SAME_PRECONDITIONER);
 	if (isLocalSingular) KSPSetNullSpace(kspA, locNS);
