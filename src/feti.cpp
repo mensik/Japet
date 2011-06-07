@@ -170,10 +170,12 @@ void AFeti::solve() {
 
 		MatMult(G, ttlmb, lmb);
 
-		/*Vec dTemp;
-		VecDuplicate(lmb, &dTemp);
-		applyMult(lmb, dTemp, NULL);
-		VecAXPY(d, 1, dTemp);*/
+		//Vec dTemp;
+		//VecDuplicate(lmb, &dTemp);
+		//applyMult(lmb, dTemp, NULL);
+		//VecAXPY(d, 1, dTemp);
+
+		//projectGOrth(d);
 
 		//VecDestroy(dTemp);
 		VecDestroy(tlmb);
@@ -303,8 +305,9 @@ void Feti1::solve() {
 	VecNorm(b, NORM_2, &bNorm);
 
 	MatMult(B, u, tLmb);
-	VecNorm(temp, NORM_2, &feasErr);
+	VecNorm(tLmb, NORM_2, &feasErr);
 	VecNorm(u, NORM_2, &uNorm);
+
 
 	PetscPrintf(PETSC_COMM_WORLD, "******************\n Gradient res: %f \n Feasibility err: %f \n****************** \n", error
 			/ bNorm, feasErr / uNorm);

@@ -60,20 +60,15 @@ int main(int argc, char *argv[]) {
 		bool bound[] = { false, false, false, true };
 		mesh->generateTearedRectMesh(0, m * H, 0, n * H, h, m, n, bound);
 
-		Mat B;
-		Vec lmb;
-		GenerateJumpOperator(mesh, B, lmb);
-
 		SubdomainCluster cluster;
 		mesh->generateRectMeshCluster(&cluster, m , n, 2, 2);
+
 
 		Mat Bl, Bg;
 		Vec lmbG, lmbL;
 		//GenerateJumpOperator(mesh, Bg, lmbG);
 		GenerateClusterJumpOperator(mesh, &cluster, Bg, lmbG, Bl, lmbL);
 		Generate2DLaplaceClusterNullSpace(mesh, &cluster);
-
-		Generate2DLaplaceTotalNullSpace(mesh,&nullSpace, PETSC_COMM_WORLD);
 
 		Mat A;
 		Vec b, x;

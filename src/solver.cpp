@@ -226,16 +226,6 @@ void ReCGSolver::solve() {
 
 		rNorm = sqrt(gDOTz);
 	}
-
-	//Save for reortogonalization or projection
-	/*Vec pT, ApT;
-	 VecDuplicate(p, &pT);
-	 VecCopy(p, pT);
-	 VecDuplicate(Ap, &ApT);
-	 VecCopy(Ap, ApT);
-	 P.push_back(pT);
-	 AP.push_back(ApT);
-	 PAP.push_back(pAp);*/
 }
 
 void Solver::solve(Vec newB, Vec newX) {
