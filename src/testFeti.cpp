@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
 		PetscLogStagePush(fetiStage);
 		Feti1
 				*feti =
-						new mFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
+						new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
 
 		//AFeti
 		//		*ifeti =

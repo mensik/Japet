@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
 	solver->setPrecision(prec);
 	solver->setIsVerbose(true);
 	solver->solve();
-	solver->solve(b, x2);
+	solver->solve(bo, x2);
 	solver->saveIterationInfo("lanczos.dat");
 
 	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/x.m", FILE_MODE_WRITE, &v);

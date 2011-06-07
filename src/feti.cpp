@@ -170,9 +170,17 @@ void AFeti::solve() {
 
 		MatMult(G, ttlmb, lmb);
 
+		/*Vec dTemp;
+		VecDuplicate(lmb, &dTemp);
+		applyMult(lmb, dTemp, NULL);
+		VecAXPY(d, 1, dTemp);*/
+
+		//VecDestroy(dTemp);
 		VecDestroy(tlmb);
 		VecDestroy(ttlmb);
 	}
+
+
 
 	outerSolver = instanceOuterSolver(d, lmb);
 	outerSolver->setSolverCtr(this);
@@ -369,7 +377,7 @@ Solver* mFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 	//outerPrec = 1e-4;
 	//lastNorm = 1e-4;
 	//inCounter = 0;
-	return new ReCGSolver(this, d, lmb);
+	return new ReCGSolver(this, d, lmb, this);
 }
 
 Solver* InexactFeti1::instanceOuterSolver(Vec d, Vec lmb) {
