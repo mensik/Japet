@@ -114,7 +114,6 @@ int main(int argc, char *argv[]) {
 
 		//feti->saveIterationInfo("feti.log");
 
-
 		//PetscPrintf(PETSC_COMM_WORLD, "Ready to solve \n");
 		feti->setIsVerbose(true);
 		feti->solve();

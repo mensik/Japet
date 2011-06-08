@@ -67,7 +67,7 @@ public:
 
 	Solver(Mat A, Vec b, Vec x, SolverPreconditioner *PC = NULL);
 	Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC = NULL);
-	~Solver();
+	virtual ~Solver();
 
 	void setIterationData(std::string name, PetscReal value) {
 		itManager.setIterationData(name, value);
@@ -107,7 +107,7 @@ public:
 	} ///< @return copy of solution
 
 	virtual void solve() = 0;
-	void solve(Vec newB, Vec newX);
+	virtual void reset(Vec newB, Vec newX);
 };
 
 class RichardsSolver: public Solver {
@@ -154,12 +154,13 @@ class ReCGSolver: public Solver {
 	Vec p; ///< direction vector
 	Vec Ap; ///< temp Vector
 
+	int maxSize;
+	PetscInt gCounter;
+
 	void initSolver();
 	void project();
 	void clearSubspace();
 public:
-
-	static const int MAX_SPACE_SIZE = 200;
 
 	ReCGSolver(Mat A, Vec b, Vec x, SolverPreconditioner *pc = NULL) :
 		Solver(A, b, x, pc) {
@@ -169,6 +170,8 @@ public:
 		Solver(sa, b, x, pc) {
 		initSolver();
 	}
+
+	~ReCGSolver();
 
 	void solve();
 

@@ -127,10 +127,11 @@ public:
 	virtual void applyPC(Vec g, Vec z);
 
 	virtual void solve();
+
+	void applyPrimalMult(Vec in, Vec out);
 };
 
 class mFeti1: public Feti1 {
-
 
 public:
 	mFeti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
@@ -139,7 +140,6 @@ public:
 	}
 
 	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);
-
 };
 
 class InexactFeti1: public Feti1 {
@@ -173,6 +173,8 @@ class HFeti: public AFeti {
 public:
 	HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
 			SubdomainCluster *cluster, PetscInt localNodeCount, MPI_Comm comm);
+
+	~HFeti();
 
 	virtual void applyInvA(Vec in, IterationManager *itManager);
 	void removeNullSpace(Vec in);

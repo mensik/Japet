@@ -1398,8 +1398,6 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 	cluster->clusterColor = (subY / l) * M + subX / k;
 	cluster->clusterCount = M*N;
 
-	PetscPrintf(PETSC_COMM_SELF, "[%d] %d %d -> %d\n", rank, subX, subY, cluster->clusterColor);
-
 	cluster->subdomainColors = new PetscInt[numOfPartitions];
 	for (int i = 0; i < numOfPartitions; i++) {
 

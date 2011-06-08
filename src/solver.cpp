@@ -37,6 +37,7 @@ Solver::Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC) {
 
 Solver::~Solver() {
 
+	VecDestroy(z);
 	VecDestroy(g);
 }
 
@@ -151,10 +152,19 @@ void CGSolver::solve() {
 	}
 }
 
+ReCGSolver::~ReCGSolver() {
+	clearSubspace();
+	VecDestroy(p);
+	VecDestroy(Ap);
+}
+
 void ReCGSolver::initSolver() {
 	VecDuplicate(b, &Ap);
 	VecDuplicate(g, &p);
 	VecCopy(z, p);
+
+	maxSize = 150;
+	gCounter = 0;
 
 	itManager.setTitle("ReCG");
 }
@@ -162,24 +172,37 @@ void ReCGSolver::initSolver() {
 void ReCGSolver::project() {
 
 	if (P.size() > 0) {
-		PetscPrintf(PETSC_COMM_WORLD, "RE - projection\n");
+		//PetscPrintf(PETSC_COMM_WORLD, "RE - projection\n");
 
 		for (int i = 0; i < P.size(); i++) {
 
 			PetscReal a;
 			VecDot(P[i], g, &a);
-			VecAXPY(x, a / PAP[i], P[i]);
+			VecAXPY(x, -a / PAP[i], P[i]);
 			VecAXPY(g, -a / PAP[i], AP[i]);
 		}
 
+		Vec temp;
+		VecDuplicate(b, &temp);
+
+		VecCopy(b, g);
+
+		sApp->setRequiredPrecision(MAXPREC);
+		sApp->applyMult(x, temp, &itManager);
+		VecAYPX(g, -1, temp); // g = Ax - b
+
+		VecDestroy(temp);
+
 		sPC->applyPC(g, z);
+
 		VecDot(g, z, &rNorm);
 		rNorm = sqrt(rNorm);
+
 	}
 }
 
 void ReCGSolver::clearSubspace() {
-	for (int i = 0; i < P.size(); i++) {
+	for (int i = 0; i <P.size(); i++) {
 		VecDestroy(P[i]);
 		VecDestroy(AP[i]);
 	}
@@ -191,6 +214,8 @@ void ReCGSolver::clearSubspace() {
 void ReCGSolver::solve() {
 
 	project();
+
+	//clearSubspace();
 
 	VecCopy(z, p);
 
@@ -207,14 +232,25 @@ void ReCGSolver::solve() {
 		VecAXPY(g, -a, Ap);
 
 		//Save for reortogonalization or projection
-		Vec pT, ApT;
-		VecDuplicate(p, &pT);
-		VecCopy(p, pT);
-		VecDuplicate(Ap, &ApT);
-		VecCopy(Ap, ApT);
-		P.push_back(pT);
-		AP.push_back(ApT);
-		PAP.push_back(pAp);
+
+
+		//if (gCounter > maxSize) {
+
+		//	VecCopy(p, P[gCounter % maxSize]);
+		//	VecCopy(Ap, AP[gCounter % maxSize]);
+		//	PAP[gCounter % maxSize] = pAp;
+		//} else {
+			Vec pT, ApT;
+			VecDuplicate(p, &pT);
+			VecCopy(p, pT);
+			VecDuplicate(Ap, &ApT);
+			VecCopy(Ap, ApT);
+
+			P.push_back(pT);
+			AP.push_back(ApT);
+			PAP.push_back(pAp);
+		//}
+		gCounter++;
 
 		sPC->applyPC(g, z);
 
@@ -226,9 +262,10 @@ void ReCGSolver::solve() {
 
 		rNorm = sqrt(gDOTz);
 	}
+
 }
 
-void Solver::solve(Vec newB, Vec newX) {
+void Solver::reset(Vec newB, Vec newX) {
 
 	x = newX;
 	b = newB;
@@ -250,8 +287,6 @@ void Solver::solve(Vec newB, Vec newX) {
 	r0Norm = rNorm;
 
 	itManager.reset();
-
-	solve();
 }
 
 void GLanczos::solve() {

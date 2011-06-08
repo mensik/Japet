@@ -10,14 +10,14 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 	isSingular = nullSpace->isDomainSingular;
 	R = nullSpace->R;
 
+	outerSolver = NULL;
+
 	isVerbose = false;
 
 	//If the matrix A is singular, the matrix G and G'G has to be prepared.
 	if (isSingular) {
 
-		PetscPrintf(comm, "BR mult ...");
 		MatMatMult(B, R, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &G);
-		PetscPrintf(comm, "done. \n");
 		PetscInt rank;
 		MPI_Comm_rank(comm, &rank);
 		Mat GTG;
@@ -97,6 +97,7 @@ AFeti::~AFeti() {
 		VecDestroy(tgA);
 		VecDestroy(tgB);
 
+		PetscPrintf(comm, "Destroy! \n");
 		KSPDestroy(kspG);
 	}
 	VecDestroy(temp);
@@ -170,19 +171,16 @@ void AFeti::solve() {
 
 		MatMult(G, ttlmb, lmb);
 
-		//Vec dTemp;
-		//VecDuplicate(lmb, &dTemp);
-		//applyMult(lmb, dTemp, NULL);
-		//VecAXPY(d, 1, dTemp);
+		Vec dTemp;
+		VecDuplicate(lmb, &dTemp);
+		applyMult(lmb, dTemp, NULL);
 
 		//projectGOrth(d);
 
-		//VecDestroy(dTemp);
+		VecDestroy(dTemp);
 		VecDestroy(tlmb);
 		VecDestroy(ttlmb);
 	}
-
-
 
 	outerSolver = instanceOuterSolver(d, lmb);
 	outerSolver->setSolverCtr(this);
@@ -195,11 +193,6 @@ void AFeti::solve() {
 	//Solution reconstruction
 	VecScale(lmb, -1);
 	MatMultTransposeAdd(B, lmb, b, u);
-
-	PetscViewer v;
-	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/u.m", FILE_MODE_WRITE, &v);
-	VecView(u, v);
-	PetscViewerDestroy(v);
 
 	applyInvA(u, NULL);
 
@@ -222,6 +215,33 @@ void AFeti::solve() {
 
 	VecScale(lmb, -1);
 	VecDestroy(d);
+
+	if (isVerbose) {
+
+		Vec precTempV, pTV, tLmb;
+		//VecDuplicate(b, &precTempV);
+		//VecDuplicate(b, &pTV);
+		VecDuplicate(lmb, &tLmb);
+
+		//VecCopy(u, tempInv);
+		//MatMult(Aloc, tempInvGh, tempInvGhB);
+		//VecCopy(tempInvGhB, tempInvGh);
+
+		//VecAXPY(tempInv, -1, b);
+		//MatMultTransposeAdd(B, lmb, tempInv, tempInv);
+
+		PetscReal error, bNorm, feasErr, uNorm;
+		//VecNorm(tempInv, NORM_2, &error);
+		VecNorm(b, NORM_2, &bNorm);
+
+		MatMult(B, u, tLmb);
+		VecNorm(tLmb, NORM_2, &feasErr);
+		VecNorm(u, NORM_2, &uNorm);
+
+		PetscPrintf(comm, "\n");
+		PetscPrintf(comm, "FETI finished   Outer it: %d   Inner it: %d\n", outIterations, inIterations);
+		PetscPrintf(comm, "Feasibility err: %f \n\n\n", feasErr / uNorm);
+	}
 }
 
 void AFeti::copySolution(Vec out) {
@@ -245,7 +265,7 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 	VecDot(z, *vec, &pNorm);
 	VecDestroy(z);
 	VecNorm(b, NORM_2, &outBNorm);
-	PetscPrintf(PETSC_COMM_WORLD, "Pirmal Norm: %f \n", sqrt(pNorm) / outBNorm);
+	//	PetscPrintf(PETSC_COMM_WORLD, "Pirmal Norm: %f \n", sqrt(pNorm) / outBNorm);
 
 	return sqrt(pNorm) / outBNorm < 1e-2 || itNumber > 60;
 }
@@ -285,33 +305,6 @@ Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 
 void Feti1::solve() {
 	AFeti::solve();
-
-	//Precision control!!!
-
-	Vec precTempV, pTV, tLmb;
-	VecDuplicate(b, &precTempV);
-	VecDuplicate(b, &pTV);
-	VecDuplicate(lmb, &tLmb);
-
-	VecCopy(u, tempInv);
-	MatMult(Aloc, tempInvGh, tempInvGhB);
-	VecCopy(tempInvGhB, tempInvGh);
-
-	VecAXPY(tempInv, -1, b);
-	MatMultTransposeAdd(B, lmb, tempInv, tempInv);
-
-	PetscReal error, bNorm, feasErr, uNorm;
-	VecNorm(tempInv, NORM_2, &error);
-	VecNorm(b, NORM_2, &bNorm);
-
-	MatMult(B, u, tLmb);
-	VecNorm(tLmb, NORM_2, &feasErr);
-	VecNorm(u, NORM_2, &uNorm);
-
-
-	PetscPrintf(PETSC_COMM_WORLD, "******************\n Gradient res: %f \n Feasibility err: %f \n****************** \n", error
-			/ bNorm, feasErr / uNorm);
-
 }
 
 Feti1::~Feti1() {
@@ -361,6 +354,10 @@ void Feti1::applyPC(Vec g, Vec z) {
 
 }
 
+void Feti1::applyPrimalMult(Vec in, Vec out) {
+
+}
+
 InexactFeti1::InexactFeti1(Mat A, Vec b, Mat B, Vec lmb,
 		NullSpaceInfo *nullSpace, PetscInt localNodeCount, MPI_Comm comm) :
 	Feti1(A, b, B, lmb, nullSpace, localNodeCount, comm) {
@@ -380,7 +377,14 @@ Solver* mFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 	//outerPrec = 1e-4;
 	//lastNorm = 1e-4;
 	//inCounter = 0;
-	return new ReCGSolver(this, d, lmb, this);
+
+	if (outerSolver == NULL) {
+		outerSolver = new ReCGSolver(this, d, lmb, this);
+	} else {
+		outerSolver->reset(d, lmb);
+	}
+
+	return outerSolver;
 }
 
 Solver* InexactFeti1::instanceOuterSolver(Vec d, Vec lmb) {
@@ -441,6 +445,10 @@ HFeti::HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
 	}
 }
 
+HFeti::~HFeti() {
+	delete subClusterSystem;
+}
+
 void HFeti::applyInvA(Vec in, IterationManager *itManager) {
 
 	VecCopy(in, globTemp);
@@ -454,6 +462,8 @@ void HFeti::applyInvA(Vec in, IterationManager *itManager) {
 		itManager->setIterationData("outFETIit", subClusterSystem->getOutIterations());
 		itManager->setIterationData("inFETIit", subClusterSystem->getInIterations());
 	}
+
+	inIterations += subClusterSystem->getOutIterations();
 
 	VecCopy(clustTempGh, globTempGh);
 	VecCopy(globTemp, in);
@@ -720,7 +730,7 @@ void Generate2DLaplaceTotalNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 	nullSpace->localBasis = new Vec[1];
 
 	VecCreateSeq(PETSC_COMM_SELF, mesh->vetrices.size(), &(nullSpace->localBasis[0]));
-	VecSet(nullSpace->localBasis[0], 1 / sqrt((double)mesh->vetrices.size()));
+	VecSet(nullSpace->localBasis[0], 1 / sqrt((double) mesh->vetrices.size()));
 
 	Mat *R = &(nullSpace->R);
 	//Creating of matrix R - null space basis
@@ -729,7 +739,7 @@ void Generate2DLaplaceTotalNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 		if (i == rank) {
 			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
 					!= mesh->vetrices.end(); v++) {
-				MatSetValue(*R, v->first, i, 1 / sqrt((double)mesh->vetrices.size()), INSERT_VALUES);
+				MatSetValue(*R, v->first, i, 1 / sqrt((double) mesh->vetrices.size()), INSERT_VALUES);
 			}
 		}
 		MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);

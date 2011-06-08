@@ -48,6 +48,11 @@ int main(int argc, char *argv[]) {
 	//if (!flg) SETERRQ(1,"Must indicate binary file with the -test_out_file option");
 
 	{
+
+		PetscPrintf(PETSC_COMM_WORLD, "***************************************************\n");
+		PetscPrintf(PETSC_COMM_WORLD, "                    TEST hFETI \n");
+		PetscPrintf(PETSC_COMM_WORLD, "***************************************************\n\n");
+
 		ierr = MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 		CHKERRQ(ierr);
 		MPI_Comm_size(PETSC_COMM_WORLD, &size);
@@ -60,13 +65,13 @@ int main(int argc, char *argv[]) {
 		bool bound[] = { false, false, false, true };
 		mesh->generateTearedRectMesh(0, m * H, 0, n * H, h, m, n, bound);
 
+		Mat Bl, Bg, B;
+		Vec lmbG, lmbL, lmb;
+		GenerateTotalJumpOperator(mesh, 1, B, lmb);
+
 		SubdomainCluster cluster;
-		mesh->generateRectMeshCluster(&cluster, m , n, 2, 2);
+		mesh->generateRectMeshCluster(&cluster, m, n, 2, 2);
 
-
-		Mat Bl, Bg;
-		Vec lmbG, lmbL;
-		//GenerateJumpOperator(mesh, Bg, lmbG);
 		GenerateClusterJumpOperator(mesh, &cluster, Bg, lmbG, Bl, lmbL);
 		Generate2DLaplaceClusterNullSpace(mesh, &cluster);
 
@@ -77,36 +82,37 @@ int main(int argc, char *argv[]) {
 		HFeti
 				*hFeti =
 						new HFeti(A, b, Bg, Bl, lmbG, lmbL, &cluster, mesh->vetrices.size(), PETSC_COMM_WORLD);
-//		Feti1
-//				*feti =
-//						new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
+		//		Feti1
+		//				*feti =
+		//						new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
 
-		delete mesh;
-
-//		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/system.m", FILE_MODE_WRITE, &v);
-//		feti->dumpSystem(v);
-//		hFeti->dumpSolution(v);
-//		PetscViewerDestroy(v);
+		//		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/system.m", FILE_MODE_WRITE, &v);
+		//		feti->dumpSystem(v);
+		//		hFeti->dumpSolution(v);
+		//		PetscViewerDestroy(v);
 
 		hFeti->setIsVerbose(true);
-		PetscPrintf(PETSC_COMM_WORLD, "Starting!!! \n\n");
+		PetscPrintf(PETSC_COMM_WORLD, "\n");
 		hFeti->solve();
-//		VecDuplicate(b, &x);
-//		hFeti->copySolution(x);
-/*
-		PetscPrintf(PETSC_COMM_WORLD, "Starting FETI1!!! \n\n");
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
+		mesh->dumpForMatlab(v);
+		PetscViewerDestroy(v);
+		delete mesh;
 
-		feti->setIsVerbose(true);
-		feti->solve();
+		Vec u;
+		VecDuplicate(b, &u);
+		hFeti->copySolution(u);
+		//hFeti->copyLmb(lmb);
 
-		Vec xFeti;
-		VecDuplicate(x, &xFeti);
-		feti->copySolution(xFeti);
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/out.m", FILE_MODE_WRITE, &v);
+		MatView(A, v);
+		VecView(b, v);
+		MatView(B, v);
+		VecView(u, v);
+		VecView(lmb, v);
+		PetscViewerDestroy(v);
 
-		VecAXPY(xFeti, -1, x);
-*/
-		//hFeti->saveIterationInfo("hFeti.log");
-		//delete hFeti;
+		delete hFeti;
 	}
 
 	ierr = PetscFinalize();

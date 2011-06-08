@@ -52,7 +52,8 @@ int main(int argc, char *argv[]) {
 	solver->setPrecision(prec);
 	solver->setIsVerbose(true);
 	solver->solve();
-	solver->solve(bo, x2);
+	solver->reset(bo, x2);
+	solver->solve();
 	solver->saveIterationInfo("lanczos.dat");
 
 	PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/x.m", FILE_MODE_WRITE, &v);
@@ -75,6 +76,13 @@ int main(int argc, char *argv[]) {
 	 solver2->solve();
 	 solver2->saveIterationInfo("asin.dat");
 	 */
+
+	delete solver;
+	VecDestroy(x);
+	VecDestroy(x2);
+	VecDestroy(b);
+	VecDestroy(bo);
+	MatDestroy(A);
 
 	PetscFinalize();
 	return 0;
