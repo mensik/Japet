@@ -29,17 +29,18 @@ bool cf(PetscInt itNumber, PetscReal rNorm, Vec *r) {
 }
 
 int main(int argc, char *argv[]) {
-	PetscReal (*fList[])(Point) = {funConst, funSin, funStep};
+	//PetscReal (*fList[])(Point) = {funConst, funSin, funStep};
 	PetscErrorCode ierr;
 	PetscMPIInt rank, size;
 
-	PetscReal E = 2.1e5, mu = 0.3, h = 2.0, H = 100;
+	//PetscReal E = 2.1e5, mu = 0.3;
+	PetscReal h = 2.0, H = 100;
 	PetscInt m = 3, n = 3;
 
 	PetscInitialize(&argc, &argv, 0, help);
-	PetscInt f = 2;
-	PetscTruth flg;
-	char fileName[PETSC_MAX_PATH_LEN] = "matlab/out.m";
+	//PetscInt f = 2;
+	//PetscTruth flg;
+	//char fileName[PETSC_MAX_PATH_LEN] = "matlab/out.m";
 
 	PetscOptionsGetInt(PETSC_NULL, "-japet_m", &m, PETSC_NULL);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_n", &n, PETSC_NULL);
@@ -76,7 +77,7 @@ int main(int argc, char *argv[]) {
 		Generate2DLaplaceClusterNullSpace(mesh, &cluster);
 
 		Mat A;
-		Vec b, x;
+		Vec b;
 		FEMAssembleTotal2DLaplace(PETSC_COMM_WORLD, mesh, A, b, funConst, funConst);
 
 		HFeti

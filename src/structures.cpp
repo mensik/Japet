@@ -333,17 +333,33 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 		for (int i = 0; i < m; i++)
 			for (int j = 0; j < n; j++) {
 				if (i < m - 1) for (int k = 0; k < yEdges + 1; k++) {
+
+					//Skip pairings on dirchelt border
 					if (j == 0 && bound[2] && k == 0) continue;
 					if (j == n - 1 && bound[0] && k == yEdges) continue;
+
 					pairings.push_back(rNodes[k] + (j * m + i) * subDomainNodeCount);
 					pairings.push_back(lNodes[k] + (j * m + i + 1) * subDomainNodeCount);
 				}
 				if (j < n - 1) for (int k = 0; k < xEdges + 1; k++) {
-					if (i > 0 && k == 0) continue;
+					if (i > 0 && k == 0) continue; //Skip extra pair in corner
+
+					//Skip pairings on dirchlet border
 					if (i == 0 && bound[3] && k == 0) continue;
 					if (i == m - 1 && bound[1] && k == xEdges) continue;
+
 					pairings.push_back(tNodes[k] + (j * m + i) * subDomainNodeCount);
 					pairings.push_back(bNodes[k] + ((j + 1) * m + i) * subDomainNodeCount);
+				}
+				if (i < m - 1 && j < n - 1) { //Corner
+					Corner *corner = new Corner();
+					corner->cornerSize = 4;
+					corner->vetrices[0] = (j * m + i) * subDomainNodeCount + tNodes[xEdges];
+					corner->vetrices[1] = (j * m + i + 1) * subDomainNodeCount + tNodes[0];
+					corner->vetrices[2] = ((j + 1) * m + i) * subDomainNodeCount + bNodes[xEdges];
+					corner->vetrices[3] = ((j + 1) * m + i + 1) * subDomainNodeCount + bNodes[0];
+
+					corners.push_back(corner);
 				}
 			}
 

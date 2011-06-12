@@ -62,6 +62,8 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 		MatAssemblyBegin(GTG, MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(GTG, MAT_FINAL_ASSEMBLY);
 
+
+
 		KSPCreate(comm, &kspG);
 		KSPSetOperators(kspG, GTG, GTG, SAME_PRECONDITIONER);
 
@@ -170,14 +172,16 @@ void AFeti::solve() {
 		KSPSolve(kspG, tlmb, ttlmb); //POZOR!!! (G'G) muze byt singularni v pripade, ze je system neukotveny
 
 		MatMult(G, ttlmb, lmb);
+		/*
+		 Vec dTemp;
+		 VecDuplicate(lmb, &dTemp);
+		 applyMult(lmb, dTemp, NULL);
 
-		Vec dTemp;
-		VecDuplicate(lmb, &dTemp);
-		applyMult(lmb, dTemp, NULL);
+		 VecAXPY(d, 1, dTemp);
+		 //projectGOrth(d);
 
-		//projectGOrth(d);
-
-		VecDestroy(dTemp);
+		 VecDestroy(dTemp);
+		 */
 		VecDestroy(tlmb);
 		VecDestroy(ttlmb);
 	}
@@ -218,7 +222,8 @@ void AFeti::solve() {
 
 	if (isVerbose) {
 
-		Vec precTempV, pTV, tLmb;
+		//Vec precTempV, pTV;
+		Vec tLmb;
 		//VecDuplicate(b, &precTempV);
 		//VecDuplicate(b, &pTV);
 		VecDuplicate(lmb, &tLmb);
@@ -230,7 +235,8 @@ void AFeti::solve() {
 		//VecAXPY(tempInv, -1, b);
 		//MatMultTransposeAdd(B, lmb, tempInv, tempInv);
 
-		PetscReal error, bNorm, feasErr, uNorm;
+		PetscReal bNorm, feasErr, uNorm;
+		//PetscReal error;
 		//VecNorm(tempInv, NORM_2, &error);
 		VecNorm(b, NORM_2, &bNorm);
 
@@ -267,7 +273,7 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 	VecNorm(b, NORM_2, &outBNorm);
 	//	PetscPrintf(PETSC_COMM_WORLD, "Pirmal Norm: %f \n", sqrt(pNorm) / outBNorm);
 
-	return sqrt(pNorm) / outBNorm < 1e-2 || itNumber > 60;
+	return norm / bNorm < 1e-5 || sqrt(pNorm) / outBNorm < 1e-3 || itNumber > 100;
 }
 
 Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
@@ -285,16 +291,76 @@ Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 		MatNullSpaceCreate(PETSC_COMM_SELF, PETSC_TRUE, nullSpace->localDimension, nullSpace->localBasis, &locNS);
 	}
 
+	//Matrix regularization!
+
+	PetscInt firstRow, lastRow, nCols, locNullDim, commSize, rank, nodeDim;
+
+	VecGetOwnershipRange(b, &firstRow, &lastRow);
+	MatGetSize(R, PETSC_NULL, &nCols);
+	MPI_Comm_rank(comm, &rank);
+	MPI_Comm_size(comm, &commSize);
+
+	locNullDim = nCols / commSize;
+	nodeDim = (lastRow - firstRow) / localNodeCount; //Number of rows for each node
+
+	PetscInt FIX_NODE_COUNT;
+	PetscInt fixingNodes[3];
+
+	if (nodeDim == 1) { //Laplace
+		FIX_NODE_COUNT = 1;
+		fixingNodes[0] = (firstRow / nodeDim + lastRow / nodeDim - 1) / 2;
+	} else if (nodeDim == 2) { //Elasticity
+		FIX_NODE_COUNT = 2;
+		fixingNodes[0] = firstRow / nodeDim + 1;
+		fixingNodes[1] = lastRow / nodeDim - 2;
+		//fixingNodes[2] = (firstRow / nodeDim + lastRow / nodeDim - 1) / 2 + 2;
+	}
+
+	Mat REG;
+	MatCreateSeqAIJ(PETSC_COMM_SELF, lastRow - firstRow, locNullDim, FIX_NODE_COUNT
+			* nodeDim * locNullDim, PETSC_NULL, &REG);
+
+	const PetscReal *values;
+
+	for (int i = 0; i < FIX_NODE_COUNT; i++)
+		for (int d = 0; d < nodeDim; d++) {
+
+			MatGetRow(R, fixingNodes[i] * nodeDim + d, PETSC_NULL, PETSC_NULL, &values);
+
+			for (int j = 0; j < locNullDim; j++) {
+				MatSetValue(REG, fixingNodes[i] * nodeDim + d - firstRow, j, values[j
+						+ rank * locNullDim], INSERT_VALUES);
+			}
+
+			MatRestoreRow(R, fixingNodes[i] * nodeDim + d, PETSC_NULL, PETSC_NULL, &values);
+
+		}
+
+	MatAssemblyBegin(REG, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(REG, MAT_FINAL_ASSEMBLY);
+
+	Mat REGREGT;
+	Mat REGT;
+	MatTranspose(REG, MAT_INITIAL_MATRIX, &REGT);
+	MatMatMult(REG, REGT, MAT_INITIAL_MATRIX, 1, &REGREGT);
+
+	//MatView(REGREGT, PETSC_VIEWER_STDOUT_SELF);
+
+	Mat Areg;
+	MatDuplicate(Aloc, MAT_COPY_VALUES, &Areg);
+
+	MatAXPY(Areg, 1, REGREGT, DIFFERENT_NONZERO_PATTERN);
+
 	PC pc;
 	PCCreate(PETSC_COMM_SELF, &pc);
-	PCSetOperators(pc, Aloc, Aloc, SAME_PRECONDITIONER);
+	PCSetOperators(pc, Areg, Areg, SAME_PRECONDITIONER);
 	PCSetFromOptions(pc);
 	PCSetUp(pc);
 
 	KSPCreate(PETSC_COMM_SELF, &kspA);
 	KSPSetTolerances(kspA, 1e-10, 1e-10, 1e7, 5000);
 	KSPSetPC(kspA, pc);
-	KSPSetOperators(kspA, Aloc, Aloc, SAME_PRECONDITIONER);
+	KSPSetOperators(kspA, Areg, Areg, SAME_PRECONDITIONER);
 	if (isLocalSingular) KSPSetNullSpace(kspA, locNS);
 
 	VecCreateGhost(comm, lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &tempInv);
@@ -436,7 +502,7 @@ HFeti::HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
 	clustNullSpace->isSubDomainSingular = cluster->isSubDomainSingular;
 
 	subClusterSystem
-			= new Feti1(A, clustb, BClust, lmbCl, clustNullSpace, localNodeCount, cluster->clusterComm);
+			= new mFeti1(A, clustb, BClust, lmbCl, clustNullSpace, localNodeCount, cluster->clusterComm);
 	subClusterSystem->setSystemSingular();
 
 	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
@@ -541,13 +607,54 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Vec &lmb) {
 		}
 	}
 
-	if (!rank) {
-		for (int i = 0; i < mesh->nPairs; i++) {
-			for (int j = 0; j < d; j++) {
+	PetscReal boundVal = 1.0 / sqrt(2.0); // Value to keep the B ortonormal
 
-				MatSetValue(B, (i + dSum) * d + j, mesh->pointPairing[i * 2] * d + j, 1, INSERT_VALUES);
-				MatSetValue(B, (i + dSum) * d + j, mesh->pointPairing[i * 2 + 1] * d
-						+ j, -1, INSERT_VALUES);
+	if (!rank) {
+
+		std::set<PetscInt> cornerInd;
+
+		for (int i = 0; i < mesh->corners.size(); i++) {
+			for (int j = 0; j < mesh->corners[i]->cornerSize; j++) {
+				cornerInd.insert(mesh->corners[i]->vetrices[j]);
+			}
+		}
+
+		PetscInt rowCounter = dSum;
+		for (int i = 0; i < mesh->nPairs; i++) {
+			if (cornerInd.count(mesh->pointPairing[i * 2]) == 0
+					&& cornerInd.count(mesh->pointPairing[i * 2 + 1]) == 0) {
+				for (int j = 0; j < d; j++) {
+
+					MatSetValue(B, rowCounter * d + j, mesh->pointPairing[i * 2] * d + j, boundVal, INSERT_VALUES);
+					MatSetValue(B, rowCounter * d + j, mesh->pointPairing[i * 2 + 1] * d
+							+ j, -boundVal, INSERT_VALUES);
+
+				}
+				rowCounter++;
+			}
+		}
+
+		//FIX more dimensions!!!
+		for (int i = 0; i < mesh->corners.size(); i++) {
+
+			PetscInt *vetrices = mesh->corners[i]->vetrices;
+			PetscInt cornerSize = mesh->corners[i]->cornerSize;
+
+			for (int j = 0; j < cornerSize - 1; j++) {
+
+				PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1) * (cornerSize
+						- j - 1) + (cornerSize - j - 1));
+
+				for (int dim = 0; dim < d; dim++) {
+					MatSetValue(B, rowCounter * d + dim, vetrices[j] * d + dim, -(cornerSize
+							- j - 1) / norm, INSERT_VALUES);
+					for (int k = j + 1; k < cornerSize; k++) {
+						MatSetValue(B, rowCounter * d + dim, vetrices[k] * d + dim, 1
+								/ norm, INSERT_VALUES);
+					}
+				}
+
+				rowCounter++;
 			}
 		}
 	}
@@ -612,11 +719,13 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		MatSetValue(BGlob, sIndex++, *i, 1, INSERT_VALUES);
 	}
 
+	PetscReal boundVal = 1.0 / sqrt(2.0); // Value is normalized for keeping the B matrix ortonormal
+
 	if (!rank) {
 		std::vector<PetscInt>::iterator i = cluster->globalPairing.begin();
 		for (int rowCounter = 0; rowCounter < globalPairCount; rowCounter++) {
-			MatSetValue(BGlob, rowCounter + dSum, *(i++), 1, INSERT_VALUES);
-			MatSetValue(BGlob, rowCounter + dSum, *(i++), -1, INSERT_VALUES);
+			MatSetValue(BGlob, rowCounter + dSum, *(i++), boundVal, INSERT_VALUES);
+			MatSetValue(BGlob, rowCounter + dSum, *(i++), -boundVal, INSERT_VALUES);
 		}
 	}
 
@@ -633,11 +742,11 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 			PetscInt globalIndex = *(i++);
 			PetscInt clusterIndex = globalIndex
 					+ cluster->startIndexesDiff[mesh->getNodeDomain(globalIndex)];
-			MatSetValue(BCluster, rowCounter, clusterIndex, 1, INSERT_VALUES);
+			MatSetValue(BCluster, rowCounter, clusterIndex, boundVal, INSERT_VALUES);
 			globalIndex = *(i++);
 			clusterIndex = globalIndex
 					+ cluster->startIndexesDiff[mesh->getNodeDomain(globalIndex)];
-			MatSetValue(BCluster, rowCounter, clusterIndex, -1, INSERT_VALUES);
+			MatSetValue(BCluster, rowCounter, clusterIndex, -boundVal, INSERT_VALUES);
 		}
 	}
 
@@ -773,11 +882,6 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 		if (i == rank) {
 			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
 					!= mesh->vetrices.end(); v++) {
-				MatSetValue(*R, v->first * 2, i * 3, 1, INSERT_VALUES);
-				MatSetValue(*R, v->first * 2 + 1, i * 3 + 1, 1, INSERT_VALUES);
-				MatSetValue(*R, v->first * 2, i * 3 + 2, -v->second->y, INSERT_VALUES);
-				MatSetValue(*R, v->first * 2 + 1, i * 3 + 2, v->second->x, INSERT_VALUES);
-
 				VecSetValue(nullSpace->localBasis[0], (v->first - mesh->startIndexes[i])
 						* 2, 1, INSERT_VALUES);
 				VecSetValue(nullSpace->localBasis[1], (v->first - mesh->startIndexes[i])
@@ -789,9 +893,6 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 			}
 		}
 	}
-
-	MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
-	MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
 
 	//Null space ortonormalization
 	PetscReal vecNorm1, vecNorm2;
@@ -808,6 +909,29 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 
 	VecNorm(nullSpace->localBasis[2], NORM_2, &vecNorm2);
 	VecScale(nullSpace->localBasis[2], 1 / vecNorm2);
+
+	PetscInt rowIndL[mesh->vetrices.size() * 2];
+	PetscInt rowIndG[mesh->vetrices.size() * 2];
+
+	PetscInt localRSize = mesh->vetrices.size() * 2;
+
+	for (int i = 0; i < localRSize; i++) {
+		rowIndL[i] = i;
+		rowIndG[i] = i + mesh->startIndexes[rank] * 2;
+	}
+
+	for (int j = 0; j < 3; j++) {
+		PetscReal *values;
+		PetscInt colIndG = rank * 3 + j;
+		VecGetArray(nullSpace->localBasis[j], &values);
+		MatSetValues(*R, localRSize, rowIndG, 1, &colIndG, values, INSERT_VALUES);
+		VecRestoreArray(nullSpace->localBasis[j], &values);
+	}
+
+	MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
+
+	//MatView(*R, PETSC_VIEWER_STDOUT_WORLD);
 
 }
 

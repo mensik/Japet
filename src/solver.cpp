@@ -130,6 +130,29 @@ void CGSolver::solve() {
 
 	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
 
+		if (getItCount() % 10 == 0 && getItCount() > 1) {
+
+			PetscPrintf(PETSC_COMM_WORLD, "RESTART \n");
+
+			Vec temp;
+			VecDuplicate(b, &temp);
+
+			VecCopy(b, g);
+
+			sApp->setRequiredPrecision(MAXPREC);
+			sApp->applyMult(x, temp, &itManager);
+			VecAYPX(g, -1, temp); // g = Ax - b
+
+			VecDestroy(temp);
+
+			sPC->applyPC(g, z);
+
+			VecDot(g, z, &rNorm);
+			rNorm = sqrt(rNorm);
+
+			VecCopy(z, p);
+		}
+
 		nextIteration();
 
 		PetscScalar pAp;
@@ -202,7 +225,7 @@ void ReCGSolver::project() {
 }
 
 void ReCGSolver::clearSubspace() {
-	for (int i = 0; i <P.size(); i++) {
+	for (int i = 0; i < P.size(); i++) {
 		VecDestroy(P[i]);
 		VecDestroy(AP[i]);
 	}
@@ -228,6 +251,7 @@ void ReCGSolver::solve() {
 		VecDot(p, Ap, &pAp);
 
 		PetscReal a = (rNorm * rNorm) / pAp;
+
 		VecAXPY(x, -a, p);
 		VecAXPY(g, -a, Ap);
 
@@ -240,15 +264,15 @@ void ReCGSolver::solve() {
 		//	VecCopy(Ap, AP[gCounter % maxSize]);
 		//	PAP[gCounter % maxSize] = pAp;
 		//} else {
-			Vec pT, ApT;
-			VecDuplicate(p, &pT);
-			VecCopy(p, pT);
-			VecDuplicate(Ap, &ApT);
-			VecCopy(Ap, ApT);
+		Vec pT, ApT;
+		VecDuplicate(p, &pT);
+		VecCopy(p, pT);
+		VecDuplicate(Ap, &ApT);
+		VecCopy(Ap, ApT);
 
-			P.push_back(pT);
-			AP.push_back(ApT);
-			PAP.push_back(pAp);
+		P.push_back(pT);
+		AP.push_back(ApT);
+		PAP.push_back(pAp);
 		//}
 		gCounter++;
 
@@ -261,6 +285,12 @@ void ReCGSolver::solve() {
 		VecAYPX(p, beta, z);
 
 		rNorm = sqrt(gDOTz);
+
+		if (rNorm != rNorm) {
+			PetscPrintf(PETSC_COMM_WORLD, "ERROR!!!");
+			break;
+		}
+
 	}
 
 }

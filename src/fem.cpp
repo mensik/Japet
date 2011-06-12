@@ -38,7 +38,7 @@ void elastLoc(Point *vetrices[], PetscReal E,PetscReal mi, PetscReal *fs, PetscR
 	matrixTranspose(phiGrad, 3, 2, phiGradT);
 
 	double Cmu[] = { 2, 0, 0, 0, 2, 0, 0, 0, 1 };
-	double Clm[] = { 1, 1, 0, 1, 1, 0, 0, 0, 0 };
+	//double Clm[] = { 1, 1, 0, 1, 1, 0, 0, 0, 0 }; Why is this never used?
 	PetscReal C[] = { 1 - mi, mi, 0, mi, 1 - mi, 0, 0, 0, (1 - 2 * mi) / 2 };
 
 	matrixSum(C, E / ((1 + mi)*(1 - 2*mi)), Cmu, 0, C, 3, 3);

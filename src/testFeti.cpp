@@ -54,8 +54,6 @@ int main(int argc, char *argv[]) {
 
 		int problemType = 0;
 
-
-
 		PetscLogStageRegister("Meshing", &meshing);
 		PetscLogStagePush(meshing);
 		mesh->generateTearedRectMesh(0, m * H, 0, n * H, h, m, n, bound);
@@ -103,7 +101,7 @@ int main(int argc, char *argv[]) {
 		PetscLogStagePush(fetiStage);
 		Feti1
 				*feti =
-						new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
+						new mFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
 
 		//AFeti
 		//		*ifeti =
@@ -137,6 +135,7 @@ int main(int argc, char *argv[]) {
 		VecView(x, v);
 		VecView(lmb, v);
 		PetscViewerDestroy(v);
+
 
 	}
 
