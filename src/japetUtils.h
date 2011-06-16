@@ -16,6 +16,8 @@
 #include "petscsys.h"
 #include "petscvec.h"
 #include "mpi.h"
+#include <time.h>
+#include <sys/timeb.h>
 
 struct IterationInfo {
 	int itNumber;
@@ -57,6 +59,25 @@ public:
 		itInfo.clear();
 	}
 
+};
+
+class ConfigManager {
+	static ConfigManager *instance;
+	ConfigManager();
+public:
+	PetscInt m;
+	PetscInt n;
+	PetscReal h;
+	PetscReal H;
+
+	PetscInt problem; //< 0 - Laplace, 1 - lin.elasticity
+
+	char *name;
+
+	PetscReal E;
+	PetscReal mu;
+
+	static ConfigManager* Instance();
 };
 
 #endif /* JAPETUTILS_H_ */

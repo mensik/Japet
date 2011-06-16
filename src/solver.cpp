@@ -63,9 +63,7 @@ void Solver::init() {
 
 	sPC->applyPC(g, z);
 
-	VecDot(g, z, &rNorm);
-	rNorm = sqrt(rNorm);
-
+	VecNorm(g, NORM_2, &rNorm);
 	r0Norm = rNorm;
 }
 
@@ -217,10 +215,8 @@ void ReCGSolver::project() {
 		VecDestroy(temp);
 
 		sPC->applyPC(g, z);
-
-		VecDot(g, z, &rNorm);
-		rNorm = sqrt(rNorm);
-
+		VecNorm(g, NORM_2, &rNorm);
+		VecCopy(z, p);
 	}
 }
 
@@ -238,22 +234,27 @@ void ReCGSolver::solve() {
 
 	project();
 
-	//clearSubspace();
+	PetscReal relativeCoef = MAX(bNorm, r0Norm);
+	PetscReal gTzPrev, gTz;
 
-	VecCopy(z, p);
+	//solProj->applyProjection(g);
+//	sPC->applyPC(g, z);
+	VecDot(g, z, &gTz);
 
-	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
+	while (!sCtr->isConverged(getItCount(), rNorm, relativeCoef, &g)) {
 
+		itManager.setIterationData("Rel. err", rNorm/relativeCoef);
 		nextIteration();
 
 		PetscScalar pAp;
 		sApp->applyMult(p, Ap, &itManager);
 		VecDot(p, Ap, &pAp);
 
-		PetscReal a = (rNorm * rNorm) / pAp;
+		PetscReal a = gTz / pAp;
 
 		VecAXPY(x, -a, p);
 		VecAXPY(g, -a, Ap);
+
 
 		//Save for reortogonalization or projection
 
@@ -278,15 +279,16 @@ void ReCGSolver::solve() {
 
 		sPC->applyPC(g, z);
 
-		PetscReal gDOTz;
-		VecDot(g, z, &gDOTz);
+		gTzPrev = gTz;
 
-		PetscReal beta = gDOTz / (rNorm * rNorm);
+		VecDot(g, z, &gTz);
+
+		PetscReal beta = gTz / gTzPrev;
 		VecAYPX(p, beta, z);
 
-		rNorm = sqrt(gDOTz);
+		VecNorm(g, NORM_2, &rNorm);
 
-		if (rNorm != rNorm) {
+		if (gTz != gTz) {
 			PetscPrintf(PETSC_COMM_WORLD, "ERROR!!!");
 			break;
 		}
@@ -540,7 +542,7 @@ void ASinStep::solve() {
 	PetscReal xNorm;
 	VecNorm(x, NORM_2, &xNorm);
 
-	while (!sCtr->isConverged(getItCount(), rNorm, xNorm, &g)) {
+	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
 
 		outNorm = outNorm * 0.66;
 

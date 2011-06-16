@@ -55,6 +55,8 @@ protected:
 	PetscInt outIterations;
 	PetscInt inIterations;
 
+	PetscLogStage coarseStage;
+
 public:
 	AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm comm);
 	~AFeti();

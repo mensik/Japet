@@ -216,7 +216,7 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 	PetscInt elementIndex = rank * subDomainElementCount;
 
 	PetscInt sdX = rank % m;
-	PetscInt sdY = (rank - sdX) / n;
+	PetscInt sdY = (rank - sdX) / m;
 
 	PetscReal xStart = sdX * Hx;
 	PetscReal yStart = sdY * Hy;

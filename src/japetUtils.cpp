@@ -10,7 +10,7 @@ void IterationManager::nextIteration() {
 			!= iterationData.end(); i++) {
 		const PetscReal data = i->second;
 		info.itData.push_back(data);
-		if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "\t%s=%f", i->first.c_str(), i->second);
+		if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "\t%s=%e", i->first.c_str(), i->second);
 	}
 	if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "\n");
 
@@ -52,5 +52,39 @@ void IterationManager::saveIterationInfo(const char *filename, bool rewrite) {
 			fclose(f);
 		}
 	}
+}
+
+ConfigManager* ConfigManager::instance = NULL;
+
+ConfigManager* ConfigManager::Instance() {
+	if (!instance) {
+		instance = new ConfigManager();
+	}
+	return instance;
+}
+
+ConfigManager::ConfigManager() {
+
+	E = 2.1e5;
+	mu = 0.3;
+	h = 2.0;
+	H = 100;
+	m = 3;
+	n = 3;
+	problem = 0;
+
+	PetscTruth flg;
+
+	char tName[PETSC_MAX_PATH_LEN] = "FetiTest.log";
+
+	PetscOptionsGetInt(PETSC_NULL, "-japet_problem", &problem, PETSC_NULL);
+	PetscOptionsGetInt(PETSC_NULL, "-japet_m", &m, PETSC_NULL);
+	PetscOptionsGetInt(PETSC_NULL, "-japet_n", &n, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-japet_h", &h, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-japet_HH", &H, PETSC_NULL);
+	PetscOptionsGetString(PETSC_NULL, "-japet_name", tName, PETSC_MAX_PATH_LEN - 1, &flg);
+
+	name = tName;
+
 }
 

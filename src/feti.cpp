@@ -1,10 +1,13 @@
 #include "feti.h"
 AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 
+
 	comm = c;
 	this->b = b;
 	this->B = B;
 	this->lmb = lmb;
+
+	PetscLogStageRegister("Coarse Problem", &coarseStage);
 
 	isLocalSingular = nullSpace->isSubDomainSingular;
 	isSingular = nullSpace->isDomainSingular;
@@ -62,10 +65,19 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 		MatAssemblyBegin(GTG, MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(GTG, MAT_FINAL_ASSEMBLY);
 
-
+		/*
+		 PC pc;
+		 PCCreate(PETSC_COMM_SELF, &pc);
+		 PCSetOperators(pc, GTG, GTG, SAME_PRECONDITIONER);
+		 PCSetType(pc, "cholesky");
+		 PCSetUp(pc);
+		 */
 
 		KSPCreate(comm, &kspG);
 		KSPSetOperators(kspG, GTG, GTG, SAME_PRECONDITIONER);
+		KSPSetTolerances(kspG, 1e-16, 1e-16, 1e7, 15000);
+
+		//KSPSetPC(kspG, pc);
 
 		MatDestroy(GTG);
 
@@ -88,8 +100,6 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 
 AFeti::~AFeti() {
 
-	VecDestroy(b);
-	MatDestroy(B);
 	VecDestroy(lmb);
 	VecDestroy(u);
 
@@ -120,12 +130,17 @@ void AFeti::dumpSystem(PetscViewer v) {
 }
 
 void AFeti::projectGOrth(Vec in) {
-	MatMultTranspose(G, in, tgA);
-	KSPSolve(kspG, tgA, tgB);
 
+	PetscLogStagePush(coarseStage);
+	MatMultTranspose(G, in, tgA);
+
+	KSPSetTolerances(kspG, 1e-10, 1e-10, 1e7, 5000);
+	KSPSolve(kspG, tgA, tgB);
+	//VecCopy(tgA, tgB);
 	VecScale(in, -1);
 	MatMultAdd(G, tgB, in, in);
 	VecScale(in, -1);
+	PetscLogStagePop();
 }
 
 void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
@@ -136,7 +151,6 @@ void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
 	applyInvA(temp, info);
 	MatMult(B, temp, out);
 
-	if (isSingular) projectGOrth(out);
 }
 
 Solver* AFeti::instanceOuterSolver(Vec d, Vec l) {
@@ -246,7 +260,7 @@ void AFeti::solve() {
 
 		PetscPrintf(comm, "\n");
 		PetscPrintf(comm, "FETI finished   Outer it: %d   Inner it: %d\n", outIterations, inIterations);
-		PetscPrintf(comm, "Feasibility err: %f \n\n\n", feasErr / uNorm);
+		PetscPrintf(comm, "Feasibility err: %e \n", feasErr / uNorm);
 	}
 }
 
@@ -264,16 +278,7 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
 	lastNorm = norm;
 
-	Vec z;
-	PetscReal pNorm, outBNorm;
-	VecDuplicate(*vec, &z);
-	applyPC(*vec, z);
-	VecDot(z, *vec, &pNorm);
-	VecDestroy(z);
-	VecNorm(b, NORM_2, &outBNorm);
-	//	PetscPrintf(PETSC_COMM_WORLD, "Pirmal Norm: %f \n", sqrt(pNorm) / outBNorm);
-
-	return norm / bNorm < 1e-5 || sqrt(pNorm) / outBNorm < 1e-3 || itNumber > 100;
+	return norm / bNorm < 1e-4 || itNumber > 125;
 }
 
 Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
@@ -304,16 +309,18 @@ Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 	nodeDim = (lastRow - firstRow) / localNodeCount; //Number of rows for each node
 
 	PetscInt FIX_NODE_COUNT;
-	PetscInt fixingNodes[3];
+	PetscInt fixingNodes[5];
 
 	if (nodeDim == 1) { //Laplace
 		FIX_NODE_COUNT = 1;
 		fixingNodes[0] = (firstRow / nodeDim + lastRow / nodeDim - 1) / 2;
 	} else if (nodeDim == 2) { //Elasticity
-		FIX_NODE_COUNT = 2;
-		fixingNodes[0] = firstRow / nodeDim + 1;
-		fixingNodes[1] = lastRow / nodeDim - 2;
-		//fixingNodes[2] = (firstRow / nodeDim + lastRow / nodeDim - 1) / 2 + 2;
+		FIX_NODE_COUNT = 5;
+		fixingNodes[0] = firstRow / nodeDim + 40;
+		fixingNodes[1] = lastRow / nodeDim - 40;
+		fixingNodes[2] = (firstRow / nodeDim + lastRow / nodeDim - 1) / 2 + 45;
+		fixingNodes[3] = (firstRow / nodeDim + lastRow / nodeDim - 1) / 2 - 45;
+		fixingNodes[4] = (firstRow / nodeDim + lastRow / nodeDim - 1) / 2;
 	}
 
 	Mat REG;
@@ -353,14 +360,21 @@ Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 
 	PC pc;
 	PCCreate(PETSC_COMM_SELF, &pc);
-	PCSetOperators(pc, Areg, Areg, SAME_PRECONDITIONER);
+	PCSetOperators(pc, Aloc, Areg, SAME_PRECONDITIONER);
 	PCSetFromOptions(pc);
 	PCSetUp(pc);
 
 	KSPCreate(PETSC_COMM_SELF, &kspA);
-	KSPSetTolerances(kspA, 1e-10, 1e-10, 1e7, 5000);
+	KSPSetTolerances(kspA, 1e-10, 1e-10, 1e7, 3);
 	KSPSetPC(kspA, pc);
-	KSPSetOperators(kspA, Areg, Areg, SAME_PRECONDITIONER);
+	KSPSetOperators(kspA, Aloc, Areg, SAME_PRECONDITIONER);
+
+	MatDestroy(Areg);
+	MatDestroy(REGREGT);
+	MatDestroy(REGT);
+
+	PCDestroy(pc);
+
 	if (isLocalSingular) KSPSetNullSpace(kspA, locNS);
 
 	VecCreateGhost(comm, lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &tempInv);
@@ -371,11 +385,30 @@ Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
 
 void Feti1::solve() {
 	AFeti::solve();
+
+	if (isVerbose) {
+		Vec precTempV, pTV;
+
+		VecDuplicate(b, &precTempV);
+		VecDuplicate(b, &pTV);
+
+		VecCopy(u, tempInv);
+		MatMult(Aloc, tempInvGh, tempInvGhB);
+		VecCopy(tempInvGhB, tempInvGh);
+
+		VecAXPY(tempInv, -1, b);
+		MatMultTransposeAdd(B, lmb, tempInv, tempInv);
+
+		PetscReal error, normB;
+		VecNorm(tempInv, NORM_2, &error);
+		VecNorm(b, NORM_2, &normB);
+
+		PetscPrintf(comm, "Relative error: %e \n\n", error / normB);
+	}
 }
 
 Feti1::~Feti1() {
 
-	MatDestroy(A);
 	KSPDestroy(kspA);
 	MatDestroy(Aloc);
 	if (isLocalSingular) {
@@ -407,7 +440,8 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 }
 
 void Feti1::applyPC(Vec g, Vec z) {
-	//VecCopy(g, z);
+	//	VecCopy(g, z);
+	if (isSingular) projectGOrth(g);
 
 	MatMultTranspose(B, g, tempInv);
 

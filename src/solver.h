@@ -33,6 +33,11 @@ public:
 	virtual void applyPC(Vec g, Vec z) = 0;
 };
 
+class SolverProjector{
+public:
+	virtual void applyProjection(Vec w) = 0;
+};
+
 enum StepType {
 	CG, Expansion, Proportion
 };
@@ -162,12 +167,15 @@ class ReCGSolver: public Solver {
 	void clearSubspace();
 public:
 
+	SolverProjector *solProj;
+
 	ReCGSolver(Mat A, Vec b, Vec x, SolverPreconditioner *pc = NULL) :
 		Solver(A, b, x, pc) {
 		initSolver();
 	}
-	ReCGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL) :
+	ReCGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL, SolverProjector *proj = NULL) :
 		Solver(sa, b, x, pc) {
+		solProj = proj;
 		initSolver();
 	}
 
@@ -274,5 +282,7 @@ public:
 
 	void solve();
 };
+
+
 
 #endif

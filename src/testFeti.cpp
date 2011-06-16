@@ -26,19 +26,10 @@ PetscReal funConst(Point n) {
 int main(int argc, char *argv[]) {
 	PetscErrorCode ierr;
 	PetscMPIInt rank, size;
-	PetscReal E = 2.1e5, mu = 0.3, h = 2.0, H = 100;
-	PetscInt m = 3, n = 3;
-	PetscInitialize(&argc, &argv, 0, help);
-	PetscTruth flg;
 	PetscLogStage meshing, assembly, fetiStage;
-	char name[PETSC_MAX_PATH_LEN] = "FetiTest.log";
 
-	PetscOptionsGetInt(PETSC_NULL, "-japet_m", &m, PETSC_NULL);
-	PetscOptionsGetInt(PETSC_NULL, "-japet_n", &n, PETSC_NULL);
-	PetscOptionsGetReal(PETSC_NULL, "-japet_h", &h, PETSC_NULL);
-	PetscOptionsGetReal(PETSC_NULL, "-japet_HH", &H, PETSC_NULL);
-	PetscOptionsGetString(PETSC_NULL, "-japet_name", name, PETSC_MAX_PATH_LEN
-			- 1, &flg);
+	PetscInitialize(&argc, &argv, 0, help);
+
 	{
 
 		PetscPrintf(PETSC_COMM_WORLD, "***************************************************\n");
@@ -52,12 +43,14 @@ int main(int argc, char *argv[]) {
 
 		bool bound[] = { false, false, false, true };
 
-		int problemType = 0;
+		ConfigManager *conf = ConfigManager::Instance();
+
+		int problemType = conf->problem;
 
 		PetscLogStageRegister("Meshing", &meshing);
-		PetscLogStagePush(meshing);
-		mesh->generateTearedRectMesh(0, m * H, 0, n * H, h, m, n, bound);
-		PetscLogStagePop();
+		//PetscLogStagePush(meshing);
+		mesh->generateTearedRectMesh(0, conf->m * conf->H, 0, conf->n * conf->H, conf->h, conf->m, conf->n, bound);
+	//	PetscLogStagePop();
 
 		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
 		//mesh->dumpForMatlab(v);
@@ -66,12 +59,12 @@ int main(int argc, char *argv[]) {
 		//***********************************************************************************************
 
 		PetscLogStageRegister("Assembly", &assembly);
-		PetscLogStagePush(assembly);
+		//PetscLogStagePush(assembly);
 		Mat A;
 		Vec b;
 
 		if (problemType == 1) {
-			FEMAssemble2DElasticity(PETSC_COMM_WORLD, mesh, A, b, E, mu, funDensity, funGravity);
+			FEMAssemble2DElasticity(PETSC_COMM_WORLD, mesh, A, b, conf->E, conf->mu, funDensity, funGravity);
 		} else {
 			FEMAssembleTotal2DLaplace(PETSC_COMM_WORLD, mesh, A, b, funConst, funConst);
 		}
@@ -87,7 +80,7 @@ int main(int argc, char *argv[]) {
 		}
 
 		PetscPrintf(PETSC_COMM_WORLD, "Jump operator assembled \n");
-		PetscLogStagePop();
+		//PetscLogStagePop();
 
 		NullSpaceInfo nullSpace;
 
@@ -99,6 +92,7 @@ int main(int argc, char *argv[]) {
 
 		PetscLogStageRegister("FETI", &fetiStage);
 		PetscLogStagePush(fetiStage);
+
 		Feti1
 				*feti =
 						new mFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
@@ -115,8 +109,10 @@ int main(int argc, char *argv[]) {
 		//PetscPrintf(PETSC_COMM_WORLD, "Ready to solve \n");
 		feti->setIsVerbose(true);
 		feti->solve();
-		feti->saveIterationInfo(name);
 		PetscLogStagePop();
+
+		feti->saveIterationInfo(conf->name);
+
 
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
 		mesh->dumpForMatlab(v);
@@ -136,6 +132,11 @@ int main(int argc, char *argv[]) {
 		VecView(lmb, v);
 		PetscViewerDestroy(v);
 
+
+		MatDestroy(A);
+		MatDestroy(B);
+
+		delete feti;
 
 	}
 
