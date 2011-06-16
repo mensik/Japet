@@ -21,11 +21,13 @@
  object G matrix and computation of the projector P = I - G inv(G'G) G'
  *
  **/
+
 class AFeti: public SolverApp, public SolverCtr, public SolverPreconditioner {
 protected:
 
 	Solver *outerSolver; ///< Solver class for outer loop (default is CGSolver)
 	bool isVerbose;
+	PetscInt myRank;
 
 	Mat B; ///< Jump operator matrix
 	Vec lmb; ///< Lambda vector
@@ -39,13 +41,17 @@ protected:
 	bool isSingular; ///< is Matrix A singular
 	bool isLocalSingular; ///< is local part of A singular
 	Mat R; ///< Global null space of A
-	Mat G; ///< BR
+	Mat G,GT; ///< BR
 	PetscInt gM, gN; ///<	dimensions of G
 
 	PetscReal lastNorm; ///< last computed norm
 
 	Vec tgA;
 	Vec tgB;
+
+	VecScatter tgScat;
+	Vec tgGloIn, tgGloOut;
+	Vec tgLocIn, tgLocOut;
 
 	Vec temp;
 	Vec tempLoc;
@@ -55,10 +61,15 @@ protected:
 	PetscInt outIterations;
 	PetscInt inIterations;
 
-	PetscLogStage coarseStage;
+  PetscLogStage coarseStage;
+
+	CoarseProblemMethod cpMethod;
+
+	void initCoarse();
+	void applyInvGTG(Vec in, Vec out);
 
 public:
-	AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm comm);
+	AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm comm, CoarseProblemMethod mcpM = ParaCG);
 	~AFeti();
 
 	virtual void applyInvA(Vec in, IterationManager *itManager) = 0;
@@ -123,7 +134,7 @@ protected:
 	Vec tempInv, tempInvGh, tempInvGhB;
 public:
 	Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
-			PetscInt localNodeCount, MPI_Comm comm);
+			PetscInt localNodeCount, MPI_Comm comm, CoarseProblemMethod cpM = ParaCG);
 	~Feti1();
 	virtual void applyInvA(Vec in, IterationManager *itManager);
 	virtual void applyPC(Vec g, Vec z);
@@ -137,8 +148,8 @@ class mFeti1: public Feti1 {
 
 public:
 	mFeti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
-			PetscInt localNodeCount, MPI_Comm comm) :
-		Feti1(A, b, B, lmb, nullSpace, localNodeCount, comm) {
+			PetscInt localNodeCount, MPI_Comm comm, CoarseProblemMethod cpM = ParaCG) :
+		Feti1(A, b, B, lmb, nullSpace, localNodeCount, comm, cpM) {
 	}
 
 	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);

@@ -19,6 +19,12 @@
 #include <time.h>
 #include <sys/timeb.h>
 
+
+enum CoarseProblemMethod {
+	ParaCG = 0,
+	MasterWork = 1
+};
+
 struct IterationInfo {
 	int itNumber;
 	PetscReal rNorm;
@@ -72,10 +78,14 @@ public:
 
 	PetscInt problem; //< 0 - Laplace, 1 - lin.elasticity
 
+	CoarseProblemMethod coarseProblemMethod;
+
 	char *name;
 
 	PetscReal E;
 	PetscReal mu;
+
+	bool saveOutputs;
 
 	static ConfigManager* Instance();
 };

@@ -75,6 +75,9 @@ ConfigManager::ConfigManager() {
 
 	PetscTruth flg;
 
+	coarseProblemMethod = MasterWork;
+	saveOutputs = false;
+
 	char tName[PETSC_MAX_PATH_LEN] = "FetiTest.log";
 
 	PetscOptionsGetInt(PETSC_NULL, "-japet_problem", &problem, PETSC_NULL);
@@ -83,6 +86,8 @@ ConfigManager::ConfigManager() {
 	PetscOptionsGetReal(PETSC_NULL, "-japet_h", &h, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_HH", &H, PETSC_NULL);
 	PetscOptionsGetString(PETSC_NULL, "-japet_name", tName, PETSC_MAX_PATH_LEN - 1, &flg);
+	PetscOptionsGetInt(PETSC_NULL, "-japet_cpmethod", (PetscInt*)&coarseProblemMethod, PETSC_NULL);
+	PetscOptionsGetTruth(PETSC_NULL, "-japet_save_output", (PetscTruth*)&saveOutputs, PETSC_NULL);
 
 	name = tName;
 

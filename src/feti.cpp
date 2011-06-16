@@ -1,13 +1,16 @@
 #include "feti.h"
-AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
-
+AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c,
+		CoarseProblemMethod cpM) {
 
 	comm = c;
 	this->b = b;
 	this->B = B;
 	this->lmb = lmb;
+	this->cpMethod = cpM;
 
-	PetscLogStageRegister("Coarse Problem", &coarseStage);
+	MPI_Comm_rank(comm, &myRank);
+
+	PetscLogStageRegister("Coarse stage", &coarseStage);
 
 	isLocalSingular = nullSpace->isSubDomainSingular;
 	isSingular = nullSpace->isDomainSingular;
@@ -18,14 +21,33 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 	isVerbose = false;
 
 	//If the matrix A is singular, the matrix G and G'G has to be prepared.
-	if (isSingular) {
+	if (isSingular) initCoarse();
 
+	PetscInt lNodeCount;
+	VecGetLocalSize(b, &lNodeCount);
+
+	//Priprava ghostovaneho vektoru TEMP a kopie vektoru b do lokalnich casti bloc
+	VecCreateGhost(comm, lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &temp);
+	VecCopy(b, temp);
+	VecGhostGetLocalForm(temp, &tempLoc);
+
+	//Ghostovany vektor reseni
+	VecCreateGhost(comm, lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &u);
+	VecSet(u, 0);
+}
+
+void AFeti::initCoarse() {
+
+	PetscInt rank;
+	Mat GTG;
+
+	switch (cpMethod) {
+	case ParaCG:
 		MatMatMult(B, R, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &G);
-		PetscInt rank;
 		MPI_Comm_rank(comm, &rank);
-		Mat GTG;
 		MatGetSize(G, &gM, &gN);
 		if (!rank) { //Bloody messy hellish way to compute GTG - need to compute localy
+
 			IS ISrows, IScols;
 			ISCreateStride(PETSC_COMM_SELF, gM, 0, 1, &ISrows);
 			ISCreateStride(PETSC_COMM_SELF, gN, 0, 1, &IScols);
@@ -65,37 +87,102 @@ AFeti::AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm c) {
 		MatAssemblyBegin(GTG, MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(GTG, MAT_FINAL_ASSEMBLY);
 
-		/*
-		 PC pc;
-		 PCCreate(PETSC_COMM_SELF, &pc);
-		 PCSetOperators(pc, GTG, GTG, SAME_PRECONDITIONER);
-		 PCSetType(pc, "cholesky");
-		 PCSetUp(pc);
-		 */
-
 		KSPCreate(comm, &kspG);
 		KSPSetOperators(kspG, GTG, GTG, SAME_PRECONDITIONER);
 		KSPSetTolerances(kspG, 1e-16, 1e-16, 1e7, 15000);
-
-		//KSPSetPC(kspG, pc);
 
 		MatDestroy(GTG);
 
 		VecCreateMPI(comm, PETSC_DECIDE, gN, &tgA);
 		VecDuplicate(tgA, &tgB);
+
+		break;
+	case MasterWork:
+		MatMatMult(B, R, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &G);
+		MPI_Comm_rank(comm, &rank);
+		MatGetSize(G, &gM, &gN);
+		if (!rank) {
+
+			IS ISrows, IScols;
+			ISCreateStride(PETSC_COMM_SELF, gM, 0, 1, &ISrows);
+			ISCreateStride(PETSC_COMM_SELF, gN, 0, 1, &IScols);
+			Mat *gl;
+
+			MatGetSubMatrices(G, 1, &ISrows, &IScols, MAT_INITIAL_MATRIX, &gl);
+
+			Mat GLOC, GTGloc;
+			GLOC = *gl;
+
+			MatMatMultTranspose(GLOC, GLOC, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GTGloc);
+
+			PC pcGTG;
+			PCCreate(PETSC_COMM_SELF, &pcGTG);
+			PCSetOperators(pcGTG, GTGloc, GTGloc, SAME_PRECONDITIONER);
+			PCSetType(pcGTG, "lu");
+			PCSetUp(pcGTG);
+
+			KSPCreate(PETSC_COMM_SELF, &kspG);
+			KSPSetOperators(kspG, GTGloc, GTGloc, SAME_PRECONDITIONER);
+			KSPSetPC(kspG, pcGTG);
+
+			MatDestroy(GLOC);
+			MatDestroy(GTGloc);
+			ISDestroy(ISrows);
+			ISDestroy(IScols);
+
+		} else {
+			IS ISrows, IScols;
+			ISCreateStride(PETSC_COMM_SELF, 0, 0, 1, &ISrows);
+			ISCreateStride(PETSC_COMM_SELF, 0, 0, 1, &IScols);
+			Mat *gl;
+			MatGetSubMatrices(G, 1, &ISrows, &IScols, MAT_INITIAL_MATRIX, &gl);
+			ISDestroy(ISrows);
+			ISDestroy(IScols);
+
+		}
+
+		VecCreateMPI(comm, PETSC_DECIDE, gN, &tgA);
+		VecDuplicate(tgA, &tgB);
+
+		VecScatterCreateToZero(tgA, &tgScat, &tgLocIn);
+		VecDuplicate(tgLocIn, &tgLocOut);
+
+		break;
+	default:
+		break;
 	}
+}
 
-	PetscInt lNodeCount;
-	VecGetLocalSize(b, &lNodeCount);
+void AFeti::applyInvGTG(Vec in, Vec out) {
+	switch (cpMethod) {
+	case ParaCG:
+		KSPSetTolerances(kspG, 1e-10, 1e-10, 1e7, 5000);
+		KSPSolve(kspG, in, out);
+		break;
+	case MasterWork:
+		VecScatterBegin(tgScat, in, tgLocIn, INSERT_VALUES, SCATTER_FORWARD);
+		VecScatterEnd(tgScat, in, tgLocIn, INSERT_VALUES, SCATTER_FORWARD);
 
-	//Priprava ghostovaneho vektoru TEMP a kopie vektoru b do lokalnich casti bloc	
-	VecCreateGhost(comm, lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &temp);
-	VecCopy(b, temp);
-	VecGhostGetLocalForm(temp, &tempLoc);
+		if (!myRank) {
+			KSPSetTolerances(kspG, 1e-10, 1e-10, 1e7, 2);
+			KSPSolve(kspG, tgLocIn, tgLocOut);
+		}
 
-	//Ghostovany vektor reseni
-	VecCreateGhost(comm, lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &u);
-	VecSet(u, 0);
+		VecScatterBegin(tgScat, tgLocOut, out, INSERT_VALUES, SCATTER_REVERSE);
+		VecScatterEnd(tgScat, tgLocOut, out, INSERT_VALUES, SCATTER_REVERSE);
+		break;
+	}
+}
+
+void AFeti::projectGOrth(Vec in) {
+
+	PetscLogStagePush(coarseStage);
+	MatMultTranspose(G, in, tgA);
+	applyInvGTG(tgA, tgB);
+	VecScale(in, -1);
+	MatMultAdd(G, tgB, in, in);
+	VecScale(in, -1);
+	PetscLogStagePop();
 }
 
 AFeti::~AFeti() {
@@ -106,16 +193,17 @@ AFeti::~AFeti() {
 	if (isSingular) {
 		MatDestroy(R);
 		MatDestroy(G);
-		VecDestroy(tgA);
-		VecDestroy(tgB);
+		//VecDestroy(tgA);
+		//VecDestroy(tgB);
 
 		PetscPrintf(comm, "Destroy! \n");
-		KSPDestroy(kspG);
+		//KSPDestroy(kspG);
 	}
 	VecDestroy(temp);
 	VecDestroy(tempLoc);
 
 	if (outerSolver != NULL) delete outerSolver;
+
 }
 
 void AFeti::dumpSolution(PetscViewer v) {
@@ -127,20 +215,6 @@ void AFeti::dumpSystem(PetscViewer v) {
 	//View A
 	VecView(b, v);
 	MatView(B, v);
-}
-
-void AFeti::projectGOrth(Vec in) {
-
-	PetscLogStagePush(coarseStage);
-	MatMultTranspose(G, in, tgA);
-
-	KSPSetTolerances(kspG, 1e-10, 1e-10, 1e7, 5000);
-	KSPSolve(kspG, tgA, tgB);
-	//VecCopy(tgA, tgB);
-	VecScale(in, -1);
-	MatMultAdd(G, tgB, in, in);
-	VecScale(in, -1);
-	PetscLogStagePop();
 }
 
 void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
@@ -183,7 +257,7 @@ void AFeti::solve() {
 
 		VecDuplicate(tlmb, &ttlmb);
 
-		KSPSolve(kspG, tlmb, ttlmb); //POZOR!!! (G'G) muze byt singularni v pripade, ze je system neukotveny
+		applyInvGTG(tlmb, ttlmb);
 
 		MatMult(G, ttlmb, lmb);
 		/*
@@ -221,7 +295,8 @@ void AFeti::solve() {
 		VecCreateMPI(comm, PETSC_DECIDE, gN, &bAlp);
 		VecDuplicate(bAlp, &alpha);
 		MatMultTranspose(G, tLmb, bAlp);
-		KSPSolve(kspG, bAlp, alpha);
+
+		applyInvGTG(bAlp, alpha);
 
 		VecScale(alpha, -1);
 		MatMultAdd(R, alpha, u, u);
@@ -282,8 +357,8 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 }
 
 Feti1::Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
-		PetscInt localNodeCount, MPI_Comm comm) :
-	AFeti(b, B, lmb, nullSpace, comm) {
+		PetscInt localNodeCount, MPI_Comm comm, CoarseProblemMethod cpM) :
+	AFeti(b, B, lmb, nullSpace, comm, cpM) {
 
 	PetscInt lNodeCount;
 	VecGetLocalSize(b, &lNodeCount);

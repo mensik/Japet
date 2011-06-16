@@ -48,9 +48,9 @@ int main(int argc, char *argv[]) {
 		int problemType = conf->problem;
 
 		PetscLogStageRegister("Meshing", &meshing);
-		//PetscLogStagePush(meshing);
+		PetscLogStagePush(meshing);
 		mesh->generateTearedRectMesh(0, conf->m * conf->H, 0, conf->n * conf->H, conf->h, conf->m, conf->n, bound);
-	//	PetscLogStagePop();
+			PetscLogStagePop();
 
 		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
 		//mesh->dumpForMatlab(v);
@@ -59,7 +59,7 @@ int main(int argc, char *argv[]) {
 		//***********************************************************************************************
 
 		PetscLogStageRegister("Assembly", &assembly);
-		//PetscLogStagePush(assembly);
+		PetscLogStagePush(assembly);
 		Mat A;
 		Vec b;
 
@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
 		}
 
 		PetscPrintf(PETSC_COMM_WORLD, "Jump operator assembled \n");
-		//PetscLogStagePop();
+		PetscLogStagePop();
 
 		NullSpaceInfo nullSpace;
 
@@ -95,47 +95,38 @@ int main(int argc, char *argv[]) {
 
 		Feti1
 				*feti =
-						new mFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
+						new mFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD, conf->coarseProblemMethod);
 
-		//AFeti
-		//		*ifeti =
-		//				new InexactFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
-
-		//feti->setIsVerbose(true);
-		//feti->solve();
-
-		//feti->saveIterationInfo("feti.log");
-
-		//PetscPrintf(PETSC_COMM_WORLD, "Ready to solve \n");
 		feti->setIsVerbose(true);
 		feti->solve();
+
 		PetscLogStagePop();
 
 		feti->saveIterationInfo(conf->name);
 
+		if (conf->saveOutputs) {
+			PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
+			mesh->dumpForMatlab(v);
+			PetscViewerDestroy(v);
 
-		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
-		mesh->dumpForMatlab(v);
-		PetscViewerDestroy(v);
-		delete mesh;
+			Vec x;
+			VecDuplicate(b, &x);
+			feti->copySolution(x);
+			feti->copyLmb(lmb);
 
-		Vec x;
-		VecDuplicate(b, &x);
-		feti->copySolution(x);
-		feti->copyLmb(lmb);
-
-		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/out.m", FILE_MODE_WRITE, &v);
-		MatView(A, v);
-		VecView(b, v);
-		MatView(B, v);
-		VecView(x, v);
-		VecView(lmb, v);
-		PetscViewerDestroy(v);
-
+			PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/out.m", FILE_MODE_WRITE, &v);
+			MatView(A, v);
+			VecView(b, v);
+			MatView(B, v);
+			VecView(x, v);
+			VecView(lmb, v);
+			PetscViewerDestroy(v);
+		}
 
 		MatDestroy(A);
 		MatDestroy(B);
 
+		delete mesh;
 		delete feti;
 
 	}
