@@ -54,6 +54,25 @@ void IterationManager::saveIterationInfo(const char *filename, bool rewrite) {
 	}
 }
 
+PDCommManager::PDCommManager(MPI_Comm parent, PDStrategy strategy) {
+	parentComm = parent;
+
+	int parentRank, parentSize;
+	MPI_Comm_size(parentComm, &parentSize);
+	MPI_Comm_rank(parentComm, &parentRank);
+
+	switch (strategy) {
+	case ALL_ALL_SAMEROOT:
+		primalComm = parentComm;
+		dualComm = parentComm;
+		break;
+	case ALL_ONE_SAMEROOT:
+		primalComm = parentComm;
+		MPI_Comm_split(parentComm, (parentRank == 0) ? 0 : MPI_UNDEFINED, 0, &dualComm);
+		break;
+	}
+}
+
 ConfigManager* ConfigManager::instance = NULL;
 
 ConfigManager* ConfigManager::Instance() {
@@ -85,9 +104,10 @@ ConfigManager::ConfigManager() {
 	PetscOptionsGetInt(PETSC_NULL, "-japet_n", &n, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_h", &h, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_HH", &H, PETSC_NULL);
-	PetscOptionsGetString(PETSC_NULL, "-japet_name", tName, PETSC_MAX_PATH_LEN - 1, &flg);
-	PetscOptionsGetInt(PETSC_NULL, "-japet_cpmethod", (PetscInt*)&coarseProblemMethod, PETSC_NULL);
-	PetscOptionsGetTruth(PETSC_NULL, "-japet_save_output", (PetscTruth*)&saveOutputs, PETSC_NULL);
+	PetscOptionsGetString(PETSC_NULL, "-japet_name", tName, PETSC_MAX_PATH_LEN
+			- 1, &flg);
+	PetscOptionsGetInt(PETSC_NULL, "-japet_cpmethod", (PetscInt*) &coarseProblemMethod, PETSC_NULL);
+	PetscOptionsGetTruth(PETSC_NULL, "-japet_save_output", (PetscTruth*) &saveOutputs, PETSC_NULL);
 
 	name = tName;
 

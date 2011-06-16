@@ -19,10 +19,8 @@
 #include <time.h>
 #include <sys/timeb.h>
 
-
 enum CoarseProblemMethod {
-	ParaCG = 0,
-	MasterWork = 1
+	ParaCG = 0, MasterWork = 1
 };
 
 struct IterationInfo {
@@ -65,6 +63,28 @@ public:
 		itInfo.clear();
 	}
 
+};
+
+enum PDStrategy {
+	ALL_ALL_SAMEROOT = 0, ALL_ONE_SAMEROOT = 1
+};
+
+class PDCommManager {
+	MPI_Comm parentComm;
+	MPI_Comm primalComm;
+	MPI_Comm dualComm;
+public:
+	PDCommManager(MPI_Comm parent, PDStrategy strategy);
+
+	MPI_Comm getPrimal() {
+		return primalComm;
+	}
+	MPI_Comm getDual() {
+		return dualComm;
+	}
+	MPI_Comm getParen() {
+		return parentComm;
+	}
 };
 
 class ConfigManager {

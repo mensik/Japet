@@ -677,8 +677,10 @@ void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 	VecSet(lmb, 0);
 }
 
-void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Vec &lmb) {
+void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Vec &lmb,
+		PDCommManager* commManager) {
 	PetscInt rank, size;
+
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
 
@@ -979,8 +981,6 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 
 	//Creating of matrix R - null space basis
 	Mat *R = &(nullSpace->R);
-	MatCreateMPIDense(comm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, size
-			* 3, PETSC_NULL, R);
 
 	nullSpace->localBasis = new Vec[3];
 	for (int i = 0; i < 3; i++) {
@@ -1028,6 +1028,9 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 		rowIndL[i] = i;
 		rowIndG[i] = i + mesh->startIndexes[rank] * 2;
 	}
+
+	MatCreateMPIDense(comm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, size
+			* 3, PETSC_NULL, R);
 
 	for (int j = 0; j < 3; j++) {
 		PetscReal *values;

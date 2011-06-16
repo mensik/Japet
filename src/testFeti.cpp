@@ -30,6 +30,7 @@ int main(int argc, char *argv[]) {
 
 	PetscInitialize(&argc, &argv, 0, help);
 
+	PDCommManager commManager(PETSC_COMM_WORLD, ALL_ALL_SAMEROOT);
 	{
 
 		PetscPrintf(PETSC_COMM_WORLD, "***************************************************\n");
@@ -74,9 +75,9 @@ int main(int argc, char *argv[]) {
 		Mat B;
 		Vec lmb;
 		if (problemType == 1) {
-			GenerateTotalJumpOperator(mesh, 2, B, lmb);
+			GenerateTotalJumpOperator(mesh, 2, B, lmb, &commManager);
 		} else {
-			GenerateTotalJumpOperator(mesh, 1, B, lmb);
+			GenerateTotalJumpOperator(mesh, 1, B, lmb,  &commManager);
 		}
 
 		PetscPrintf(PETSC_COMM_WORLD, "Jump operator assembled \n");

@@ -5,6 +5,7 @@ static char help[] = "My first own testing utility for PETSc\n\n";
 #include "structures.h"
 #include "solver.h"
 #include "petscmat.h"
+#include "japetUtils.h"
 
 PetscReal funConst(Point n) {
 	return 1;
@@ -13,6 +14,10 @@ PetscReal funConst(Point n) {
 int main(int argc, char *argv[]) {
 
 	PetscInitialize(&argc, &argv, (char *) 0, help);
+
+	PDCommManager pdManager(MPI_COMM_WORLD, ALL_ALL_SAMEROOT);
+
+	/*
 	PetscInt size, rank;
 	PetscTruth flg;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -69,13 +74,13 @@ int main(int argc, char *argv[]) {
 	//	 solverCG->setIsVerbose(true);
 	//	 solverCG->solve();
 	//	 solverCG->saveIterationInfo("cg.dat");
-	/*
-	 Solver *solver2 = new ASinStep(A, b, x2);
-	 solver2->setPrecision(prec);
-	 solver2->setIsVerbose(true);
-	 solver2->solve();
-	 solver2->saveIterationInfo("asin.dat");
-	 */
+
+	 //Solver *solver2 = new ASinStep(A, b, x2);
+	 //solver2->setPrecision(prec);
+	 //solver2->setIsVerbose(true);
+	 //solver2->solve();
+	 //solver2->saveIterationInfo("asin.dat");
+
 
 	delete solver;
 	VecDestroy(x);
@@ -84,6 +89,9 @@ int main(int argc, char *argv[]) {
 	VecDestroy(bo);
 	MatDestroy(A);
 
+	*/
+
 	PetscFinalize();
 	return 0;
+
 }
