@@ -70,6 +70,10 @@ PDCommManager::PDCommManager(MPI_Comm parent, PDStrategy strategy) {
 		MPI_Comm_dup(parentComm, &primalComm);
 		MPI_Comm_split(parentComm, (parRank == 0) ? 0 : MPI_UNDEFINED, 0, &dualComm);
 		break;
+	case ALL_TWO_SAMEROOT:
+		MPI_Comm_dup(parentComm, &primalComm);
+		MPI_Comm_split(parentComm, (parRank < 2) ? 0 : MPI_UNDEFINED, 0, &dualComm);
+		break;
 	case TEST:
 		MPI_Comm_split(parentComm, (parRank % 3 == 0) ? 0 : MPI_UNDEFINED, 0, &primalComm);
 		MPI_Comm_split(parentComm, (parRank % 2 == 0) ? 0 : MPI_UNDEFINED, 0, &dualComm);

@@ -66,7 +66,7 @@ public:
 };
 
 enum PDStrategy {
-	ALL_ALL_SAMEROOT = 0, ALL_ONE_SAMEROOT = 1, TEST=2
+	ALL_ALL_SAMEROOT = 0, ALL_ONE_SAMEROOT = 1, ALL_TWO_SAMEROOT=2, TEST
 };
 
 class PDCommManager {

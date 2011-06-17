@@ -33,7 +33,6 @@ int main(int argc, char *argv[]) {
 	{
 
 		PDCommManager* commManager = new PDCommManager(PETSC_COMM_WORLD, TEST);
-		commManager->printSummary();
 
 		PetscPrintf(PETSC_COMM_WORLD, "***************************************************\n");
 		PetscPrintf(PETSC_COMM_WORLD, "                    TEST FETI \n");
@@ -107,17 +106,18 @@ int main(int argc, char *argv[]) {
 			PetscViewerDestroy(v);
 		}
 
-		/*
-		 PetscLogStageRegister("FETI", &fetiStage);
-		 PetscLogStagePush(fetiStage);
+		PetscLogStageRegister("FETI", &fetiStage);
+		// PetscLogStagePush(fetiStage);
 
-		 Feti1
-		 *feti =
-		 new mFeti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD, conf->coarseProblemMethod);
+
+		Feti1
+				*feti =
+						new mFeti1(commManager, A, b, BT, B, lmb, &nullSpace, mesh->vetrices.size(), conf->coarseProblemMethod);
 
 		 feti->setIsVerbose(true);
-		 feti->solve();
 
+		 feti->solve();
+		/*
 		 PetscLogStagePop();
 
 		 feti->saveIterationInfo(conf->name);

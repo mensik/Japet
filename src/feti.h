@@ -25,43 +25,61 @@
 class AFeti: public SolverApp, public SolverCtr, public SolverPreconditioner {
 protected:
 
+	PDCommManager *cMan;
+
 	Solver *outerSolver; ///< Solver class for outer loop (default is CGSolver)
 	bool isVerbose;
-	PetscInt myRank;
+
+	//
+	// DUAL
+	//
+
+	VecScatter tgScat;
+	Vec tgGloIn, tgGloOut;
+	Vec tgLocIn, tgLocOut;
 
 	Mat B; ///< Jump operator matrix
 	Vec lmb; ///< Lambda vector
-	Vec u; ///< solution
 	Vec d; ///< dual right side
 
-	Vec b; ///< Global force vector
-
+	PetscInt gM, gN; ///<	dimensions of G
+	Mat G, GT; ///< BR
 	KSP kspG; ///< Global G'G solver
+
+	VecScatter dAScat;
+	Vec dAGlob; ///< gloval version
+	Vec dALoc; ///< local (on root) version
+
+	//
+	// PRIMAL
+	//
+
+	Mat BT;
+	Vec b; ///< Global force vector
+	Vec u; ///< solution
+	Mat R; ///< Global null space of A
+
+	VecScatter pAScat;
+	Vec pAGlob; ///< gloval version
+	Vec pALoc; ///< local (on root) version
+
 
 	bool isSingular; ///< is Matrix A singular
 	bool isLocalSingular; ///< is local part of A singular
-	Mat R; ///< Global null space of A
-	Mat G,GT; ///< BR
-	PetscInt gM, gN; ///<	dimensions of G
+
 
 	PetscReal lastNorm; ///< last computed norm
 
 	Vec tgA;
 	Vec tgB;
 
-	VecScatter tgScat;
-	Vec tgGloIn, tgGloOut;
-	Vec tgLocIn, tgLocOut;
-
 	Vec temp;
 	Vec tempLoc;
-
-	MPI_Comm comm; ///< Communication channel of processes
 
 	PetscInt outIterations;
 	PetscInt inIterations;
 
-  PetscLogStage coarseStage;
+	PetscLogStage coarseStage;
 
 	CoarseProblemMethod cpMethod;
 
@@ -69,10 +87,16 @@ protected:
 	void applyInvGTG(Vec in, Vec out);
 
 public:
-	AFeti(Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace, MPI_Comm comm, CoarseProblemMethod mcpM = ParaCG);
+	const static int P_ACTION_INVA = 1;
+	const static int P_ACTION_MULTA = 2;
+	const static int P_ACTION_BREAK = -1;
+
+	AFeti(PDCommManager *comMan, Vec b, Mat BT, Mat B, Vec lmb,
+			NullSpaceInfo *nullSpace, CoarseProblemMethod mcpM = ParaCG);
 	~AFeti();
 
 	virtual void applyInvA(Vec in, IterationManager *itManager) = 0;
+	virtual void applyPrimalMult(Vec in, Vec out);
 	void solve(Vec b) {
 		this->b = b;
 		solve();
@@ -101,9 +125,15 @@ public:
 	}
 
 	void setSystemSingular() {
-		MatNullSpace NS;
-		MatNullSpaceCreate(comm, PETSC_TRUE, 0, PETSC_NULL, &NS);
-		KSPSetNullSpace(kspG, NS);
+
+		PetscPrintf(PETSC_COMM_SELF, "CODE TO WRITE you Moorons!!! setSystemSingular \n");
+		//
+		// FIX
+		//
+
+		//MatNullSpace NS;
+		//MatNullSpaceCreate(comm, PETSC_TRUE, 0, PETSC_NULL, &NS);
+		//KSPSetNullSpace(kspG, NS);
 	}
 
 	PetscInt getOutIterations() {
@@ -133,23 +163,25 @@ protected:
 
 	Vec tempInv, tempInvGh, tempInvGhB;
 public:
-	Feti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
-			PetscInt localNodeCount, MPI_Comm comm, CoarseProblemMethod cpM = ParaCG);
+	Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
+			NullSpaceInfo *nullSpace, PetscInt localNodeCount,
+			CoarseProblemMethod cpM = ParaCG);
 	~Feti1();
 	virtual void applyInvA(Vec in, IterationManager *itManager);
 	virtual void applyPC(Vec g, Vec z);
 
 	virtual void solve();
 
-	void applyPrimalMult(Vec in, Vec out);
+	virtual void applyPrimalMult(Vec in, Vec out);
 };
 
 class mFeti1: public Feti1 {
 
 public:
-	mFeti1(Mat A, Vec b, Mat B, Vec lmb, NullSpaceInfo *nullSpace,
-			PetscInt localNodeCount, MPI_Comm comm, CoarseProblemMethod cpM = ParaCG) :
-		Feti1(A, b, B, lmb, nullSpace, localNodeCount, comm, cpM) {
+	mFeti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
+			NullSpaceInfo *nullSpace, PetscInt localNodeCount,
+			CoarseProblemMethod cpM = ParaCG) :
+		Feti1(comMan, A, b, BT, B, lmb, nullSpace, localNodeCount, cpM) {
 	}
 
 	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);
@@ -197,7 +229,8 @@ public:
 
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb);
 
-void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb, PDCommManager* commManager);
+void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
+		PDCommManager* commManager);
 
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		Mat &BGlob, Vec &lmbGlob, Mat &BCluster, Vec &lmbCluster);
