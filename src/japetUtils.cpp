@@ -58,19 +58,45 @@ PDCommManager::PDCommManager(MPI_Comm parent, PDStrategy strategy) {
 	parentComm = parent;
 
 	int parentRank, parentSize;
-	MPI_Comm_size(parentComm, &parentSize);
-	MPI_Comm_rank(parentComm, &parentRank);
+	MPI_Comm_size(parentComm, &parSize);
+	MPI_Comm_rank(parentComm, &parRank);
 
 	switch (strategy) {
 	case ALL_ALL_SAMEROOT:
-		primalComm = parentComm;
-		dualComm = parentComm;
+		MPI_Comm_dup(parentComm, &primalComm);
+		MPI_Comm_dup(parentComm, &dualComm);
 		break;
 	case ALL_ONE_SAMEROOT:
-		primalComm = parentComm;
-		MPI_Comm_split(parentComm, (parentRank == 0) ? 0 : MPI_UNDEFINED, 0, &dualComm);
+		MPI_Comm_dup(parentComm, &primalComm);
+		MPI_Comm_split(parentComm, (parRank == 0) ? 0 : MPI_UNDEFINED, 0, &dualComm);
+		break;
+	case TEST:
+		MPI_Comm_split(parentComm, (parRank % 3 == 0) ? 0 : MPI_UNDEFINED, 0, &primalComm);
+		MPI_Comm_split(parentComm, (parRank % 2 == 0) ? 0 : MPI_UNDEFINED, 0, &dualComm);
 		break;
 	}
+
+	if (isPrimal()) {
+		MPI_Comm_rank(primalComm, &pRank);
+		MPI_Comm_size(primalComm, &pSize);
+	} else {
+		pRank = -1;
+		pSize = -1;
+	}
+
+	if (isDual()) {
+		MPI_Comm_rank(dualComm, &dRank);
+		MPI_Comm_size(dualComm, &dSize);
+	} else {
+		dRank = -1;
+		dSize = -1;
+	}
+
+}
+
+void PDCommManager::printSummary() {
+	if (isPrimal()) PetscPrintf(PETSC_COMM_SELF, "[%d] is PRIMAL with rank %d \n", parRank, pRank);
+	if (isDual()) PetscPrintf(PETSC_COMM_SELF, "[%d] is DUAL with rank %d \n", parRank, dRank);
 }
 
 ConfigManager* ConfigManager::instance = NULL;

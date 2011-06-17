@@ -197,7 +197,7 @@ public:
 
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb);
 
-void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Vec &lmb, PDCommManager* commManager);
+void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb, PDCommManager* commManager);
 
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		Mat &BGlob, Vec &lmbGlob, Mat &BCluster, Vec &lmbCluster);

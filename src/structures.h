@@ -19,6 +19,7 @@
 #include "petscmat.h"
 #include "petscao.h"
 #include "parmetis.h"
+#include "japetUtils.h"
 
 /**
  * @brief Keeps information needed for FETI about null space
@@ -198,7 +199,7 @@ public:
 	 */
 
 	void generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
-			PetscReal y1, PetscReal h, PetscInt m, PetscInt n, bool *bounded);
+			PetscReal y1, PetscReal h, PetscInt m, PetscInt n, bool *bounded, PDCommManager *commManager);
 
 	/**
 	 * Generate cluster above rectangular mesh

@@ -677,106 +677,175 @@ void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 	VecSet(lmb, 0);
 }
 
-void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Vec &lmb,
+void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 		PDCommManager* commManager) {
-	PetscInt rank, size;
 
-	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-	MPI_Comm_size(PETSC_COMM_WORLD, &size);
+	if (commManager->isPrimal()) {
 
-	int dSize;
-	std::set<PetscInt> indDirchlet;
-	for (std::set<PetscInt>::iterator i = mesh->borderEdges.begin(); i
-			!= mesh->borderEdges.end(); i++) {
+		//
+		// Compute overall primal size
+		//
+		PetscInt localNodeCount, globalNodeCount;
+		localNodeCount = mesh->vetrices.size();
+		MPI_Reduce(&localNodeCount, &globalNodeCount, 1, MPI_INT, MPI_SUM, 0, commManager->getPrimal());
 
-		for (int j = 0; j < 2; j++) {
-			indDirchlet.insert(mesh->edges[*i]->vetrices[j]);
-		}
-	}
+		//
+		//Put all dirchlet nodes to root
+		//
+		int dSize;
+		std::set<PetscInt> indDirchlet;
+		for (std::set<PetscInt>::iterator i = mesh->borderEdges.begin(); i
+				!= mesh->borderEdges.end(); i++) {
 
-	dSize = indDirchlet.size();
-
-	int dNodeCounts[size];
-	MPI_Allgather(&dSize, 1, MPI_INT, dNodeCounts, 1, MPI_INT, PETSC_COMM_WORLD);
-
-	int dSum = 0;
-	for (int i = 0; i < size; i++)
-		dSum += dNodeCounts[i];
-
-	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, mesh->vetrices.size() * d, (mesh->nPairs
-			+ dSum) * d, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &B);
-
-	int sIndex = 0;
-	for (int i = 0; i < rank; i++)
-		sIndex += dNodeCounts[i] * d;
-
-	for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i
-			!= indDirchlet.end(); i++) {
-		for (int j = 0; j < d; j++) {
-
-			MatSetValue(B, sIndex++, *i * d + j, 1, INSERT_VALUES);
-		}
-	}
-
-	PetscReal boundVal = 1.0 / sqrt(2.0); // Value to keep the B ortonormal
-
-	if (!rank) {
-
-		std::set<PetscInt> cornerInd;
-
-		for (int i = 0; i < mesh->corners.size(); i++) {
-			for (int j = 0; j < mesh->corners[i]->cornerSize; j++) {
-				cornerInd.insert(mesh->corners[i]->vetrices[j]);
+			for (int j = 0; j < 2; j++) {
+				indDirchlet.insert(mesh->edges[*i]->vetrices[j]);
 			}
 		}
+		dSize = indDirchlet.size();
 
-		PetscInt rowCounter = dSum;
-		for (int i = 0; i < mesh->nPairs; i++) {
-			if (cornerInd.count(mesh->pointPairing[i * 2]) == 0
-					&& cornerInd.count(mesh->pointPairing[i * 2 + 1]) == 0) {
+		PetscInt locDirch[dSize];
+		int counter = 0;
+		for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i
+				!= indDirchlet.end(); i++) {
+			locDirch[counter++] = *i;
+		}
+
+		int dNodeCounts[commManager->getPrimalSize()];
+
+		MPI_Allgather(&dSize, 1, MPI_INT, dNodeCounts, 1, MPI_INT, commManager->getPrimal());
+
+		int dSum = 0;
+		for (int i = 0; i < commManager->getPrimalSize(); i++)
+			dSum += dNodeCounts[i];
+
+		//
+		// Create BT matrix on PRIMAL
+		//
+		MatCreateMPIAIJ(commManager->getPrimal(), mesh->vetrices.size() * d, PETSC_DECIDE, PETSC_DECIDE, (mesh->nPairs
+				+ dSum) * d, 2, PETSC_NULL, 2, PETSC_NULL, &BT);
+
+		if (commManager->isPrimalRoot()) {
+			//
+			// TODO I suppose here, that pRank is in root in dual too!
+			//
+
+			PetscInt globDirch[dSum];
+			int displac[commManager->getPrimalSize()];
+			displac[0] = 0;
+			for (int i = 1; i < commManager->getPrimalSize(); i++)
+				displac[i] = displac[i - 1] + dNodeCounts[i - 1];
+
+			MPI_Gatherv(locDirch, dSize, MPI_INT, globDirch, dNodeCounts, displac, MPI_INT, 0, commManager->getPrimal());
+
+			int BSize[2] = { (mesh->nPairs + dSum) * d, globalNodeCount * d };
+			MPI_Bcast(BSize, 2, MPI_INT, 0, commManager->getDual());
+
+			MatCreateMPIAIJ(commManager->getDual(), PETSC_DECIDE, PETSC_DECIDE, BSize[0], BSize[1], 2, PETSC_NULL, 2, PETSC_NULL, &B);
+
+			int sIndex = 0;
+			for (int i = 0; i < dSum; i++) {
 				for (int j = 0; j < d; j++) {
-
-					MatSetValue(B, rowCounter * d + j, mesh->pointPairing[i * 2] * d + j, boundVal, INSERT_VALUES);
-					MatSetValue(B, rowCounter * d + j, mesh->pointPairing[i * 2 + 1] * d
-							+ j, -boundVal, INSERT_VALUES);
-
+					MatSetValue(B, sIndex, globDirch[i] * d + j, 1, INSERT_VALUES);
+					MatSetValue(BT, globDirch[i] * d + j, sIndex, 1, INSERT_VALUES);
+					sIndex++;
 				}
-				rowCounter++;
 			}
-		}
 
-		//FIX more dimensions!!!
-		for (int i = 0; i < mesh->corners.size(); i++) {
+			PetscReal boundVal = 1.0 / sqrt(2.0); // Value to keep the B ortonormal
 
-			PetscInt *vetrices = mesh->corners[i]->vetrices;
-			PetscInt cornerSize = mesh->corners[i]->cornerSize;
 
-			for (int j = 0; j < cornerSize - 1; j++) {
+			std::set<PetscInt> cornerInd;
 
-				PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1) * (cornerSize
-						- j - 1) + (cornerSize - j - 1));
+			for (int i = 0; i < mesh->corners.size(); i++) {
+				for (int j = 0; j < mesh->corners[i]->cornerSize; j++) {
+					cornerInd.insert(mesh->corners[i]->vetrices[j]);
+				}
+			}
 
-				for (int dim = 0; dim < d; dim++) {
-					MatSetValue(B, rowCounter * d + dim, vetrices[j] * d + dim, -(cornerSize
-							- j - 1) / norm, INSERT_VALUES);
-					for (int k = j + 1; k < cornerSize; k++) {
-						MatSetValue(B, rowCounter * d + dim, vetrices[k] * d + dim, 1
-								/ norm, INSERT_VALUES);
+			PetscInt rowCounter = dSum;
+			for (int i = 0; i < mesh->nPairs; i++) {
+				if (cornerInd.count(mesh->pointPairing[i * 2]) == 0
+						&& cornerInd.count(mesh->pointPairing[i * 2 + 1]) == 0) {
+					for (int j = 0; j < d; j++) {
+
+						MatSetValue(B, rowCounter * d + j, mesh->pointPairing[i * 2] * d
+								+ j, boundVal, INSERT_VALUES);
+						MatSetValue(B, rowCounter * d + j, mesh->pointPairing[i * 2 + 1]
+								* d + j, -boundVal, INSERT_VALUES);
+
+						MatSetValue(BT, mesh->pointPairing[i * 2] * d + j, rowCounter * d
+								+ j, boundVal, INSERT_VALUES);
+						MatSetValue(BT, mesh->pointPairing[i * 2 + 1] * d + j, rowCounter
+								* d + j, -boundVal, INSERT_VALUES);
+
 					}
+					rowCounter++;
 				}
-
-				rowCounter++;
 			}
+
+			for (int i = 0; i < mesh->corners.size(); i++) {
+
+				PetscInt *vetrices = mesh->corners[i]->vetrices;
+				PetscInt cornerSize = mesh->corners[i]->cornerSize;
+
+				for (int j = 0; j < cornerSize - 1; j++) {
+
+					PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1) * (cornerSize
+							- j - 1) + (cornerSize - j - 1));
+
+					for (int dim = 0; dim < d; dim++) {
+						MatSetValue(B, rowCounter * d + dim, vetrices[j] * d + dim, -(cornerSize
+								- j - 1) / norm, INSERT_VALUES);
+						MatSetValue(BT, vetrices[j] * d + dim, rowCounter * d + dim, -(cornerSize
+								- j - 1) / norm, INSERT_VALUES);
+
+						for (int k = j + 1; k < cornerSize; k++) {
+							MatSetValue(B, rowCounter * d + dim, vetrices[k] * d + dim, 1
+									/ norm, INSERT_VALUES);
+							MatSetValue(BT, vetrices[k] * d + dim, rowCounter * d + dim, 1
+									/ norm, INSERT_VALUES);
+						}
+					}
+
+					rowCounter++;
+				}
+			}
+
+			MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+			VecCreateMPI(commManager->getDual(), PETSC_DECIDE, BSize[0], &lmb);
+			VecSet(lmb, 0);
+			MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+			MatAssemblyBegin(BT, MAT_FINAL_ASSEMBLY);
+			MatAssemblyEnd(BT, MAT_FINAL_ASSEMBLY);
+
+		} else {
+			//
+			//Primal nonroots
+			//
+			MPI_Gatherv(locDirch, dSize, MPI_INT, NULL, 0, NULL, MPI_INT, 0, commManager->getPrimal());
 		}
+
 	}
 
-	MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
-	MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+	if (commManager->isDual() && !commManager->isDualRoot()) {
+		int BSize[2];
+		MPI_Bcast(BSize, 2, MPI_INT, 0, commManager->getDual());
 
-	VecCreate(PETSC_COMM_WORLD, &lmb);
-	VecSetSizes(lmb, PETSC_DECIDE, (mesh->nPairs + dSum) * d);
-	VecSetFromOptions(lmb);
-	VecSet(lmb, 0);
+		MatCreateMPIAIJ(commManager->getDual(), PETSC_DECIDE, PETSC_DECIDE, BSize[0], BSize[1], 2, PETSC_NULL, 2, PETSC_NULL, &B);
+
+		MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+		VecCreateMPI(commManager->getDual(), PETSC_DECIDE, BSize[0], &lmb);
+		VecSet(lmb, 0);
+		MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+
+	}
+	//
+	// Finalization of assembly of Primal components
+	//
+	if (commManager->isPrimal() && !commManager->isPrimalRoot()) {
+		MatAssemblyBegin(BT, MAT_FINAL_ASSEMBLY);
+		MatAssemblyEnd(BT, MAT_FINAL_ASSEMBLY);
+	}
 
 }
 

@@ -66,15 +66,25 @@ public:
 };
 
 enum PDStrategy {
-	ALL_ALL_SAMEROOT = 0, ALL_ONE_SAMEROOT = 1
+	ALL_ALL_SAMEROOT = 0, ALL_ONE_SAMEROOT = 1, TEST=2
 };
 
 class PDCommManager {
 	MPI_Comm parentComm;
 	MPI_Comm primalComm;
 	MPI_Comm dualComm;
+
+	int parRank, pRank, dRank;
+	int parSize, pSize, dSize;
+
 public:
 	PDCommManager(MPI_Comm parent, PDStrategy strategy);
+	~PDCommManager() {
+		if (isPrimal()) MPI_Comm_free(&primalComm);
+		if (isDual()) MPI_Comm_free(&dualComm);
+	}
+
+	void printSummary();
 
 	MPI_Comm getPrimal() {
 		return primalComm;
@@ -84,6 +94,37 @@ public:
 	}
 	MPI_Comm getParen() {
 		return parentComm;
+	}
+
+	bool isPrimal() {
+		return primalComm != MPI_COMM_NULL;
+	}
+	bool isDual() {
+		return dualComm != MPI_COMM_NULL;
+	}
+
+	bool commonRoots() {
+		return true;
+	}
+	bool isDualRoot() {
+		return !dRank;
+	}
+	bool isPrimalRoot() {
+		return !pRank;
+	}
+
+	int getPrimalSize() {
+		return pSize;
+	}
+	int getDualSize() {
+		return dSize;
+	}
+
+	int getPrimalRank() {
+		return pRank;
+	}
+	int getDualRank() {
+		return dRank;
 	}
 };
 
