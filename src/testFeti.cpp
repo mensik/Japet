@@ -90,21 +90,22 @@ int main(int argc, char *argv[]) {
 		PetscPrintf(PETSC_COMM_WORLD, "Jump operator assembled \n");
 		PetscLogStagePop();
 
+		/*
 		if (commManager->isPrimal()) {
 			PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/outP.m", FILE_MODE_WRITE, &v);
 			MatView(A, v);
 			VecView(b, v);
 			MatView(BT, v);
+			MatView(B, v);
 			PetscViewerDestroy(v);
 		}
 
 		if (commManager->isDual()) {
 			PetscViewerBinaryOpen(commManager->getDual(), "../matlab/outD.m", FILE_MODE_WRITE, &v);
-			MatView(B, v);
 			VecView(lmb, v);
 			PetscViewerDestroy(v);
 		}
-
+*/
 		PetscLogStageRegister("FETI", &fetiStage);
 		PetscLogStagePush(fetiStage);
 

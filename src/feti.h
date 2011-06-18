@@ -38,7 +38,7 @@ protected:
 	Vec tgGloIn, tgGloOut;
 	Vec tgLocIn, tgLocOut;
 
-	Mat B; ///< Jump operator matrix
+
 	Vec lmb; ///< Lambda vector
 	Vec d; ///< dual right side
 
@@ -46,22 +46,23 @@ protected:
 	Mat G, GT; ///< BR
 	KSP kspG; ///< Global G'G solver
 
-	VecScatter dAScat;
-	Vec dAGlob; ///< gloval version
-	Vec dALoc; ///< local (on root) version
+	VecScatter dBScat;
+	Vec dBGlob; ///< gloval version
+	Vec dBLoc; ///< local (on root) version
 
 	//
 	// PRIMAL
 	//
 
 	Mat BT;
+	Mat B; ///< Jump operator matrix
 	Vec b; ///< Global force vector
 	Vec u; ///< solution
 	Mat R; ///< Global null space of A
 
-	VecScatter pAScat;
-	Vec pAGlob; ///< gloval version
-	Vec pALoc; ///< local (on root) version
+	VecScatter pBScat;
+	Vec pBGlob; ///< gloval version
+	Vec pBLoc; ///< local (on root) version
 
 
 	bool isSingular; ///< is Matrix A singular
