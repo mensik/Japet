@@ -66,7 +66,7 @@ public:
 };
 
 enum PDStrategy {
-	ALL_ALL_SAMEROOT = 0, ALL_ONE_SAMEROOT = 1, ALL_TWO_SAMEROOT=2, TEST
+	ALL_ALL_SAMEROOT = 0, ALL_ONE_SAMEROOT = 1, ALL_TWO_SAMEROOT=2, HECTOR=3, TEST
 };
 
 class PDCommManager {
@@ -140,6 +140,7 @@ public:
 	PetscInt problem; //< 0 - Laplace, 1 - lin.elasticity
 
 	CoarseProblemMethod coarseProblemMethod;
+	PDStrategy pdStrategy;
 
 	char *name;
 

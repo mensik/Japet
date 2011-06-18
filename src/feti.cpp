@@ -231,7 +231,7 @@ void AFeti::applyInvGTG(Vec in, Vec out) {
 
 void AFeti::projectGOrth(Vec in) {
 
-	//	PetscLogStagePush(coarseStage);
+	PetscLogStagePush(coarseStage);
 	MatMultTranspose(G, in, tgA);
 
 	applyInvGTG(tgA, tgB);
@@ -239,7 +239,7 @@ void AFeti::projectGOrth(Vec in) {
 	VecScale(in, -1);
 	MatMultAdd(G, tgB, in, in);
 	VecScale(in, -1);
-	//PetscLogStagePop();
+	PetscLogStagePop();
 }
 
 AFeti::~AFeti() {

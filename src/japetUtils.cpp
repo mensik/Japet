@@ -74,6 +74,10 @@ PDCommManager::PDCommManager(MPI_Comm parent, PDStrategy strategy) {
 		MPI_Comm_dup(parentComm, &primalComm);
 		MPI_Comm_split(parentComm, (parRank < 2) ? 0 : MPI_UNDEFINED, 0, &dualComm);
 		break;
+	case HECTOR:
+		MPI_Comm_dup(parentComm, &primalComm);
+		MPI_Comm_split(parentComm, (parRank < 24) ? 0 : MPI_UNDEFINED, 0, &dualComm);
+		break;
 	case TEST:
 		MPI_Comm_split(parentComm, (parRank % 3 == 0) ? 0 : MPI_UNDEFINED, 0, &primalComm);
 		MPI_Comm_split(parentComm, (parRank % 2 == 0) ? 0 : MPI_UNDEFINED, 0, &dualComm);
@@ -125,6 +129,7 @@ ConfigManager::ConfigManager() {
 	PetscTruth flg;
 
 	coarseProblemMethod = MasterWork;
+	pdStrategy = HECTOR;
 	saveOutputs = false;
 
 	char tName[PETSC_MAX_PATH_LEN] = "FetiTest.log";
@@ -137,6 +142,7 @@ ConfigManager::ConfigManager() {
 	PetscOptionsGetString(PETSC_NULL, "-japet_name", tName, PETSC_MAX_PATH_LEN
 			- 1, &flg);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_cpmethod", (PetscInt*) &coarseProblemMethod, PETSC_NULL);
+	PetscOptionsGetInt(PETSC_NULL, "-japet_pd_strategy", (PetscInt*) &pdStrategy, PETSC_NULL);
 	PetscOptionsGetTruth(PETSC_NULL, "-japet_save_output", (PetscTruth*) &saveOutputs, PETSC_NULL);
 
 	name = tName;

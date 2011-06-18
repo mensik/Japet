@@ -31,9 +31,6 @@ int main(int argc, char *argv[]) {
 	PetscInitialize(&argc, &argv, 0, help);
 
 	{
-
-		PDCommManager* commManager = new PDCommManager(PETSC_COMM_WORLD, TEST);
-
 		PetscPrintf(PETSC_COMM_WORLD, "***************************************************\n");
 		PetscPrintf(PETSC_COMM_WORLD, "                    TEST FETI \n");
 		PetscPrintf(PETSC_COMM_WORLD, "***************************************************\n");
@@ -48,6 +45,8 @@ int main(int argc, char *argv[]) {
 		ConfigManager *conf = ConfigManager::Instance();
 
 		int problemType = conf->problem;
+		PDCommManager* commManager = new PDCommManager(PETSC_COMM_WORLD, conf->pdStrategy);
+
 
 		PetscLogStageRegister("Meshing", &meshing);
 		PetscLogStagePush(meshing);
@@ -107,7 +106,7 @@ int main(int argc, char *argv[]) {
 		}
 
 		PetscLogStageRegister("FETI", &fetiStage);
-		// PetscLogStagePush(fetiStage);
+		PetscLogStagePush(fetiStage);
 
 
 		Feti1
@@ -117,9 +116,9 @@ int main(int argc, char *argv[]) {
 		 feti->setIsVerbose(true);
 
 		 feti->solve();
-		/*
-		 PetscLogStagePop();
 
+		 PetscLogStagePop();
+/*
 		 feti->saveIterationInfo(conf->name);
 
 		 if (conf->saveOutputs) {

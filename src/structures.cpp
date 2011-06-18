@@ -1237,7 +1237,7 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 
 		int wgtflag = 1; //weights on edges
 		int numFlag = 0; //C style
-		nparts = floor(sqrt(numOfPartitions));
+		nparts = floor(sqrt((double)numOfPartitions));
 
 		cluster->clusterCount = nparts;
 		int options[] = { 0, 0, 0, 0, 0 };
