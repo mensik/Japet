@@ -197,11 +197,13 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 
 		numOfPartitions = size;
 
-		PetscReal Hx = (x1 - x0) / m;
-		PetscReal Hy = (y1 - y0) / n;
+		PetscReal Hx = (x1 - x0) / (PetscReal)m;
+		PetscReal Hy = (y1 - y0) / (PetscReal)n;
 
 		PetscInt xEdges = (PetscInt) ceil(Hx / h);
 		PetscInt yEdges = (PetscInt) ceil(Hy / h);
+
+		PetscPrintf(commManager->getPrimal(), "x: %d y: %d \n", xEdges, yEdges);
 
 		PetscInt *bNodes = new PetscInt[xEdges + 1];
 		PetscInt *tNodes = new PetscInt[xEdges + 1];
@@ -211,8 +213,8 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 		PetscInt subDomainNodeCount = (xEdges + 1) * (yEdges + 1);
 		PetscInt subDomainElementCount = xEdges * yEdges * 2;
 
-		PetscReal hx = Hx / xEdges;
-		PetscReal hy = Hy / yEdges;
+		PetscReal hx = Hx / (PetscReal)xEdges;
+		PetscReal hy = Hy / (PetscReal)yEdges;
 
 		PetscInt nodeIndex = rank * subDomainNodeCount;
 		PetscInt elementIndex = rank * subDomainElementCount;
