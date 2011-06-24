@@ -66,7 +66,11 @@ public:
 };
 
 enum PDStrategy {
-	ALL_ALL_SAMEROOT = 0, ALL_ONE_SAMEROOT = 1, ALL_TWO_SAMEROOT=2, HECTOR=3, TEST=4
+	ALL_ALL_SAMEROOT = 0,
+	ALL_ONE_SAMEROOT = 1,
+	ALL_TWO_SAMEROOT = 2,
+	HECTOR = 3,
+	TEST = 4
 };
 
 class PDCommManager {
@@ -132,10 +136,15 @@ class ConfigManager {
 	static ConfigManager *instance;
 	ConfigManager();
 public:
+	PetscInt maxIt;
+
+	PetscInt reqSize;
+
 	PetscInt m;
 	PetscInt n;
 	PetscReal h;
-	PetscReal H;
+	PetscReal Hx;
+	PetscReal Hy;
 
 	PetscInt problem; //< 0 - Laplace, 1 - lin.elasticity
 
@@ -152,4 +161,71 @@ public:
 	static ConfigManager* Instance();
 };
 
+class MyTimer {
+	PetscLogDouble total, start, end;
+	PetscInt laps;
+public:
+	MyTimer() {
+		laps = 0;
+		total = 0;
+	}
+
+	void startTimer() {
+		PetscGetTime(&start);
+	}
+	void stopTimer() {
+		PetscGetTime(&end);
+
+		total += end - start;
+		laps++;
+	}
+
+	PetscLogDouble getAverageTime() {
+		return total / laps;
+	}
+	PetscInt getLapCount() {
+		return laps;
+	}
+	PetscLogDouble getTotalTime() {
+		return total;
+	}
+
+	PetscLogDouble getAverageOverComm(MPI_Comm comm) {
+
+		PetscLogDouble allTotal;
+		PetscInt commSize;
+		MPI_Allreduce(&total, &allTotal, 1, MPI_DOUBLE, MPI_SUM, comm);
+		MPI_Comm_size(comm, &commSize);
+
+		return allTotal / commSize;
+	}
+
+	PetscLogDouble getMaxOverComm(MPI_Comm comm) {
+		PetscLogDouble max;
+		MPI_Allreduce(&total, &max, 1, MPI_DOUBLE, MPI_MAX, comm);
+		return max;
+	}
+};
+
+class MyLogger {
+	static MyLogger *instance;
+	MyLogger() {
+
+	}
+
+	std::map<std::string, MyTimer*> timers;
+public:
+	static MyLogger* Instance();
+
+	MyTimer* getTimer(std::string timer) {
+
+		MyTimer* t = timers[timer];
+		if (t == NULL) {
+			t = new MyTimer();
+			timers[timer] = t;
+		}
+
+		return t;
+	}
+};
 #endif /* JAPETUTILS_H_ */

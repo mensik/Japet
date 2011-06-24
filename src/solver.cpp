@@ -124,52 +124,44 @@ CGSolver::~CGSolver() {
 
 void CGSolver::solve() {
 
-	VecCopy(z, p);
+	PetscReal relativeCoef = MAX(bNorm, r0Norm);
+	PetscReal gTzPrev, gTz;
 
-	while (!sCtr->isConverged(getItCount(), rNorm, bNorm, &g)) {
+	//solProj->applyProjection(g);
+	//	sPC->applyPC(g, z);
+	VecDot(g, z, &gTz);
 
-		if (getItCount() % 10 == 0 && getItCount() > 1) {
+	while (!sCtr->isConverged(getItCount(), rNorm, relativeCoef, &g)) {
 
-			PetscPrintf(PETSC_COMM_WORLD, "RESTART \n");
-
-			Vec temp;
-			VecDuplicate(b, &temp);
-
-			VecCopy(b, g);
-
-			sApp->setRequiredPrecision(MAXPREC);
-			sApp->applyMult(x, temp, &itManager);
-			VecAYPX(g, -1, temp); // g = Ax - b
-
-			VecDestroy(temp);
-
-			sPC->applyPC(g, z);
-
-			VecDot(g, z, &rNorm);
-			rNorm = sqrt(rNorm);
-
-			VecCopy(z, p);
-		}
-
+		MyLogger::Instance()->getTimer("Iteration")->startTimer();
+		itManager.setIterationData("Rel. err", rNorm / relativeCoef);
 		nextIteration();
 
 		PetscScalar pAp;
 		sApp->applyMult(p, temp, &itManager);
 		VecDot(p, temp, &pAp);
 
-		PetscReal a = (rNorm * rNorm) / pAp;
+		PetscReal a = gTz / pAp;
+
 		VecAXPY(x, -a, p);
 		VecAXPY(g, -a, temp);
 
 		sPC->applyPC(g, z);
 
-		PetscReal gDOTz;
-		VecDot(g, z, &gDOTz);
+		gTzPrev = gTz;
 
-		PetscReal beta = gDOTz / (rNorm * rNorm);
+		VecDot(g, z, &gTz);
+
+		PetscReal beta = gTz / gTzPrev;
 		VecAYPX(p, beta, z);
 
-		rNorm = sqrt(gDOTz);
+		VecNorm(g, NORM_2, &rNorm);
+
+		if (gTz != gTz) {
+			PetscPrintf(PETSC_COMM_WORLD, "ERROR!!!");
+			break;
+		}
+		MyLogger::Instance()->getTimer("Iteration")->stopTimer();
 	}
 }
 
@@ -238,12 +230,12 @@ void ReCGSolver::solve() {
 	PetscReal gTzPrev, gTz;
 
 	//solProj->applyProjection(g);
-//	sPC->applyPC(g, z);
+	//	sPC->applyPC(g, z);
 	VecDot(g, z, &gTz);
 
 	while (!sCtr->isConverged(getItCount(), rNorm, relativeCoef, &g)) {
 
-		itManager.setIterationData("Rel. err", rNorm/relativeCoef);
+		itManager.setIterationData("Rel. err", rNorm / relativeCoef);
 		nextIteration();
 
 		PetscScalar pAp;
@@ -254,7 +246,6 @@ void ReCGSolver::solve() {
 
 		VecAXPY(x, -a, p);
 		VecAXPY(g, -a, Ap);
-
 
 		//Save for reortogonalization or projection
 

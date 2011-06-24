@@ -34,10 +34,10 @@ protected:
 	// DUAL
 	//
 
-	VecScatter tgScat;
-	Vec tgGloIn, tgGloOut;
+	VecScatter tgScat; ///< Scatter from dual group to master. For application of inv G'G
 	Vec tgLocIn, tgLocOut;
-
+	Vec tgA;
+	Vec tgB;
 
 	Vec lmb; ///< Lambda vector
 	Vec d; ///< dual right side
@@ -46,7 +46,7 @@ protected:
 	Mat G, GT; ///< BR
 	KSP kspG; ///< Global G'G solver
 
-	VecScatter dBScat;
+	VecScatter dBScat; ///< Scatter from dual group to master
 	Vec dBGlob; ///< gloval version
 	Vec dBLoc; ///< local (on root) version
 
@@ -60,7 +60,10 @@ protected:
 	Vec u; ///< solution
 	Mat R; ///< Global null space of A
 
-	VecScatter pBScat;
+	Vec temp;
+	Vec tempLoc;
+
+	VecScatter pBScat; ///< Scatter from primal to primal root
 	Vec pBGlob; ///< gloval version
 	Vec pBLoc; ///< local (on root) version
 
@@ -71,23 +74,22 @@ protected:
 
 	PetscReal lastNorm; ///< last computed norm
 
-	Vec tgA;
-	Vec tgB;
-
-	Vec temp;
-	Vec tempLoc;
 
 	PetscInt outIterations;
 	PetscInt inIterations;
 
-	PetscLogStage coarseStage;
-
+	PetscLogStage coarseStage, coarseInitStage, aInvStage, fetiInitStage;
 	CoarseProblemMethod cpMethod;
 
 	void initCoarse();
+
 	void applyInvGTG(Vec in, Vec out);
 
 public:
+
+	//
+	// Constants for identification and synchronization during the dual-primal solving
+	//
 	const static int P_ACTION_INVA = 1;
 	const static int P_ACTION_MULTA = 2;
 	const static int P_ACTION_BREAK = -1;
@@ -111,7 +113,6 @@ public:
 	virtual void applyPC(Vec g, Vec z) {
 		VecCopy(g, z);
 	}
-	;
 
 	void dumpSolution(PetscViewer v);
 	void dumpSystem(PetscViewer v);
@@ -163,10 +164,12 @@ protected:
 	MatNullSpace locNS; ///< local null space of local A
 
 	Vec tempInv, tempInvGh, tempInvGhB;
+
+	PetscLogStage aFactorStage;
 public:
 	Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
-			NullSpaceInfo *nullSpace, PetscInt localNodeCount,
-			CoarseProblemMethod cpM = ParaCG);
+			NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
+			PetscInt *fNodes, CoarseProblemMethod cpM = ParaCG);
 	~Feti1();
 	virtual void applyInvA(Vec in, IterationManager *itManager);
 	virtual void applyPC(Vec g, Vec z);
@@ -180,9 +183,9 @@ class mFeti1: public Feti1 {
 
 public:
 	mFeti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
-			NullSpaceInfo *nullSpace, PetscInt localNodeCount,
-			CoarseProblemMethod cpM = ParaCG) :
-		Feti1(comMan, A, b, BT, B, lmb, nullSpace, localNodeCount, cpM) {
+			NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
+			PetscInt *fNodes, CoarseProblemMethod cpM = ParaCG) :
+				Feti1(comMan, A, b, BT, B, lmb, nullSpace, localNodeCount, fNodesCount, fNodes, cpM) {
 	}
 
 	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);

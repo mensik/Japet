@@ -57,7 +57,6 @@ void IterationManager::saveIterationInfo(const char *filename, bool rewrite) {
 PDCommManager::PDCommManager(MPI_Comm parent, PDStrategy strategy) {
 	parentComm = parent;
 
-	int parentRank, parentSize;
 	MPI_Comm_size(parentComm, &parSize);
 	MPI_Comm_rank(parentComm, &parRank);
 
@@ -116,15 +115,29 @@ ConfigManager* ConfigManager::Instance() {
 	return instance;
 }
 
+MyLogger* MyLogger::instance = NULL;
+
+MyLogger* MyLogger::Instance() {
+	if (!instance) {
+		instance = new MyLogger();
+	}
+	return instance;
+}
+
 ConfigManager::ConfigManager() {
+
+	maxIt = 60;
 
 	E = 2.1e5;
 	mu = 0.3;
 	h = 2.0;
-	H = 100;
+	Hx = 200;
+	Hy = 100;
 	m = 3;
 	n = 3;
 	problem = 0;
+
+	reqSize = 100;
 
 	PetscTruth flg;
 
@@ -134,16 +147,22 @@ ConfigManager::ConfigManager() {
 
 	char tName[PETSC_MAX_PATH_LEN] = "FetiTest.log";
 
+	PetscOptionsGetInt(PETSC_NULL, "-japet_req_size", &reqSize, PETSC_NULL);
+	PetscOptionsGetInt(PETSC_NULL, "-japet_max_it", &maxIt, PETSC_NULL);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_problem", &problem, PETSC_NULL);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_m", &m, PETSC_NULL);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_n", &n, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_h", &h, PETSC_NULL);
-	PetscOptionsGetReal(PETSC_NULL, "-japet_HH", &H, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-japet_size_x", &Hx, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-japet_size_y", &Hy, PETSC_NULL);
 	PetscOptionsGetString(PETSC_NULL, "-japet_name", tName, PETSC_MAX_PATH_LEN
 			- 1, &flg);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_cpmethod", (PetscInt*) &coarseProblemMethod, PETSC_NULL);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_pd_strategy", (PetscInt*) &pdStrategy, PETSC_NULL);
 	PetscOptionsGetTruth(PETSC_NULL, "-japet_save_output", (PetscTruth*) &saveOutputs, PETSC_NULL);
+
+	PetscOptionsGetReal(PETSC_NULL, "-japet_e", &E, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-japet_mu", &mu, PETSC_NULL);
 
 	name = tName;
 

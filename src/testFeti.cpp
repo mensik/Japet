@@ -26,7 +26,7 @@ PetscReal funConst(Point n) {
 int main(int argc, char *argv[]) {
 	PetscErrorCode ierr;
 	PetscMPIInt rank, size;
-	PetscLogStage meshing, assembly, fetiStage;
+	PetscLogStage assembly, fetiStage;
 
 	PetscInitialize(&argc, &argv, 0, help);
 
@@ -45,23 +45,25 @@ int main(int argc, char *argv[]) {
 		ConfigManager *conf = ConfigManager::Instance();
 
 		int problemType = conf->problem;
-		PDCommManager* commManager = new PDCommManager(PETSC_COMM_WORLD, conf->pdStrategy);
+		PDCommManager* commManager =
+				new PDCommManager(PETSC_COMM_WORLD, conf->pdStrategy);
 
+		PetscLogStageRegister("Assembly", &assembly);
+		PetscLogStagePush(assembly);
 
-		PetscLogStageRegister("Meshing", &meshing);
-		PetscLogStagePush(meshing);
-		mesh->generateTearedRectMesh(0, conf->m * conf->H, 0, conf->n * conf->H, conf->h, conf->m, conf->n, bound, commManager);
-		PetscLogStagePop();
+		PetscReal h = conf->Hx / ((PetscReal)(conf->m) * (PetscReal)(conf->reqSize));
 
-		//PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
-		//mesh->dumpForMatlab(v);
-		//PetscViewerDestroy(v);
+		mesh->generateTearedRectMesh(0, conf->Hx, 0.0, conf->Hy, h, conf->m, conf->n, bound, commManager);
+
+		if (conf->saveOutputs) {
+			PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
+			mesh->dumpForMatlab(v);
+			PetscViewerDestroy(v);
+		}
 
 		//***********************************************************************************************
 
 
-		PetscLogStageRegister("Assembly", &assembly);
-		PetscLogStagePush(assembly);
 		Mat A;
 		Vec b;
 
@@ -72,8 +74,6 @@ int main(int argc, char *argv[]) {
 				FEMAssembleTotal2DLaplace(commManager->getPrimal(), mesh, A, b, funConst, funConst);
 			}
 		}
-
-		PetscPrintf(PETSC_COMM_WORLD, "\nMass matrix assembled \n");
 
 		Mat B, BT;
 		Vec lmb;
@@ -86,40 +86,104 @@ int main(int argc, char *argv[]) {
 			GenerateTotalJumpOperator(mesh, 1, B, BT, lmb, commManager);
 			if (commManager->isPrimal()) Generate2DLaplaceTotalNullSpace(mesh, &nullSpace, commManager->getPrimal());
 		}
-
-		PetscPrintf(PETSC_COMM_WORLD, "Jump operator assembled \n");
 		PetscLogStagePop();
 
-		/*
-		if (commManager->isPrimal()) {
-			PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/outP.m", FILE_MODE_WRITE, &v);
-			MatView(A, v);
-			VecView(b, v);
-			MatView(BT, v);
-			MatView(B, v);
-			PetscViewerDestroy(v);
+		if (commManager->isPrimalRoot()) {
+			PetscInt dimPrim, dimDual, dimNull;
+
+			MatGetSize(A, &dimPrim, PETSC_NULL);
+			MatGetSize(B, &dimDual, PETSC_NULL);
+			MatGetSize(nullSpace.R, PETSC_NULL, &dimNull);
+
+			PetscPrintf(PETSC_COMM_SELF, "\nPrimal var. : %d \nDual var.   : %d\nCoarse dim. : %d \n\n", dimPrim, dimDual, dimNull);
 		}
 
-		if (commManager->isDual()) {
-			PetscViewerBinaryOpen(commManager->getDual(), "../matlab/outD.m", FILE_MODE_WRITE, &v);
-			VecView(lmb, v);
-			PetscViewerDestroy(v);
-		}
-*/
 		PetscLogStageRegister("FETI", &fetiStage);
 		PetscLogStagePush(fetiStage);
 
-
+		MyLogger::Instance()->getTimer("feti")->startTimer();
 		Feti1
 				*feti =
-						new mFeti1(commManager, A, b, BT, B, lmb, &nullSpace, mesh->vetrices.size(), conf->coarseProblemMethod);
+						new Feti1(commManager, A, b, BT, B, lmb, &nullSpace, mesh->vetrices.size(), 0, NULL, conf->coarseProblemMethod);
 
-		 feti->setIsVerbose(true);
+		feti->setIsVerbose(true);
 
-		 feti->solve();
+		MyLogger::Instance()->getTimer("Solving")->startTimer();
 
-		 PetscLogStagePop();
-/*
+		feti->solve();
+
+		MyLogger::Instance()->getTimer("Solving")->stopTimer();
+		MyLogger::Instance()->getTimer("feti")->stopTimer();
+
+		if (commManager->isPrimalRoot()) {
+
+			PetscPrintf(PETSC_COMM_SELF, "Total time             : %e \n", MyLogger::Instance()->getTimer("feti")->getTotalTime());
+			PetscPrintf(PETSC_COMM_SELF, "Solve time             : %e \n", MyLogger::Instance()->getTimer("Solving")->getTotalTime());
+		}
+
+		if (commManager->isPrimal()) {
+
+			MyTimer* fTimer = MyLogger::Instance()->getTimer("Factorization");
+
+			PetscPrintf(commManager->getPrimal(), "Factorization - average: %e \n", fTimer->getAverageOverComm(commManager->getPrimal()));
+			PetscPrintf(commManager->getPrimal(), "                   max : %e \n", fTimer->getMaxOverComm(commManager->getPrimal()));
+		}
+		if (commManager->isDual()) {
+
+			MyTimer* cTimer = MyLogger::Instance()->getTimer("Coarse init");
+			PetscPrintf(commManager->getDual(), "Coarse p. init - avg.  : %e \n", cTimer->getAverageOverComm(commManager->getDual()));
+			PetscPrintf(commManager->getDual(), "                 max.  : %e \n", cTimer->getMaxOverComm(commManager->getDual()));
+
+		}
+		if (commManager->isDualRoot()) {
+
+			MyTimer* iTimer = MyLogger::Instance()->getTimer("Iteration");
+			PetscPrintf(PETSC_COMM_SELF, "Avg. iteration         : %e \n", iTimer->getAverageTime());
+
+			MyTimer* cTimer = MyLogger::Instance()->getTimer("Coarse problem");
+			PetscPrintf(PETSC_COMM_SELF, "Projection (2x)        : %e \n", cTimer->getAverageTime()
+					* 2);
+		}
+		if (commManager->isPrimal()) {
+			MyTimer* mTimer = MyLogger::Instance()->getTimer("BA+BT");
+			PetscPrintf(commManager->getPrimal(), "Primal mult. avg.      : %e \n", mTimer->getAverageOverComm(commManager->getPrimal())
+					/ mTimer->getLapCount());
+		}
+		if (commManager->isPrimalRoot()) {
+			PetscPrintf(PETSC_COMM_SELF, "D->P Scatter           : %e \n",MyLogger::Instance()->getTimer("DP scatter")->getAverageTime());
+			PetscPrintf(PETSC_COMM_SELF, "P->D Scatter           : %e \n\n",MyLogger::Instance()->getTimer("PD scatter")->getAverageTime());
+		}
+
+		if (conf->saveOutputs) {
+			if (commManager->isPrimal()) {
+
+				Vec x;
+				VecDuplicate(b, &x);
+				feti->copySolution(x);
+
+				PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/outP.m", FILE_MODE_WRITE, &v);
+				MatView(A, v);
+				VecView(b, v);
+				MatView(BT, v);
+				MatView(B, v);
+				VecView(x, v);
+				PetscViewerDestroy(v);
+
+				VecDestroy(x);
+			}
+
+			if (commManager->isDual()) {
+				PetscViewerBinaryOpen(commManager->getDual(), "../matlab/outD.m", FILE_MODE_WRITE, &v);
+				VecView(lmb, v);
+				PetscViewerDestroy(v);
+			}
+		}
+
+		PetscLogStagePop();
+
+		//delete feti;
+
+		/*
 		 feti->saveIterationInfo(conf->name);
 
 		 if (conf->saveOutputs) {
@@ -127,9 +191,6 @@ int main(int argc, char *argv[]) {
 		 mesh->dumpForMatlab(v);
 		 PetscViewerDestroy(v);
 
-		 Vec x;
-		 VecDuplicate(b, &x);
-		 feti->copySolution(x);
 		 feti->copyLmb(lmb);
 
 		 PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/out.m", FILE_MODE_WRITE, &v);
@@ -141,12 +202,17 @@ int main(int argc, char *argv[]) {
 		 PetscViewerDestroy(v);
 		 }
 
-		 MatDestroy(A);
-		 MatDestroy(B);
-
-		 delete mesh;
-		 delete feti;
 		 */
+
+		//MatDestroy(A);
+		//MatDestroy(B);
+
+		if (commManager->isPrimal()) {
+			MatDestroy(A);
+			MatDestroy(B);
+			MatDestroy(BT);
+			delete mesh;
+		}
 
 		delete commManager;
 	}
