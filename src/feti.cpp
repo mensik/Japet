@@ -660,7 +660,8 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		PetscLogStage extA;
 		PetscLogStageRegister("Exctract Aloc", &extA);
 		PetscLogStagePush(extA);
-		extractLocalAPart(A, &Aloc);
+		Aloc = A;
+		//extractLocalAPart(A, &Aloc);
 		PetscLogStagePop();
 		//Matrix regularization!
 
@@ -845,7 +846,6 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 }
 
 void Feti1::applyPC(Vec g, Vec z) {
-
 
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->startTimer();
 	if (cMan->isDual()) {

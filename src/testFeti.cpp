@@ -165,7 +165,7 @@ int main(int argc, char *argv[]) {
 				feti->copySolution(x);
 
 				PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/outP.m", FILE_MODE_WRITE, &v);
-				MatView(A, v);
+				//MatView(A, v);
 				VecView(b, v);
 				MatView(BT, v);
 				MatView(B, v);
@@ -206,7 +206,7 @@ int main(int argc, char *argv[]) {
 		 PetscViewerDestroy(v);
 		 }
 
-*/
+		 */
 
 		//MatDestroy(A);
 		//MatDestroy(B);
