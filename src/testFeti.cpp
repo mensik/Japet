@@ -51,10 +51,10 @@ int main(int argc, char *argv[]) {
 		PetscLogStageRegister("Assembly", &assembly);
 		PetscLogStagePush(assembly);
 
-		PetscReal h = conf->Hx / ((PetscReal)(conf->m) * (PetscReal)(conf->reqSize));
+		PetscReal h = conf->Hx / (PetscReal) ((PetscReal) (conf->m)
+				* (PetscReal) (conf->reqSize));
 
 		mesh->generateTearedRectMesh(0, conf->Hx, 0.0, conf->Hy, h, conf->m, conf->n, bound, commManager);
-
 		if (conf->saveOutputs) {
 			PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
 			mesh->dumpForMatlab(v);
@@ -144,14 +144,17 @@ int main(int argc, char *argv[]) {
 			PetscPrintf(PETSC_COMM_SELF, "Projection (2x)        : %e \n", cTimer->getAverageTime()
 					* 2);
 		}
-		if (commManager->isPrimal()) {
-			MyTimer* mTimer = MyLogger::Instance()->getTimer("BA+BT");
-			PetscPrintf(commManager->getPrimal(), "Primal mult. avg.      : %e \n", mTimer->getAverageOverComm(commManager->getPrimal())
-					/ mTimer->getLapCount());
-		}
+
 		if (commManager->isPrimalRoot()) {
-			PetscPrintf(PETSC_COMM_SELF, "D->P Scatter           : %e \n",MyLogger::Instance()->getTimer("DP scatter")->getAverageTime());
-			PetscPrintf(PETSC_COMM_SELF, "P->D Scatter           : %e \n\n",MyLogger::Instance()->getTimer("PD scatter")->getAverageTime());
+			MyTimer* mTimer = MyLogger::Instance()->getTimer("BA+BT");
+			PetscPrintf(PETSC_COMM_SELF, "F                      : %e \n", mTimer->getAverageTime());
+			MyTimer* fTimer = MyLogger::Instance()->getTimer("F^-1");
+			PetscPrintf(PETSC_COMM_SELF, "F^-1                   : %e \n", fTimer->getAverageTime());
+
+			PetscPrintf(PETSC_COMM_SELF, "D->P Scatter           : %e \n", MyLogger::Instance()->getTimer("DP scatter")->getAverageTime());
+			PetscPrintf(PETSC_COMM_SELF, "P->D Scatter           : %e \n\n", MyLogger::Instance()->getTimer("PD scatter")->getAverageTime());
+
+			MyLogger::Instance()->getTimer("Coarse init")->printMarkedTime(PETSC_COMM_SELF);
 		}
 
 		if (conf->saveOutputs) {
@@ -166,6 +169,7 @@ int main(int argc, char *argv[]) {
 				VecView(b, v);
 				MatView(BT, v);
 				MatView(B, v);
+				MatView(nullSpace.R, v);
 				VecView(x, v);
 				PetscViewerDestroy(v);
 
@@ -202,7 +206,7 @@ int main(int argc, char *argv[]) {
 		 PetscViewerDestroy(v);
 		 }
 
-		 */
+*/
 
 		//MatDestroy(A);
 		//MatDestroy(B);
@@ -216,7 +220,6 @@ int main(int argc, char *argv[]) {
 
 		delete commManager;
 	}
-
 	ierr = PetscFinalize();
 	CHKERRQ(ierr);
 	return 0;

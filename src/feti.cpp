@@ -58,17 +58,19 @@ AFeti::AFeti(PDCommManager* comMan, Vec b, Mat BT, Mat B, Vec lmb,
 
 void AFeti::initCoarse() {
 	//PetscInt rank;
-	Mat GTemp, GLOC;
+	Mat GTemp, GLOC, GTGloc;
 
 	MyLogger::Instance()->getTimer("Coarse init")->startTimer();
+	MyTimer* timer = MyLogger::Instance()->getTimer("Coarse init");
 	PetscLogStagePush(coarseInitStage);
 	switch (cpMethod) {
 	case ParaCG:
-		/*
+
 		if (cMan->isPrimal()) {
 			MatMatMult(B, R, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GTemp);
 			MatGetSize(GTemp, &gM, &gN);
 			if (cMan->isPrimalRoot()) { //Bloody messy hellish way to compute GTG - need to compute localy
+
 
 				IS ISrows, IScols;
 				ISCreateStride(PETSC_COMM_SELF, gM, 0, 1, &ISrows);
@@ -113,9 +115,7 @@ void AFeti::initCoarse() {
 
 			}
 
-
 			MatAssemblyBegin(G, MAT_FINAL_ASSEMBLY);
-
 
 			Mat GTG;
 			MatCreateMPIDense(cMan->getDual(), PETSC_DECIDE, PETSC_DECIDE, gN, gN, PETSC_NULL, &GTG);
@@ -140,7 +140,6 @@ void AFeti::initCoarse() {
 			MatAssemblyBegin(GTG, MAT_FINAL_ASSEMBLY);
 			MatAssemblyEnd(GTG, MAT_FINAL_ASSEMBLY);
 
-
 			KSPCreate(cMan->getDual(), &kspG);
 			KSPSetOperators(kspG, GTG, GTG, SAME_PRECONDITIONER);
 			KSPSetTolerances(kspG, 1e-16, 1e-16, 1e7, 15000);
@@ -151,7 +150,7 @@ void AFeti::initCoarse() {
 			VecDuplicate(tgA, &tgB);
 
 		}
-*/
+
 		break;
 
 	case MasterWork:
@@ -160,6 +159,7 @@ void AFeti::initCoarse() {
 
 			MatMatMult(B, R, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GTemp);
 
+			timer->markTime("BRmult done");
 			if (cMan->isDualRoot()) {
 				//
 				// TODO The roots has to be the same process
@@ -175,11 +175,12 @@ void AFeti::initCoarse() {
 				ISDestroy(ISrows);
 				ISDestroy(IScols);
 
-				Mat GTGloc;
-
 				GLOC = *gl;
+				timer->markTime("GLOC obtained");
 
 				MatMatMultTranspose(GLOC, GLOC, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GTGloc);
+
+				timer->markTime("GTGloc comp.");
 
 				PC pcGTG;
 				PCCreate(PETSC_COMM_SELF, &pcGTG);
@@ -194,6 +195,8 @@ void AFeti::initCoarse() {
 
 				KSPSetPC(kspG, pcGTG);
 				PCDestroy(pcGTG);
+
+				timer->markTime("Factor.done");
 
 			} else {
 				IS ISrows, IScols;
@@ -221,26 +224,28 @@ void AFeti::initCoarse() {
 			VecScatterCreateToZero(tgA, &tgScat, &tgLocIn);
 			VecDuplicate(tgLocIn, &tgLocOut);
 
-			MatCreateMPIDense(cMan->getDual(), PETSC_DECIDE, PETSC_DECIDE, gM, gN, PETSC_NULL, &G);
+			timer->markTime("Prep.GforD");
+			//MatCreateMPIDense(cMan->getDual(), PETSC_DECIDE, PETSC_DECIDE, gM, gN, PETSC_NULL, &G);
+			MatCreateMPIAIJ(cMan->getDual(), PETSC_DECIDE, PETSC_DECIDE, gM, gN, 6, PETSC_NULL, 6, PETSC_NULL, &G);
 
 			if (cMan->isDualRoot()) {
 
-				PetscScalar data[gM * gN];
-				PetscInt idm[gM], idn[gN];
-				for (int i = 0; i < gN; i++)
-					idn[i] = i;
-				for (int i = 0; i < gM; i++)
-					idm[i] = i;
+				for (int row = 0; row < gM; row++) {
+					PetscInt nCols;
+					const PetscInt *idx;
+					const PetscScalar *vals;
+					MatGetRow(GLOC, row, &nCols, &idx, &vals);
+					MatSetValuesBlocked(G, 1, &row, nCols, idx, vals, INSERT_VALUES);
+					MatRestoreRow(GLOC, row, &nCols, &idx, &vals);
+				}
 
-				MatGetValues(GLOC, gM, idm, gN, idn, data);
 				MatDestroy(GLOC);
-
-				MatSetValues(G, gM, idm, gN, idn, data, INSERT_VALUES);
-
 			}
 
 			MatAssemblyBegin(G, MAT_FINAL_ASSEMBLY);
 			MatAssemblyEnd(G, MAT_FINAL_ASSEMBLY);
+
+			timer->markTime("G in dual done");
 		}
 
 		break;
@@ -256,10 +261,10 @@ void AFeti::applyInvGTG(Vec in, Vec out) {
 
 	switch (cpMethod) {
 	case ParaCG:
-/*
+
 		KSPSetTolerances(kspG, 1e-16, 1e-16, 1e7, 5000);
 		KSPSolve(kspG, in, out);
-*/
+
 		break;
 	case MasterWork:
 		VecScatterBegin(tgScat, in, tgLocIn, INSERT_VALUES, SCATTER_FORWARD);
@@ -348,6 +353,7 @@ void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
 	outIterations++;
 
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("DP scatter")->startTimer();
+	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("BA+BT")->startTimer();
 	if (cMan->isDual()) {
 		VecScatterBegin(dBScat, in, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
 		VecScatterEnd(dBScat, in, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
@@ -369,11 +375,9 @@ void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
 
 		if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("DP scatter")->stopTimer();
 
-		MyLogger::Instance()->getTimer("BA+BT")->startTimer();
 		MatMult(BT, pBGlob, temp);
 		applyInvA(temp, info);
 		MatMult(B, temp, pBGlob);
-		MyLogger::Instance()->getTimer("BA+BT")->stopTimer();
 
 		if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("PD scatter")->startTimer();
 
@@ -392,6 +396,8 @@ void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
 		VecScatterBegin(dBScat, pBLoc, out, INSERT_VALUES, SCATTER_REVERSE);
 		VecScatterEnd(dBScat, pBLoc, out, INSERT_VALUES, SCATTER_REVERSE);
 	}
+
+	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("BA+BT")->stopTimer();
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("PD scatter")->stopTimer();
 
 	PetscLogStagePop();
@@ -840,6 +846,8 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 void Feti1::applyPC(Vec g, Vec z) {
 
+
+	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->startTimer();
 	if (cMan->isDual()) {
 
 		if (isSingular) projectGOrth(g);
@@ -884,6 +892,7 @@ void Feti1::applyPC(Vec g, Vec z) {
 
 		if (isSingular) projectGOrth(z);
 	}
+	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->stopTimer();
 
 }
 
@@ -1453,8 +1462,9 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 		rowIndG[i] = i + mesh->startIndexes[rank] * 2;
 	}
 
-	MatCreateMPIDense(comm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, size
-			* 3, PETSC_NULL, R);
+	//MatCreateMPIDense(comm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, size
+	//		* 3, PETSC_NULL, R);
+	MatCreateMPIAIJ(comm, mesh->vetrices.size() * 2, 3, PETSC_DECIDE, PETSC_DECIDE, 3, PETSC_NULL, 0, PETSC_NULL, R);
 
 	for (int j = 0; j < 3; j++) {
 		PetscReal *values;

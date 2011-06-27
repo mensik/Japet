@@ -115,6 +115,39 @@ ConfigManager* ConfigManager::Instance() {
 	return instance;
 }
 
+void MyTimer::markTime(const char * title) {
+
+	MarkedTime* mTime = new MarkedTime();
+	mTime->title = title;
+
+	PetscGetTime(&(mTime->time));
+	mTime->time = mTime->time - start + total;
+	markedTimes.push_back(mTime);
+}
+
+PetscLogDouble MyTimer::getAverageOverComm(MPI_Comm comm) {
+
+	PetscLogDouble allTotal;
+	PetscInt commSize;
+	MPI_Allreduce(&total, &allTotal, 1, MPI_DOUBLE, MPI_SUM, comm);
+	MPI_Comm_size(comm, &commSize);
+
+	return allTotal / commSize;
+}
+
+PetscLogDouble MyTimer::getMaxOverComm(MPI_Comm comm) {
+	PetscLogDouble max;
+	MPI_Allreduce(&total, &max, 1, MPI_DOUBLE, MPI_MAX, comm);
+	return max;
+}
+
+void MyTimer::printMarkedTime(MPI_Comm comm) {
+	PetscPrintf(comm, "Marked times : \n");
+	for (int i = 0; i < markedTimes.size(); i++) {
+		PetscPrintf(comm, "%s \t\t %e s \n", markedTimes[i]->title, markedTimes[i]->time);
+	}
+}
+
 MyLogger* MyLogger::instance = NULL;
 
 MyLogger* MyLogger::Instance() {

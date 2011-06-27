@@ -18,6 +18,7 @@
 #include "mpi.h"
 #include <time.h>
 #include <sys/timeb.h>
+#include <sys/resource.h>
 
 enum CoarseProblemMethod {
 	ParaCG = 0, MasterWork = 1
@@ -161,9 +162,16 @@ public:
 	static ConfigManager* Instance();
 };
 
+struct MarkedTime {
+	const char* title;
+	PetscLogDouble time;
+};
+
 class MyTimer {
 	PetscLogDouble total, start, end;
 	PetscInt laps;
+
+	std::vector<MarkedTime*> markedTimes;
 public:
 	MyTimer() {
 		laps = 0;
@@ -179,6 +187,7 @@ public:
 		total += end - start;
 		laps++;
 	}
+	void markTime(const char * title);
 
 	PetscLogDouble getAverageTime() {
 		return total / laps;
@@ -190,25 +199,16 @@ public:
 		return total;
 	}
 
-	PetscLogDouble getAverageOverComm(MPI_Comm comm) {
+	PetscLogDouble getAverageOverComm(MPI_Comm comm);
 
-		PetscLogDouble allTotal;
-		PetscInt commSize;
-		MPI_Allreduce(&total, &allTotal, 1, MPI_DOUBLE, MPI_SUM, comm);
-		MPI_Comm_size(comm, &commSize);
+	PetscLogDouble getMaxOverComm(MPI_Comm comm);
 
-		return allTotal / commSize;
-	}
-
-	PetscLogDouble getMaxOverComm(MPI_Comm comm) {
-		PetscLogDouble max;
-		MPI_Allreduce(&total, &max, 1, MPI_DOUBLE, MPI_MAX, comm);
-		return max;
-	}
+	void printMarkedTime(MPI_Comm comm);
 };
 
 class MyLogger {
 	static MyLogger *instance;
+
 	MyLogger() {
 
 	}
