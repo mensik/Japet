@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
 		if (commManager->isPrimalRoot()) {
 			PetscInt dimPrim, dimDual, dimNull;
 
-			MatGetSize(A, &dimPrim, PETSC_NULL);
+			VecGetSize(b, &dimPrim);
 			MatGetSize(B, &dimDual, PETSC_NULL);
 			MatGetSize(nullSpace.R, PETSC_NULL, &dimNull);
 
