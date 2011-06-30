@@ -12,7 +12,7 @@ static PetscReal den = 7.85e-9;
 
 void funGravity(Element* e, PetscReal density, PetscReal *fs) {
 	fs[0] = 0;
-	fs[1] = -9800 * density;
+	fs[1] = -9810 * density;
 }
 
 PetscReal funDensity(Element* e) {
