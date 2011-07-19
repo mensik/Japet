@@ -1,7 +1,7 @@
 #
 LINKERFLAGS = -lpetsc -lparmetis
-CPPCOMP = mpic++
-CLINKER = mpic++
+CPPCOMP = mpic++.openmpi
+CLINKER = mpic++.openmpi
 CPPFLAGS = -I/usr/include/petsc -I/usr/include/  
 
 headerDir = ../src
