@@ -210,7 +210,7 @@ public:
 	 * @param[in] M,N cluster division m = k * M; n = j * N
 	 */
 	void generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m, PetscInt n, PetscInt M, PetscInt N);
-	void dumpForMatlab(PetscViewer v);
+	void dumpForMatlab(MPI_Comm comm, PetscViewer v);
 	void save(const char *filename, bool withEdges);
 	void load(const char *filename, bool withEdges);
 	PetscErrorCode partition(int numDomains); ///< call Metis and divide elements among processes, only marks elements

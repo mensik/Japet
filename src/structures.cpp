@@ -69,18 +69,18 @@ Mesh::~Mesh() {
 	}
 }
 
-void Mesh::dumpForMatlab(PetscViewer v) {
+void Mesh::dumpForMatlab(MPI_Comm comm, PetscViewer v) {
 	Mat x;
 	Mat e;
 	Vec dirch, dual, corner;
 
 	PetscInt rank;
-	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_rank(comm, &rank);
 
 	PetscInt indexes[] = { 0, 1, 2, 3 };
 	PetscInt numVetrices = vetrices.size();
 
-	MatCreateMPIAIJ(PETSC_COMM_WORLD, numVetrices, PETSC_DECIDE, PETSC_DECIDE, 4, 4, PETSC_NULL, 4, PETSC_NULL, &x);
+	MatCreateMPIAIJ(comm, numVetrices, PETSC_DECIDE, PETSC_DECIDE, 4, 4, PETSC_NULL, 4, PETSC_NULL, &x);
 
 	std::map<PetscInt, Point*>::iterator point = vetrices.begin();
 	for (int i = 0; i < numVetrices; i++) {
@@ -95,7 +95,7 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 	MatAssemblyBegin(x, MAT_FINAL_ASSEMBLY);
 
 	PetscInt numElements = elements.size();
-	MatCreateMPIAIJ(PETSC_COMM_WORLD, numElements, PETSC_DECIDE, PETSC_DECIDE, 4, 4, PETSC_NULL, 4, PETSC_NULL, &e);
+	MatCreateMPIAIJ(comm, numElements, PETSC_DECIDE, PETSC_DECIDE, 4, 4, PETSC_NULL, 4, PETSC_NULL, &e);
 
 	std::map<PetscInt, Element*>::iterator el = elements.begin();
 	for (int i = 0; i < numElements; i++) {
@@ -122,7 +122,7 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 			indDirchlet.insert(edges[*i]->vetrices[j]);
 		}
 	}
-	VecCreateMPI(PETSC_COMM_WORLD, indDirchlet.size(), PETSC_DECIDE, &dirch);
+	VecCreateMPI(comm, indDirchlet.size(), PETSC_DECIDE, &dirch);
 	PetscInt localStart;
 	VecGetOwnershipRange(dirch, &localStart, PETSC_NULL);
 	for (std::set<PetscInt>::iterator d = indDirchlet.begin(); d
@@ -139,7 +139,7 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 			dualIndices.insert(pointPairing[2 * i + 1]);
 		}
 
-		VecCreateMPI(PETSC_COMM_WORLD, dualIndices.size(), PETSC_DECIDE, &dual);
+		VecCreateMPI(comm, dualIndices.size(), PETSC_DECIDE, &dual);
 		int counter = 0;
 		for (std::set<PetscInt>::iterator d = dualIndices.begin(); d
 				!= dualIndices.end(); d++) {
@@ -154,7 +154,7 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 				cornerInd.insert((*corn)->vetrices[i]);
 		}
 
-		VecCreateMPI(PETSC_COMM_WORLD, cornerInd.size(), PETSC_DECIDE, &corner);
+		VecCreateMPI(comm, cornerInd.size(), PETSC_DECIDE, &corner);
 		counter = 0;
 		for (std::set<PetscInt>::iterator d = cornerInd.begin(); d
 				!= cornerInd.end(); d++) {
@@ -162,8 +162,8 @@ void Mesh::dumpForMatlab(PetscViewer v) {
 		}
 
 	} else {
-		VecCreateMPI(PETSC_COMM_WORLD, 0, PETSC_DECIDE, &dual);
-		VecCreateMPI(PETSC_COMM_WORLD, 0, PETSC_DECIDE, &corner);
+		VecCreateMPI(comm, 0, PETSC_DECIDE, &dual);
+		VecCreateMPI(comm, 0, PETSC_DECIDE, &corner);
 	}
 	VecAssemblyBegin(dual);
 	VecAssemblyEnd(dual);

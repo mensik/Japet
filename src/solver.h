@@ -33,7 +33,7 @@ public:
 	virtual void applyPC(Vec g, Vec z) = 0;
 };
 
-class SolverProjector{
+class SolverProjector {
 public:
 	virtual void applyProjection(Vec w) = 0;
 };
@@ -62,6 +62,8 @@ protected:
 	SolverApp *sApp;
 	SolverCtr *sCtr;
 
+	MPI_Comm comm;
+
 	SolverPreconditioner *sPC;
 	bool isPCset;
 
@@ -70,8 +72,10 @@ protected:
 public:
 	IterationManager itManager;
 
-	Solver(Mat A, Vec b, Vec x, SolverPreconditioner *PC = NULL);
-	Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC = NULL);
+	Solver(Mat A, Vec b, Vec x, SolverPreconditioner *PC = NULL,
+			MPI_Comm comm = MPI_COMM_WORLD);
+	Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC = NULL,
+			MPI_Comm comm = MPI_COMM_WORLD);
 	virtual ~Solver();
 
 	void setIterationData(std::string name, PetscReal value) {
@@ -140,8 +144,9 @@ public:
 		initSolver();
 	}
 	;
-	CGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL) :
-		Solver(sa, b, x, pc) {
+	CGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL,
+			MPI_Comm comm = MPI_COMM_WORLD) :
+		Solver(sa, b, x, pc, comm) {
 		initSolver();
 	}
 	;
@@ -173,7 +178,8 @@ public:
 		Solver(A, b, x, pc) {
 		initSolver();
 	}
-	ReCGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL, SolverProjector *proj = NULL) :
+	ReCGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL,
+			SolverProjector *proj = NULL) :
 		Solver(sa, b, x, pc) {
 		solProj = proj;
 		initSolver();
@@ -282,7 +288,5 @@ public:
 
 	void solve();
 };
-
-
 
 #endif

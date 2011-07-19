@@ -21,7 +21,7 @@
 #include <sys/resource.h>
 
 enum CoarseProblemMethod {
-	ParaCG = 0, MasterWork = 1
+	ParaCG = 0, MasterWork = 1, ORTO = 2
 };
 
 struct IterationInfo {
@@ -32,6 +32,7 @@ struct IterationInfo {
 
 class IterationManager {
 	std::string title;
+	MPI_Comm comm;
 
 	int itCounter;
 	std::vector<IterationInfo> itInfo;
@@ -42,9 +43,13 @@ public:
 	IterationManager() {
 		itCounter = 0;
 		isVerbose = false;
+		this->comm = MPI_COMM_SELF;
 	}
 	void setTitle(std::string title) {
 		this->title = title;
+	}
+	void setComm(MPI_Comm comm) {
+		this->comm = comm;
 	}
 
 	void nextIteration();
@@ -71,7 +76,9 @@ enum PDStrategy {
 	ALL_ONE_SAMEROOT = 1,
 	ALL_TWO_SAMEROOT = 2,
 	HECTOR = 3,
-	TEST = 4
+	TEST = 4,
+	SAME_COMMS = 5,
+	LAST_ROOT = 6
 };
 
 class PDCommManager {
@@ -85,11 +92,26 @@ class PDCommManager {
 public:
 	PDCommManager(MPI_Comm parent, PDStrategy strategy);
 	~PDCommManager() {
-		if (isPrimal()) MPI_Comm_free(&primalComm);
-		if (isDual()) MPI_Comm_free(&dualComm);
+		if (!isSameComm()) {
+			if (isPrimal()) MPI_Comm_free(&primalComm);
+			if (isDual()) MPI_Comm_free(&dualComm);
+		}
 	}
 
 	void printSummary();
+
+	bool isSameComm() {
+
+		bool iSC = false;
+
+		if (isPrimal() && isDual()) {
+			int result;
+			MPI_Comm_compare(primalComm, dualComm, &result);
+			iSC = result == MPI_IDENT;
+		}
+
+		return iSC;
+	}
 
 	MPI_Comm getPrimal() {
 		return primalComm;
@@ -130,6 +152,13 @@ public:
 	}
 	int getDualRank() {
 		return dRank;
+	}
+
+	void show() {
+		PetscPrintf(PETSC_COMM_SELF, "[%d] ", parRank);
+		if (isPrimal()) PetscPrintf(PETSC_COMM_SELF, "\t prim: %d ", pRank);
+		if (isDual()) PetscPrintf(PETSC_COMM_SELF, "\t dual: %d ", dRank);
+		PetscPrintf(PETSC_COMM_SELF, "\n ");
 	}
 };
 

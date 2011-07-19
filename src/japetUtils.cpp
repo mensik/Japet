@@ -4,15 +4,15 @@ void IterationManager::nextIteration() {
 	IterationInfo info;
 	info.itNumber = itCounter;
 
-	if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "%d: ", itCounter);
+	if (isVerbose) PetscPrintf(comm, "%d: ", itCounter);
 
 	for (std::map<std::string, PetscReal>::iterator i = iterationData.begin(); i
 			!= iterationData.end(); i++) {
 		const PetscReal data = i->second;
 		info.itData.push_back(data);
-		if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "\t%s=%e", i->first.c_str(), i->second);
+		if (isVerbose) PetscPrintf(comm, "\t%s=%e", i->first.c_str(), i->second);
 	}
-	if (isVerbose) PetscPrintf(PETSC_COMM_WORLD, "\n");
+	if (isVerbose) PetscPrintf(comm, "\n");
 
 	itInfo.push_back(info);
 	itCounter++;
@@ -20,7 +20,7 @@ void IterationManager::nextIteration() {
 
 void IterationManager::saveIterationInfo(const char *filename, bool rewrite) {
 	PetscInt rank;
-	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_rank(comm, &rank);
 
 	if (!rank) {
 		FILE *f;
@@ -81,6 +81,13 @@ PDCommManager::PDCommManager(MPI_Comm parent, PDStrategy strategy) {
 		MPI_Comm_split(parentComm, (parRank % 3 == 0) ? 0 : MPI_UNDEFINED, 0, &primalComm);
 		MPI_Comm_split(parentComm, (parRank % 2 == 0) ? 0 : MPI_UNDEFINED, 0, &dualComm);
 		break;
+	case SAME_COMMS:
+		primalComm = parentComm;
+		dualComm = parentComm;
+		break;
+	case LAST_ROOT:
+		MPI_Comm_split(parentComm, parRank > 0 ? 0 : MPI_UNDEFINED, -parRank, &primalComm);
+		dualComm = primalComm;
 	}
 
 	if (isPrimal()) {

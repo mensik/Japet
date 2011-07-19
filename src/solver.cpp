@@ -4,11 +4,12 @@ void SolverApp::setRequiredPrecision(PetscReal reqPrecision) {
 
 }
 
-Solver::Solver(Mat A, Vec b, Vec x, SolverPreconditioner *PC) {
+Solver::Solver(Mat A, Vec b, Vec x, SolverPreconditioner *PC, MPI_Comm comm) {
 
 	this->A = A;
 	this->b = b;
 	this->x = x;
+	this->comm = comm;
 
 	sApp = this;
 
@@ -21,10 +22,11 @@ Solver::Solver(Mat A, Vec b, Vec x, SolverPreconditioner *PC) {
 	init();
 }
 
-Solver::Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC) {
+Solver::Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC, MPI_Comm comm) {
 	this->sApp = sa;
 	this->b = b;
 	this->x = x;
+	this->comm = comm;
 
 	if (PC == NULL) {
 		this->sPC = this;
@@ -42,6 +44,8 @@ Solver::~Solver() {
 }
 
 void Solver::init() {
+
+	itManager.setComm(comm);
 
 	sCtr = this;
 	precision = 1e-3;

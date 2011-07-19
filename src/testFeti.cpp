@@ -48,6 +48,12 @@ int main(int argc, char *argv[]) {
 		PDCommManager* commManager =
 				new PDCommManager(PETSC_COMM_WORLD, conf->pdStrategy);
 
+		if (commManager->isSameComm()) {
+
+		}
+
+		// commManager->show();
+
 		PetscLogStageRegister("Assembly", &assembly);
 		PetscLogStagePush(assembly);
 
@@ -55,10 +61,13 @@ int main(int argc, char *argv[]) {
 				* (PetscReal) (conf->reqSize));
 
 		mesh->generateTearedRectMesh(0, conf->Hx, 0.0, conf->Hy, h, conf->m, conf->n, bound, commManager);
-		if (conf->saveOutputs) {
-			PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
-			mesh->dumpForMatlab(v);
-			PetscViewerDestroy(v);
+
+		if (commManager->isPrimal()) {
+			if (conf->saveOutputs) {
+				PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/mesh.m", FILE_MODE_WRITE, &v);
+				mesh->dumpForMatlab(commManager->getPrimal(), v);
+				PetscViewerDestroy(v);
+			}
 		}
 
 		//***********************************************************************************************
@@ -206,19 +215,19 @@ int main(int argc, char *argv[]) {
 		 PetscViewerDestroy(v);
 		 }
 
+
+
+		 //MatDestroy(A);
+		 //MatDestroy(B);
+
+		 if (commManager->isPrimal()) {
+		 MatDestroy(A);
+		 MatDestroy(B);
+		 MatDestroy(BT);
+		 delete mesh;
+		 }
 		 */
-
-		//MatDestroy(A);
-		//MatDestroy(B);
-
-		if (commManager->isPrimal()) {
-			MatDestroy(A);
-			MatDestroy(B);
-			MatDestroy(BT);
-			delete mesh;
-		}
-
-		delete commManager;
+		//delete commManager;
 	}
 	ierr = PetscFinalize();
 	CHKERRQ(ierr);

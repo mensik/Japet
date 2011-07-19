@@ -158,7 +158,7 @@ void FEMAssemble2DElasticity(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
 		PetscReal E, PetscReal mi, PetscReal(*dens)(Element *),
 		void(*f)(Element*, PetscReal, PetscReal*)) {
 	PetscInt rank;
-	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_rank(comm, &rank);
 
 	PetscInt size = mesh->vetrices.size();
 
