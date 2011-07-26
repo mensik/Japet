@@ -63,6 +63,7 @@ void AFeti::initCoarse() {
 	MyLogger::Instance()->getTimer("Coarse init")->startTimer();
 	MyTimer* timer = MyLogger::Instance()->getTimer("Coarse init");
 	PetscLogStagePush(coarseInitStage);
+
 	switch (cpMethod) {
 	case ParaCG:
 
@@ -415,12 +416,12 @@ void AFeti::initCoarse() {
 			MatAssemblyBegin(G, MAT_FINAL_ASSEMBLY);
 			MatAssemblyEnd(G, MAT_FINAL_ASSEMBLY);
 
-/*
-			PetscViewer v;
-			PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/G.m", FILE_MODE_WRITE, &v);
-			MatView(G, v);
-			PetscViewerDestroy(v);
-*/
+			/*
+			 PetscViewer v;
+			 PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/G.m", FILE_MODE_WRITE, &v);
+			 MatView(G, v);
+			 PetscViewerDestroy(v);
+			 */
 
 			VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &tgA);
 			VecDuplicate(tgA, &tgB);
@@ -633,12 +634,15 @@ void AFeti::solve() {
 		//VecCreateGhost(cMan->getPrimal(), PETSC_DECIDE, nD,  0, PETSC_NULL, &eG);
 
 		MatMultTranspose(R, b, peG);
+		VecScale(peG, -1);
 
 		VecScatterBegin(peScat, peG, peL, INSERT_VALUES, SCATTER_FORWARD);
 		VecScatterEnd(peScat, peG, peL, INSERT_VALUES, SCATTER_FORWARD);
 	}
 
 	if (cMan->isDual()) {
+		MatScale(G, -1);
+
 		VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &deG);
 		VecScatterCreateToZero(deG, &deScat, &deL);
 	}
@@ -666,6 +670,7 @@ void AFeti::solve() {
 
 		//Feasible lambda_0 preparation
 
+		Vec lmbIm, lmbKer;
 
 		if (isSingular) { //Je li singularni, je treba pripavit vhodne vstupni lambda
 			Vec eTemp;
@@ -674,31 +679,30 @@ void AFeti::solve() {
 			applyInvGTG(deG, eTemp);
 			MatMult(G, eTemp, lmb);
 
-			//Vec lmbTemp;
-			//VecDuplicate(lmb, &lmbTemp);
-			//applyMult(lmb, lmbTemp, NULL);
-			//VecAXPY(d, 1, lmbTemp);
-			projectGOrth(d);
+			Vec lmbTemp;
+			VecDuplicate(lmb, &lmbKer);
+			applyMult(lmb, lmbKer, NULL);
+			VecAXPY(d, -1, lmbKer);
 
+			VecSet(lmbKer, 0);
+
+			projectGOrth(d);
 		}
 
-		outerSolver = instanceOuterSolver(d, lmb);
+		outerSolver = instanceOuterSolver(d, lmbKer);
 		outerSolver->setSolverCtr(this);
 		outerSolver->setIsVerbose(isVerbose);
 
 		//Solve!!!
 		outerSolver->solve();
-		outerSolver->getX(lmb);
+		outerSolver->getX(lmbKer);
+
+		VecAXPY(lmb, 1, lmbKer);
 
 		if (cMan->isPrimal()) {
 			int nextAction = P_ACTION_BREAK;
 			MPI_Bcast(&nextAction, 1, MPI_INT, 0, cMan->getPrimal());
 		}
-
-		VecScale(lmb, -1);
-
-		VecScatterBegin(dBScat, lmb, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-		VecScatterEnd(dBScat, lmb, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
 
 	} else if (cMan->isPrimal()) { //Proceses which are not dual, but have to participate on primal actions during solving
 
@@ -731,50 +735,28 @@ void AFeti::solve() {
 		}
 	}
 
-	if (cMan->isPrimalRoot()) {
-		// VecCopy(pBLoc, pBLoc);
-	}
-
-	if (cMan->isPrimal()) {
-		VecScatterBegin(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
-		VecScatterEnd(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
-
-		MatMult(BT, pBGlob, temp);
-
-		VecCopy(b, u);
-		VecAXPY(u, 1, temp);
-
-		applyInvA(u, NULL);
-
-		MatMult(B, u, pBGlob);
-
-		VecScatterBegin(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-		VecScatterEnd(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-	}
-
-	if (cMan->isPrimalRoot()) {
-		// VecCopy(pBLoc, pBLoc);
-	}
-
 	//
 	// Rigid body motions
 	//
 	if (isSingular) {
 		if (cMan->isDual()) {
 
-			VecScatterBegin(dBScat, pBLoc, dBGlob, INSERT_VALUES, SCATTER_REVERSE);
-			VecScatterEnd(dBScat, pBLoc, dBGlob, INSERT_VALUES, SCATTER_REVERSE);
+			Vec lmbTemp;
+			VecDuplicate(lmb, &lmbTemp);
+			applyMult(lmb, lmbTemp, NULL);
+
+			VecAYPX(lmbTemp, -1, d);
 
 			Vec bAlp, alpha;
 
 			VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &bAlp);
 			VecDuplicate(bAlp, &alpha);
 
-			MatMultTranspose(G, dBGlob, bAlp);
+			MatMultTranspose(G, lmbTemp, bAlp);
 
 			applyInvGTG(bAlp, alpha);
 
-			VecScale(alpha, -1);
+			//VecScale(alpha, -1);
 
 			VecScatterBegin(deScat, alpha, deL, INSERT_VALUES, SCATTER_FORWARD);
 			VecScatterEnd(deScat, alpha, deL, INSERT_VALUES, SCATTER_FORWARD);
@@ -788,12 +770,20 @@ void AFeti::solve() {
 			VecScatterBegin(peScat, peL, peG, INSERT_VALUES, SCATTER_REVERSE);
 			VecScatterEnd(peScat, peL, peG, INSERT_VALUES, SCATTER_REVERSE);
 
+			VecCopy(b, u);
+
+			VecScale(lmb, -1);
+			MatMultAdd(BT, lmb, u, u);
+			VecScale(lmb, -1);
+
+			applyInvA(u, NULL);
+
 			MatMultAdd(R, peG, u, u);
 		}
 	}
 
 	if (cMan->isDual()) {
-		VecScale(lmb, -1);
+		//VecScale(lmb, -1);
 		VecDestroy(d);
 		VecScatterDestroy(deScat);
 
