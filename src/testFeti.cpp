@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
 		MyLogger::Instance()->getTimer("Solving")->startTimer();
 
 		feti->solve();
-
+/*
 		MyLogger::Instance()->getTimer("Solving")->stopTimer();
 		MyLogger::Instance()->getTimer("feti")->stopTimer();
 
@@ -165,7 +165,7 @@ int main(int argc, char *argv[]) {
 
 			MyLogger::Instance()->getTimer("Coarse init")->printMarkedTime(PETSC_COMM_SELF);
 		}
-
+*/
 		if (conf->saveOutputs) {
 			if (commManager->isPrimal()) {
 

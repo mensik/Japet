@@ -15,6 +15,18 @@
 #include "fem.h"
 #include "solver.h"
 
+class GGLinOp: public SolverApp, public SolverCtr {
+	Mat B;
+	Mat R;
+
+	Vec temp1, temp2, temp3;
+public:
+	GGLinOp(Mat B, Mat R);
+	virtual void applyMult(Vec in, Vec out, IterationManager *info);
+	virtual bool
+	isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm, Vec *vec);
+};
+
 /**
  * @brief Abstract FETI ancestor
  * @note		There is still some work to do. The messiest part of implementation is in dealing with
@@ -41,6 +53,7 @@ protected:
 
 	Vec lmb; ///< Lambda vector
 	Vec d; ///< dual right side
+	Vec e;
 
 	PetscInt gM, gN; ///<	dimensions of G
 	Mat G, GT; ///< BR

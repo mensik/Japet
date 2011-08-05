@@ -1,4 +1,26 @@
 #include "feti.h"
+
+GGLinOp::GGLinOp(Mat B, Mat R) {
+	this->B = B;
+	this->R = R;
+
+	MatGetVecs(B, NULL, &temp2);
+	MatGetVecs(R, NULL, &temp1);
+}
+
+void GGLinOp::applyMult(Vec in, Vec out, IterationManager *info) {
+
+	MatMult(R, in, temp1);
+	MatMult(B, temp1, temp2);
+	MatMultTranspose(B, temp2, temp1);
+	MatMultTranspose(R, temp1, out);
+}
+
+bool GGLinOp::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
+		Vec *vec) {
+	return norm / bNorm < 1e-8;
+}
+
 AFeti::AFeti(PDCommManager* comMan, Vec b, Mat BT, Mat B, Vec lmb,
 		NullSpaceInfo *nullSpace, CoarseProblemMethod cpM) {
 
@@ -63,6 +85,15 @@ void AFeti::initCoarse() {
 	MyLogger::Instance()->getTimer("Coarse init")->startTimer();
 	MyTimer* timer = MyLogger::Instance()->getTimer("Coarse init");
 	PetscLogStagePush(coarseInitStage);
+
+	PetscInt nD;
+	MatGetSize(R, PETSC_NULL, &nD);
+	VecCreateMPI(cMan->getPrimal(), PETSC_DECIDE, nD, &e);
+
+	//VecCreateGhost(cMan->getPrimal(), PETSC_DECIDE, nD,  0, PETSC_NULL, &eG);
+
+	MatMultTranspose(R, b, e);
+	VecScale(e, -1);
 
 	switch (cpMethod) {
 	case ParaCG:
@@ -297,7 +328,7 @@ void AFeti::initCoarse() {
 
 				locIA[0] = 0;
 				MPI_Gatherv(ja, ia[n], MPI_INT, locJA, lNNZ, displ, MPI_INT, 0, cMan->getPrimal());
-				MPI_Gatherv(ia + 1, n, MPI_INT, locIA+1, lNumRow, firstRowIndex, MPI_INT, 0, cMan->getPrimal());
+				MPI_Gatherv(ia + 1, n, MPI_INT, locIA + 1, lNumRow, firstRowIndex, MPI_INT, 0, cMan->getPrimal());
 				MPI_Gatherv(val, ia[n], MPI_DOUBLE, locVal, lNNZ, displ, MPI_DOUBLE, 0, cMan->getPrimal());
 
 				for (int j = 0; j < cMan->getPrimalSize(); j++) {
@@ -372,9 +403,20 @@ void AFeti::initCoarse() {
 				VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gM, &gCols[i]);
 				MatMult(B, rTemp, gCols[i]);
 			}
-
 			VecDestroy(rTemp);
 
+			VecScatter eScat;
+			Vec eMaster;
+			VecScatterCreateToZero(e, &eScat, &eMaster);
+
+			VecScatterBegin(eScat, e, eMaster, INSERT_VALUES, SCATTER_FORWARD);
+			VecScatterEnd(eScat, e, eMaster, INSERT_VALUES, SCATTER_FORWARD);
+
+			PetscScalar *eValues;
+			if (cMan->isDualRoot()) {
+
+				VecGetArray(eMaster, &eValues);
+			}
 			//
 			// Orthogonalization
 			//
@@ -385,14 +427,37 @@ void AFeti::initCoarse() {
 			VecNorm(gCols[0], NORM_2, &r);
 			VecScale(gCols[0], 1 / r);
 
+			if (cMan->isDualRoot()) {
+				eValues[0] = eValues[0] / r;
+			}
+
 			for (int j = 1; j < gN; j++) {
+
+				PetscScalar eDif = 0;
+
 				for (int i = 0; i < j; i++) {
 					VecDot(gCols[i], gCols[j], &r);
 					VecAXPY(gCols[j], -r, gCols[i]);
+
+					if (cMan->isDualRoot()) {
+						eDif += -r * eValues[i];
+					}
 				}
+
 				VecNorm(gCols[j], NORM_2, &r);
 				VecScale(gCols[j], 1 / r);
+
+				if (cMan->isDualRoot()) {
+					eValues[j] = (eValues[j] + eDif) / r;
+				}
 			}
+
+			if (cMan->isDualRoot()) {
+				VecRestoreArray(eMaster, &eValues);
+			}
+
+			VecScatterBegin(eScat, eMaster, e, INSERT_VALUES, SCATTER_REVERSE);
+			VecScatterEnd(eScat, eMaster, e, INSERT_VALUES, SCATTER_REVERSE);
 
 			PetscInt localRows, firstRow;
 			VecGetLocalSize(gCols[0], &localRows);
@@ -416,12 +481,8 @@ void AFeti::initCoarse() {
 			MatAssemblyBegin(G, MAT_FINAL_ASSEMBLY);
 			MatAssemblyEnd(G, MAT_FINAL_ASSEMBLY);
 
-			/*
-			 PetscViewer v;
-			 PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/G.m", FILE_MODE_WRITE, &v);
-			 MatView(G, v);
-			 PetscViewerDestroy(v);
-			 */
+			//VecView(e, PETSC_VIEWER_STDOUT_WORLD);
+
 
 			VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &tgA);
 			VecDuplicate(tgA, &tgB);
@@ -619,6 +680,8 @@ void AFeti::solve() {
 	Vec d, peL, peG, deG, deL;
 	VecScatter peScat, deScat;
 
+	MatScale(G, -1);
+
 	if (cMan->isPrimal()) {
 		VecCopy(b, temp);
 		applyInvA(temp, NULL);
@@ -627,21 +690,15 @@ void AFeti::solve() {
 		VecScatterBegin(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
 		VecScatterEnd(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
 
-		PetscInt nD;
-		MatGetSize(R, PETSC_NULL, &nD);
-		VecCreateMPI(cMan->getPrimal(), PETSC_DECIDE, nD, &peG);
-		VecScatterCreateToZero(peG, &peScat, &peL);
+		VecScatterCreateToZero(e, &peScat, &peL);
+
 		//VecCreateGhost(cMan->getPrimal(), PETSC_DECIDE, nD,  0, PETSC_NULL, &eG);
 
-		MatMultTranspose(R, b, peG);
-		VecScale(peG, -1);
-
-		VecScatterBegin(peScat, peG, peL, INSERT_VALUES, SCATTER_FORWARD);
-		VecScatterEnd(peScat, peG, peL, INSERT_VALUES, SCATTER_FORWARD);
+		VecScatterBegin(peScat, e, peL, INSERT_VALUES, SCATTER_FORWARD);
+		VecScatterEnd(peScat, e, peL, INSERT_VALUES, SCATTER_FORWARD);
 	}
 
 	if (cMan->isDual()) {
-		MatScale(G, -1);
 
 		VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &deG);
 		VecScatterCreateToZero(deG, &deScat, &deL);
@@ -670,7 +727,7 @@ void AFeti::solve() {
 
 		//Feasible lambda_0 preparation
 
-		Vec lmbIm, lmbKer;
+		Vec lmbIm, lmbKer, dAlt;
 
 		if (isSingular) { //Je li singularni, je treba pripavit vhodne vstupni lambda
 			Vec eTemp;
@@ -681,21 +738,32 @@ void AFeti::solve() {
 
 			Vec lmbTemp;
 			VecDuplicate(lmb, &lmbKer);
+			VecDuplicate(d, &dAlt);
 			applyMult(lmb, lmbKer, NULL);
-			VecAXPY(d, -1, lmbKer);
+
+			VecCopy(d, dAlt);
+			VecAXPY(dAlt, -1, lmbKer);
 
 			VecSet(lmbKer, 0);
 
-			projectGOrth(d);
+			projectGOrth(dAlt);
 		}
 
-		outerSolver = instanceOuterSolver(d, lmbKer);
+		outerSolver = instanceOuterSolver(dAlt, lmbKer);
 		outerSolver->setSolverCtr(this);
 		outerSolver->setIsVerbose(isVerbose);
 
 		//Solve!!!
 		outerSolver->solve();
 		outerSolver->getX(lmbKer);
+
+		projectGOrth(lmbKer);
+
+		///PetscViewer v;
+		//PetscViewerBinaryOpen(cMan->getPrimal(), "../matlab/lmbKer.m", FILE_MODE_WRITE, &v);
+		//VecView(e, v);
+		//VecView(lmbKer, v);
+		//PetscViewerDestroy(v);
 
 		VecAXPY(lmb, 1, lmbKer);
 
@@ -752,9 +820,28 @@ void AFeti::solve() {
 			VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &bAlp);
 			VecDuplicate(bAlp, &alpha);
 
-			MatMultTranspose(G, lmbTemp, bAlp);
+			if (cpMethod == ORTO) {
+				Vec tA1, tA2;
 
-			applyInvGTG(bAlp, alpha);
+				MatGetVecs(R, &tA2, &tA1);
+				MatMultTranspose(B, lmbTemp, tA1);
+				MatMultTranspose(R, tA1, tA2);
+
+				GGLinOp * linOp = new GGLinOp(B, R);
+				CGSolver *ggCgSolver =
+						new CGSolver(linOp, tA2, bAlp, NULL, cMan->getDual());
+				ggCgSolver->setSolverCtr(linOp);
+
+				ggCgSolver->solve();
+
+				ggCgSolver->getX(alpha);
+				VecScale(alpha, -1);
+
+				//MatMultTranspose(G, lmbTemp, bAlp);
+			} else {
+				MatMultTranspose(G, lmbTemp, bAlp);
+				applyInvGTG(bAlp, alpha);
+			}
 
 			//VecScale(alpha, -1);
 
@@ -767,18 +854,16 @@ void AFeti::solve() {
 		}
 
 		if (cMan->isPrimal()) {
-			VecScatterBegin(peScat, peL, peG, INSERT_VALUES, SCATTER_REVERSE);
-			VecScatterEnd(peScat, peL, peG, INSERT_VALUES, SCATTER_REVERSE);
+			VecScatterBegin(peScat, peL, e, INSERT_VALUES, SCATTER_REVERSE);
+			VecScatterEnd(peScat, peL, e, INSERT_VALUES, SCATTER_REVERSE);
 
 			VecCopy(b, u);
 
 			VecScale(lmb, -1);
 			MatMultAdd(BT, lmb, u, u);
 			VecScale(lmb, -1);
-
 			applyInvA(u, NULL);
-
-			MatMultAdd(R, peG, u, u);
+			MatMultAdd(R, e, u, u);
 		}
 	}
 
@@ -808,7 +893,7 @@ void AFeti::solve() {
 
 		VecScatterDestroy(peScat);
 		VecDestroy(peL);
-		VecDestroy(peG);
+
 	}
 
 }
@@ -1375,7 +1460,7 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 
 				for (int j = 0; j < cornerSize - 1; j++) {
 
-					PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1) * (cornerSize
+					PetscReal norm = sqrt((PetscReal)(cornerSize - j - 1) * (cornerSize
 							- j - 1) + (cornerSize - j - 1));
 
 					for (int dim = 0; dim < d; dim++) {
