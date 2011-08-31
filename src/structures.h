@@ -77,6 +77,7 @@ public:
 	PetscInt indexDiff; ///< Cluster - global index difference [local]
 
 	NullSpaceInfo *outerNullSpace; ///< Domain outer null space info for FETI [global]
+	NullSpaceInfo *clusterNullSpace;
 	Mat Rin; ///< Cluster null space basis [cluster]
 
 	//Root only

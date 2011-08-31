@@ -1551,6 +1551,10 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 		MPI_Gather(&(cluster->indexDiff), 1, MPI_INT, NULL, 1, MPI_INT, 0, cluster->clusterComm);
 		MPI_Send(&rank, 1, MPI_INT, 0, 0, cluster->clusterComm);
 	}
+
+	corners.clear();
+
+
 }
 
 PetscInt Mesh::getNodeDomain(PetscInt index) {

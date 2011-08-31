@@ -27,52 +27,40 @@ AFeti::AFeti(PDCommManager* comMan, Vec b, Mat BT, Mat B, Vec lmb,
 	this->cpMethod = cpM;
 	this->cMan = comMan;
 
-	PetscLogStageRegister("Coarse Init stage", &coarseInitStage);
-	PetscLogStageRegister("Coarse stage", &coarseStage);
-	PetscLogStageRegister("Feti Init stage", &fetiInitStage);
-	PetscLogStageRegister("A inv stage", &aInvStage);
-
-	PetscLogStagePush(fetiInitStage);
 
 	outerSolver = NULL;
 	isVerbose = false;
 
 	isSingular = true; /// FIX - only works for total FETI
 
-	if (cMan->isPrimal()) {
-		this->b = b;
-		this->BT = BT;
-		this->B = B;
+	this->b = b;
+	this->BT = BT;
+	this->B = B;
 
-		isLocalSingular = nullSpace->isSubDomainSingular;
-		isSingular = nullSpace->isDomainSingular;
-		R = nullSpace->R;
+	isLocalSingular = nullSpace->isSubDomainSingular;
+	isSingular = nullSpace->isDomainSingular;
+	R = nullSpace->R;
 
-		PetscInt lNodeCount;
-		VecGetLocalSize(b, &lNodeCount);
+	PetscInt lNodeCount;
+	VecGetLocalSize(b, &lNodeCount);
 
-		//Priprava ghostovaneho vektoru TEMP a kopie vektoru b do lokalnich casti bloc
-		VecCreateGhost(cMan->getPrimal(), lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &temp);
-		VecCopy(b, temp);
-		VecGhostGetLocalForm(temp, &tempLoc);
+	//Priprava ghostovaneho vektoru TEMP a kopie vektoru b do lokalnich casti bloc
+	VecCreateGhost(cMan->getPrimal(), lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &temp);
+	VecCopy(b, temp);
+	VecGhostGetLocalForm(temp, &tempLoc);
 
-		//Ghostovany vektor reseni
-		VecCreateGhost(cMan->getPrimal(), lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &u);
-		VecSet(u, 0);
+	//Ghostovany vektor reseni
+	VecCreateGhost(cMan->getPrimal(), lNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &u);
+	VecSet(u, 0);
 
-		PetscInt dualSize;
-		MatGetSize(B, &dualSize, PETSC_NULL);
-		VecCreateMPI(cMan->getPrimal(), PETSC_DECIDE, dualSize, &pBGlob);
-		VecScatterCreateToZero(pBGlob, &pBScat, &pBLoc);
-	}
+	PetscInt dualSize;
+	MatGetSize(B, &dualSize, PETSC_NULL);
+	VecCreateMPI(cMan->getPrimal(), PETSC_DECIDE, dualSize, &pBGlob);
+	//VecScatterCreateToZero(pBGlob, &pBScat, &pBLoc);
 
-	if (cMan->isDual()) {
-		this->lmb = lmb;
 
-		VecDuplicate(lmb, &dBGlob);
-		VecScatterCreateToZero(dBGlob, &dBScat, &pBLoc);
+	this->lmb = lmb;
 
-	}
 	//If the matrix A is singular, the matrix G and G'G has to be prepared.
 	if (isSingular) initCoarse();
 
@@ -84,7 +72,7 @@ void AFeti::initCoarse() {
 
 	MyLogger::Instance()->getTimer("Coarse init")->startTimer();
 	MyTimer* timer = MyLogger::Instance()->getTimer("Coarse init");
-	PetscLogStagePush(coarseInitStage);
+
 
 	PetscInt nD;
 	MatGetSize(R, PETSC_NULL, &nD);
@@ -95,93 +83,21 @@ void AFeti::initCoarse() {
 	MatMultTranspose(R, b, e);
 	VecScale(e, -1);
 
+	GGLinOp *linOp;
 	switch (cpMethod) {
 	case ParaCG:
 
-		if (cMan->isPrimal()) {
-			MatMatMult(B, R, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GTemp);
-			MatGetSize(GTemp, &gM, &gN);
-			if (cMan->isPrimalRoot()) { //Bloody messy hellish way to compute GTG - need to compute localy
+		MatGetVecs(R, &parT2, &parT1);
 
+		VecSet(parT1, 0);
+		VecSet(parT2, 0);
 
-				IS ISrows, IScols;
-				ISCreateStride(PETSC_COMM_SELF, gM, 0, 1, &ISrows);
-				ISCreateStride(PETSC_COMM_SELF, gN, 0, 1, &IScols);
-				Mat *gl;
+		linOp = new GGLinOp(B, R);
+		ggParSol = new CGSolver(linOp, parT2, parT2, NULL, cMan->getDual());
+		ggParSol->setSolverCtr(linOp);
 
-				MatGetSubMatrices(GTemp, 1, &ISrows, &IScols, MAT_INITIAL_MATRIX, &gl);
-				GLOC = *gl;
-
-				ISDestroy(ISrows);
-				ISDestroy(IScols);
-
-			} else {
-				IS ISrows, IScols;
-				ISCreateStride(PETSC_COMM_SELF, 0, 0, 1, &ISrows);
-				ISCreateStride(PETSC_COMM_SELF, 0, 0, 1, &IScols);
-				Mat *gl;
-				MatGetSubMatrices(GTemp, 1, &ISrows, &IScols, MAT_INITIAL_MATRIX, &gl);
-				ISDestroy(ISrows);
-				ISDestroy(IScols);
-			}
-			MatDestroy(GTemp);
-		}
-
-		if (cMan->isDual()) {
-			MPI_Bcast(&gM, 1, MPI_INT, 0, cMan->getDual());
-			MPI_Bcast(&gN, 1, MPI_INT, 0, cMan->getDual());
-
-			MatCreateMPIDense(cMan->getDual(), PETSC_DECIDE, PETSC_DECIDE, gM, gN, PETSC_NULL, &G);
-
-			if (cMan->isDualRoot()) {
-
-				PetscScalar data[gM * gN];
-				PetscInt idm[gM], idn[gN];
-				for (int i = 0; i < gN; i++)
-					idn[i] = i;
-				for (int i = 0; i < gM; i++)
-					idm[i] = i;
-
-				MatGetValues(GLOC, gM, idm, gN, idn, data);
-				MatSetValues(G, gM, idm, gN, idn, data, INSERT_VALUES);
-
-			}
-
-			MatAssemblyBegin(G, MAT_FINAL_ASSEMBLY);
-
-			Mat GTG;
-			MatCreateMPIDense(cMan->getDual(), PETSC_DECIDE, PETSC_DECIDE, gN, gN, PETSC_NULL, &GTG);
-
-			if (cMan->isDualRoot()) {
-
-				MatMatMultTranspose(GLOC, GLOC, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GTGloc);
-				MatDestroy(GLOC);
-
-				PetscScalar data[gN * gN];
-				PetscInt idm[gN], idn[gN];
-				for (int i = 0; i < gN; i++)
-					idn[i] = i;
-				for (int i = 0; i < gN; i++)
-					idm[i] = i;
-
-				MatGetValues(GTGloc, gN, idm, gN, idn, data);
-				MatSetValues(GTG, gN, idm, gN, idn, data, INSERT_VALUES);
-			}
-
-			MatAssemblyEnd(G, MAT_FINAL_ASSEMBLY);
-			MatAssemblyBegin(GTG, MAT_FINAL_ASSEMBLY);
-			MatAssemblyEnd(GTG, MAT_FINAL_ASSEMBLY);
-
-			KSPCreate(cMan->getDual(), &kspG);
-			KSPSetOperators(kspG, GTG, GTG, SAME_PRECONDITIONER);
-			KSPSetTolerances(kspG, 1e-16, 1e-16, 1e7, 15000);
-
-			MatDestroy(GTG);
-
-			VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &tgA);
-			VecDuplicate(tgA, &tgB);
-
-		}
+		VecDuplicate(parT2, &tgA);
+		VecDuplicate(tgA, &tgB);
 
 		break;
 
@@ -355,6 +271,7 @@ void AFeti::initCoarse() {
 				MatDestroy(GTGloc);
 
 				PCSetType(pcGTG, "lu");
+
 				PCSetUp(pcGTG);
 
 				KSPSetPC(kspG, pcGTG);
@@ -459,6 +376,9 @@ void AFeti::initCoarse() {
 			VecScatterBegin(eScat, eMaster, e, INSERT_VALUES, SCATTER_REVERSE);
 			VecScatterEnd(eScat, eMaster, e, INSERT_VALUES, SCATTER_REVERSE);
 
+			VecScatterDestroy(eScat);
+			if (cMan->isDualRoot()) VecDestroy(eMaster);
+
 			PetscInt localRows, firstRow;
 			VecGetLocalSize(gCols[0], &localRows);
 			VecGetOwnershipRange(gCols[0], &firstRow, PETSC_NULL);
@@ -487,8 +407,8 @@ void AFeti::initCoarse() {
 			VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &tgA);
 			VecDuplicate(tgA, &tgB);
 
-			VecScatterCreateToZero(tgA, &tgScat, &tgLocIn);
-			VecDuplicate(tgLocIn, &tgLocOut);
+			//VecScatterCreateToZero(tgA, &tgScat, &tgLocIn);
+			//VecDuplicate(tgLocIn, &tgLocOut);
 
 		}
 		break;
@@ -496,7 +416,7 @@ void AFeti::initCoarse() {
 		break;
 	}
 	MyLogger::Instance()->getTimer("Coarse init")->stopTimer();
-	PetscLogStagePop();
+
 
 }
 
@@ -505,8 +425,9 @@ void AFeti::applyInvGTG(Vec in, Vec out) {
 	switch (cpMethod) {
 	case ParaCG:
 
-		KSPSetTolerances(kspG, 1e-16, 1e-16, 1e7, 5000);
-		KSPSolve(kspG, in, out);
+		ggParSol->reset(in, out);
+		ggParSol->solve();
+		ggParSol->getX(out);
 
 		break;
 	case MasterWork:
@@ -530,20 +451,29 @@ void AFeti::applyInvGTG(Vec in, Vec out) {
 
 void AFeti::projectGOrth(Vec in) {
 
-	PetscLogStagePush(coarseStage);
-
 	MyLogger::Instance()->getTimer("Coarse problem")->startTimer();
 
-	MatMultTranspose(G, in, tgA);
+	if (cpMethod != ParaCG) {
+		MatMultTranspose(G, in, tgA);
+	} else {
+
+		MatMultTranspose(B, in, parT1);
+		MatMultTranspose(R, parT1, tgA);
+
+	}
 
 	applyInvGTG(tgA, tgB);
 
 	VecScale(in, -1);
-	MatMultAdd(G, tgB, in, in);
+
+	if (cpMethod != ParaCG) {
+		MatMultAdd(G, tgB, in, in);
+	} else {
+		MatMult(R, tgB, parT1);
+		MatMultAdd(B, parT1, in, in);
+	}
 	VecScale(in, -1);
 	MyLogger::Instance()->getTimer("Coarse problem")->stopTimer();
-
-	PetscLogStagePop();
 }
 
 AFeti::~AFeti() {
@@ -594,73 +524,15 @@ void AFeti::dumpSystem(PetscViewer v) {
 
 void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
 
-	PetscLogStagePush(aInvStage);
-
 	outIterations++;
 
-	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("DP scatter")->startTimer();
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("BA+BT")->startTimer();
 
-	if (!cMan->isSameComm()) {
-		if (cMan->isDual()) {
-			VecScatterBegin(dBScat, in, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-			VecScatterEnd(dBScat, in, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-		}
-	} else {
-		VecCopy(in, pBGlob);
-	}
-
-	//
-	// INTERGROUP transmision
-	//
-	if (cMan->isPrimalRoot()) {
-		// VecCopy(pBLoc, pBLoc);
-	}
-
-	if (cMan->isPrimal()) {
-
-		if (!cMan->isSameComm()) {
-			int nextAction = P_ACTION_INVA;
-			MPI_Bcast(&nextAction, 1, MPI_INT, 0, cMan->getPrimal());
-
-			VecScatterBegin(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
-			VecScatterEnd(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
-		}
-
-		if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("DP scatter")->stopTimer();
-
-		MatMult(BT, pBGlob, temp);
-		applyInvA(temp, info);
-		MatMult(B, temp, pBGlob);
-
-		if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("PD scatter")->startTimer();
-
-		if (!cMan->isSameComm()) {
-			VecScatterBegin(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-			VecScatterEnd(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-		} else {
-			VecCopy(pBGlob, out);
-		}
-	}
-
-	//
-	// INTERGROUP transmision
-	//
-	if (cMan->isPrimalRoot()) {
-		// VecCopy(pBLoc, pBLoc);
-	}
-
-	if (!cMan->isSameComm()) {
-		if (cMan->isDual()) {
-			VecScatterBegin(dBScat, pBLoc, out, INSERT_VALUES, SCATTER_REVERSE);
-			VecScatterEnd(dBScat, pBLoc, out, INSERT_VALUES, SCATTER_REVERSE);
-		}
-	}
+	MatMult(BT, in, temp);
+	applyInvA(temp, info);
+	MatMult(B, temp, out);
 
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("BA+BT")->stopTimer();
-	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("PD scatter")->stopTimer();
-
-	PetscLogStagePop();
 
 }
 
@@ -677,223 +549,137 @@ void AFeti::solve() {
 	inIterations = 0;
 	outIterations = 0;
 
-	Vec d, peL, peG, deG, deL;
-	VecScatter peScat, deScat;
+	Vec d;
+	//	VecScatter peScat, deScat;
 
-	MatScale(G, -1);
+	VecDuplicate(lmb, &d);
 
-	if (cMan->isPrimal()) {
-		VecCopy(b, temp);
-		applyInvA(temp, NULL);
-		MatMult(B, temp, pBGlob);
+	if (cpMethod != ParaCG) MatScale(G, -1);
 
-		VecScatterBegin(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-		VecScatterEnd(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
 
-		VecScatterCreateToZero(e, &peScat, &peL);
-
-		//VecCreateGhost(cMan->getPrimal(), PETSC_DECIDE, nD,  0, PETSC_NULL, &eG);
-
-		VecScatterBegin(peScat, e, peL, INSERT_VALUES, SCATTER_FORWARD);
-		VecScatterEnd(peScat, e, peL, INSERT_VALUES, SCATTER_FORWARD);
-	}
-
-	if (cMan->isDual()) {
-
-		VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &deG);
-		VecScatterCreateToZero(deG, &deScat, &deL);
-	}
+	VecCopy(b, temp);
+	//applyInvA(temp, NULL);
+	//MatMult(B, temp, d);
 
 	//Preparation of the right-hand side vector d=PBA^+b
 	//The matrix P is projector on the space orthogonal to range(G)
 
-	if (cMan->isPrimalRoot()) {
-		// VecCopy(pBLoc, pBLoc);
-		VecCopy(peL, deL);
-	}
+	//if (isSingular) projectGOrth(d); //Projection
 
-	if (cMan->isDual()) {
 
-		VecScatterBegin(dBScat, pBLoc, dBGlob, INSERT_VALUES, SCATTER_REVERSE);
-		VecScatterEnd(dBScat, pBLoc, dBGlob, INSERT_VALUES, SCATTER_REVERSE);
+	//Feasible lambda_0 preparation
 
-		VecDuplicate(lmb, &d);
-		VecCopy(dBGlob, d);
+	Vec lmbIm, lmbKer, dAlt;
 
-		//if (isSingular) projectGOrth(d); //Projection
+	if (isSingular) { //Je li singularni, je treba pripavit vhodne vstupni lambda
 
-		VecScatterBegin(deScat, deL, deG, INSERT_VALUES, SCATTER_REVERSE);
-		VecScatterEnd(deScat, deL, deG, INSERT_VALUES, SCATTER_REVERSE);
+		Vec eTemp;
+		VecDuplicate(e, &eTemp);
+		applyInvGTG(e, eTemp);
 
-		//Feasible lambda_0 preparation
-
-		Vec lmbIm, lmbKer, dAlt;
-
-		if (isSingular) { //Je li singularni, je treba pripavit vhodne vstupni lambda
-			Vec eTemp;
-
-			VecDuplicate(deG, &eTemp);
-			applyInvGTG(deG, eTemp);
+		if (cpMethod != ParaCG) {
 			MatMult(G, eTemp, lmb);
-
-			Vec lmbTemp;
-			VecDuplicate(lmb, &lmbKer);
-			VecDuplicate(d, &dAlt);
-			applyMult(lmb, lmbKer, NULL);
-
-			VecCopy(d, dAlt);
-			VecAXPY(dAlt, -1, lmbKer);
-
-			VecSet(lmbKer, 0);
-
-			projectGOrth(dAlt);
+		} else {
+			MatMult(R, eTemp, parT1);
+			MatMult(B, parT1, lmb);
+			VecScale(lmb, -1);
 		}
 
-		outerSolver = instanceOuterSolver(dAlt, lmbKer);
-		outerSolver->setSolverCtr(this);
-		outerSolver->setIsVerbose(isVerbose);
+		Vec lmbTemp;
+		VecDuplicate(lmb, &lmbKer);
+		VecDuplicate(d, &dAlt);
+		applyMult(lmb, lmbKer, NULL);
 
-		//Solve!!!
-		outerSolver->solve();
-		outerSolver->getX(lmbKer);
+		VecCopy(d, dAlt);
+		VecAXPY(dAlt, -1, lmbKer);
 
-		projectGOrth(lmbKer);
-
-		///PetscViewer v;
-		//PetscViewerBinaryOpen(cMan->getPrimal(), "../matlab/lmbKer.m", FILE_MODE_WRITE, &v);
-		//VecView(e, v);
-		//VecView(lmbKer, v);
-		//PetscViewerDestroy(v);
-
-		VecAXPY(lmb, 1, lmbKer);
-
-		if (cMan->isPrimal()) {
-			int nextAction = P_ACTION_BREAK;
-			MPI_Bcast(&nextAction, 1, MPI_INT, 0, cMan->getPrimal());
-		}
-
-	} else if (cMan->isPrimal()) { //Proceses which are not dual, but have to participate on primal actions during solving
-
-		int nextAction = 0;
-		while (nextAction != P_ACTION_BREAK) {
-			MPI_Bcast(&nextAction, 1, MPI_INT, 0, cMan->getPrimal());
-
-			if (nextAction == P_ACTION_INVA) {
-				VecScatterBegin(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
-				VecScatterEnd(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
-
-				MatMult(BT, pBGlob, temp);
-				applyInvA(temp, NULL);
-				MatMult(B, temp, pBGlob);
-
-				VecScatterBegin(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-				VecScatterEnd(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-			}
-			if (nextAction == P_ACTION_MULTA) {
-				VecScatterBegin(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
-				VecScatterEnd(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
-
-				MatMult(BT, pBGlob, temp);
-				applyPrimalMult(temp, temp);
-				MatMult(B, temp, pBGlob);
-
-				VecScatterBegin(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-				VecScatterEnd(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-			}
-		}
+		VecSet(lmbKer, 0);
+		projectGOrth(dAlt);
 	}
+
+	outerSolver = instanceOuterSolver(dAlt, lmbKer);
+	outerSolver->setSolverCtr(this);
+	outerSolver->setIsVerbose(isVerbose);
+
+	//Solve!!!
+	outerSolver->solve();
+	outerSolver->getX(lmbKer);
+
+	projectGOrth(lmbKer);
+
+	VecAXPY(lmb, 1, lmbKer);
 
 	//
 	// Rigid body motions
 	//
 	if (isSingular) {
-		if (cMan->isDual()) {
 
-			Vec lmbTemp;
-			VecDuplicate(lmb, &lmbTemp);
-			applyMult(lmb, lmbTemp, NULL);
+		Vec lmbTemp;
+		VecDuplicate(lmb, &lmbTemp);
+		applyMult(lmb, lmbTemp, NULL);
 
-			VecAYPX(lmbTemp, -1, d);
+		VecAYPX(lmbTemp, -1, d);
 
-			Vec bAlp, alpha;
+		Vec bAlp, alpha;
 
-			VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &bAlp);
-			VecDuplicate(bAlp, &alpha);
+		VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &bAlp);
+		VecDuplicate(bAlp, &alpha);
 
-			if (cpMethod == ORTO) {
-				Vec tA1, tA2;
+		if (cpMethod == ORTO) {
+			Vec tA1, tA2;
 
-				MatGetVecs(R, &tA2, &tA1);
-				MatMultTranspose(B, lmbTemp, tA1);
-				MatMultTranspose(R, tA1, tA2);
+			MatGetVecs(R, &tA2, &tA1);
+			MatMultTranspose(B, lmbTemp, tA1);
+			MatMultTranspose(R, tA1, tA2);
 
-				GGLinOp * linOp = new GGLinOp(B, R);
-				CGSolver *ggCgSolver =
-						new CGSolver(linOp, tA2, bAlp, NULL, cMan->getDual());
-				ggCgSolver->setSolverCtr(linOp);
+			GGLinOp * linOp = new GGLinOp(B, R);
+			CGSolver *ggCgSolver =
+					new CGSolver(linOp, tA2, bAlp, NULL, cMan->getDual());
+			ggCgSolver->setSolverCtr(linOp);
 
-				ggCgSolver->solve();
+			ggCgSolver->solve();
 
-				ggCgSolver->getX(alpha);
-				VecScale(alpha, -1);
+			ggCgSolver->getX(alpha);
+			VecScale(alpha, -1);
 
-				//MatMultTranspose(G, lmbTemp, bAlp);
-			} else {
-				MatMultTranspose(G, lmbTemp, bAlp);
-				applyInvGTG(bAlp, alpha);
-			}
+			//MatMultTranspose(G, lmbTemp, bAlp);
+		} else if (cpMethod == ParaCG) {
 
-			//VecScale(alpha, -1);
+			MatMultTranspose(B, lmbTemp, parT1);
+			MatMultTranspose(R, parT1, bAlp);
 
-			VecScatterBegin(deScat, alpha, deL, INSERT_VALUES, SCATTER_FORWARD);
-			VecScatterEnd(deScat, alpha, deL, INSERT_VALUES, SCATTER_FORWARD);
+			VecScale(bAlp, -1);
+			applyInvGTG(bAlp, alpha);
+
+		} else {
+			MatMultTranspose(G, lmbTemp, bAlp);
+			applyInvGTG(bAlp, alpha);
 		}
 
-		if (cMan->isPrimalRoot()) {
-			VecCopy(deL, peL);
-		}
+		VecCopy(b, u);
 
-		if (cMan->isPrimal()) {
-			VecScatterBegin(peScat, peL, e, INSERT_VALUES, SCATTER_REVERSE);
-			VecScatterEnd(peScat, peL, e, INSERT_VALUES, SCATTER_REVERSE);
+		VecScale(lmb, -1);
+		MatMultAdd(BT, lmb, u, u);
+		VecScale(lmb, -1);
+		applyInvA(u, NULL);
+		MatMultAdd(R, alpha, u, u);
 
-			VecCopy(b, u);
-
-			VecScale(lmb, -1);
-			MatMultAdd(BT, lmb, u, u);
-			VecScale(lmb, -1);
-			applyInvA(u, NULL);
-			MatMultAdd(R, e, u, u);
-		}
 	}
 
-	if (cMan->isDual()) {
-		//VecScale(lmb, -1);
-		VecDestroy(d);
-		VecScatterDestroy(deScat);
+	//VecScale(lmb, -1);
+	//VecDestroy(d);
 
-		VecDestroy(deL);
-		VecDestroy(deG);
-	}
+	if (isVerbose) {
+		PetscReal feasErr, uNorm;
 
-	if (cMan->isPrimal()) {
-		if (isVerbose) {
-			PetscReal feasErr, uNorm;
+		MatMult(B, u, d);
 
-			MatMult(B, u, pBGlob);
+		VecNorm(d, NORM_2, &feasErr);
+		VecNorm(u, NORM_2, &uNorm);
 
-			VecNorm(pBGlob, NORM_2, &feasErr);
-			VecNorm(u, NORM_2, &uNorm);
-
-			PetscPrintf(cMan->getPrimal(), "\n");
-			PetscPrintf(cMan->getPrimal(), "FETI finished   Outer it: %d   Inner it: %d\n", outIterations, inIterations);
-			PetscPrintf(cMan->getPrimal(), "Feasibility err: %e \n", feasErr / uNorm);
-
-		}
-
-		VecScatterDestroy(peScat);
-		VecDestroy(peL);
-
+		PetscPrintf(cMan->getPrimal(), "\n");
+		PetscPrintf(cMan->getPrimal(), "FETI finished   Outer it: %d   Inner it: %d\n", outIterations, inIterations);
+		PetscPrintf(cMan->getPrimal(), "Feasibility err: %e \n", feasErr / uNorm);
 	}
 
 }
@@ -920,9 +706,6 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		PetscInt *fNodes, CoarseProblemMethod cpM) :
 	AFeti(comMan, b, BT, B, lmb, nullSpace, cpM) {
 
-	PetscLogStageRegister("A FIX+Factorization stage", &aFactorStage);
-	PetscLogStagePush(aFactorStage);
-
 	if (cMan->isPrimal()) {
 
 		PetscInt lNodeCount;
@@ -935,12 +718,8 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 
 		this->A = A;
 
-		PetscLogStage extA;
-		PetscLogStageRegister("Exctract Aloc", &extA);
-		PetscLogStagePush(extA);
 		Aloc = A;
 		//extractLocalAPart(A, &Aloc);
-		PetscLogStagePop();
 		//Matrix regularization!
 
 		PetscInt firstRow, lastRow, nCols, locNullDim, nodeDim;
@@ -1007,11 +786,7 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		Mat Areg;
 		MatDuplicate(Aloc, MAT_COPY_VALUES, &Areg);
 
-		PetscLogStage regAStage;
-		PetscLogStageRegister("Regularization", &regAStage);
-		PetscLogStagePush(regAStage);
 		MatAXPY(Areg, 1, REGREGT, DIFFERENT_NONZERO_PATTERN);
-		PetscLogStagePop();
 
 		PC pc;
 
@@ -1043,10 +818,6 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 
 	}
 
-	PetscLogStagePop();
-
-	PetscLogStagePop();
-
 }
 
 void Feti1::solve() {
@@ -1057,30 +828,16 @@ void Feti1::solve() {
 
 	if (isVerbose) {
 
-		if (cMan->isDual()) {
-			VecScatterBegin(dBScat, lmb, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-			VecScatterEnd(dBScat, lmb, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-		}
+		VecNorm(b, NORM_2, &normB);
 
-		if (cMan->isPrimalRoot()) {
-			// VecCopy(pBLoc, pBLoc);
-		}
+		applyPrimalMult(u, temp);
+		VecAXPY(temp, -1, b);
+		MatMult(BT, lmb, tempInv);
+		VecAXPY(temp, 1, tempInv);
 
-		if (cMan->isPrimal()) {
-			VecScatterBegin(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
-			VecScatterEnd(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
+		VecNorm(temp, NORM_2, &error);
 
-			VecNorm(b, NORM_2, &normB);
-
-			applyPrimalMult(u, temp);
-			VecAXPY(temp, -1, b);
-			MatMult(BT, pBGlob, tempInv);
-			VecAXPY(temp, 1, tempInv);
-
-			VecNorm(temp, NORM_2, &error);
-
-			PetscPrintf(cMan->getPrimal(), "Relative error: %e\n\n", error / normB);
-		}
+		PetscPrintf(cMan->getPrimal(), "Relative error: %e\n\n", error / normB);
 
 	}
 
@@ -1127,65 +884,13 @@ void Feti1::applyPC(Vec g, Vec z) {
 
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->startTimer();
 
-	if (!cMan->isSameComm()) {
-		if (cMan->isDual()) {
+	if (isSingular) projectGOrth(g);
 
-			if (isSingular) projectGOrth(g);
+	MatMult(BT, g, temp);
+	applyPrimalMult(temp, temp);
+	MatMult(B, temp, z);
 
-			VecScatterBegin(dBScat, g, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-			VecScatterEnd(dBScat, g, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-		}
-	} else {
-		if (isSingular) projectGOrth(g);
-		VecCopy(g, pBGlob);
-	}
-
-	//
-	// INTERGROUP transmision
-	//
-	if (cMan->isPrimalRoot()) {
-		// VecCopy(pBLoc, pBLoc);
-	}
-
-	if (cMan->isPrimal()) {
-		if (!cMan->isSameComm()) {
-			int nextAction = P_ACTION_MULTA;
-			MPI_Bcast(&nextAction, 1, MPI_INT, 0, cMan->getPrimal());
-
-			VecScatterBegin(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
-			VecScatterEnd(pBScat, pBLoc, pBGlob, INSERT_VALUES, SCATTER_REVERSE);
-		}
-
-		MatMult(BT, pBGlob, temp);
-		applyPrimalMult(temp, temp);
-		MatMult(B, temp, pBGlob);
-
-		if (!cMan->isSameComm()) {
-			VecScatterBegin(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-			VecScatterEnd(pBScat, pBGlob, pBLoc, INSERT_VALUES, SCATTER_FORWARD);
-		} else {
-			VecCopy(pBGlob, z);
-		}
-	}
-
-	//
-	// INTERGROUP transmision
-	//
-	if (cMan->isPrimalRoot()) {
-
-		// VecCopy(pBLoc, pBLoc);
-	}
-	if (!cMan->isSameComm()) {
-		if (cMan->isDual()) {
-
-			VecScatterBegin(dBScat, pBLoc, z, INSERT_VALUES, SCATTER_REVERSE);
-			VecScatterEnd(dBScat, pBLoc, z, INSERT_VALUES, SCATTER_REVERSE);
-
-			if (isSingular) projectGOrth(z);
-		}
-	} else {
-		if (isSingular) projectGOrth(z);
-	}
+	if (isSingular) projectGOrth(z);
 
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->stopTimer();
 
@@ -1257,39 +962,41 @@ void InexactFeti1::setRequiredPrecision(PetscReal reqPrecision) {
 	outerPrec = reqPrecision;
 }
 
-/*
- HFeti::HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
- SubdomainCluster *cluster, PetscInt localNodeCount, MPI_Comm comm) :
- AFeti(b, BGlob, lmbGl, cluster->outerNullSpace, comm) {
+HFeti::HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob,
+		Mat BClust, Mat BTClust, Vec lmbGl, Vec lmbCl, SubdomainCluster *cluster,
+		PetscInt localNodeCount) :
+	AFeti(pdMan, b, BTGlob, BGlob, lmbGl, cluster->outerNullSpace, MasterWork) {
 
- VecCreateGhost(comm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &globTemp);
- VecSet(globTemp, 0);
- VecGhostGetLocalForm(globTemp, &globTempGh);
+	VecCreateGhost(cMan->getParen(), localNodeCount * 2, PETSC_DECIDE, 0, PETSC_NULL, &globTemp);
+	VecSet(globTemp, 0);
+	VecGhostGetLocalForm(globTemp, &globTempGh);
 
- VecCreateGhost(cluster->clusterComm, localNodeCount, PETSC_DECIDE, 0, PETSC_NULL, &clustTemp);
- VecSet(clustTemp, 0);
- VecGhostGetLocalForm(clustTemp, &clustTempGh);
+	VecCreateGhost(cluster->clusterComm, localNodeCount * 2, PETSC_DECIDE, 0, PETSC_NULL, &clustTemp);
+	VecSet(clustTemp, 0);
+	VecGhostGetLocalForm(clustTemp, &clustTempGh);
 
- VecCreateMPI(cluster->clusterComm, localNodeCount, PETSC_DECIDE, &clustb);
- VecCopy(b, globTemp);
- VecCopy(globTempGh, clustTempGh);
- VecCopy(clustTemp, clustb);
+	VecCreateMPI(cluster->clusterComm, localNodeCount * 2, PETSC_DECIDE, &clustb);
 
- clustNullSpace = new NullSpaceInfo();
- clustNullSpace->R = cluster->Rin;
- clustNullSpace->isDomainSingular = cluster->isClusterSingular;
- clustNullSpace->isSubDomainSingular = cluster->isSubDomainSingular;
+	VecCopy(b, globTemp);
+	VecCopy(globTempGh, clustTempGh);
+	VecCopy(clustTemp, clustb);
 
- subClusterSystem
- = new mFeti1(A, clustb, BClust, lmbCl, clustNullSpace, localNodeCount, cluster->clusterComm);
- subClusterSystem->setSystemSingular();
+	PDCommManager *clustComMan =
+			new PDCommManager(cluster->clusterComm, SAME_COMMS);
 
- //Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
- if (isLocalSingular) {
- MatNullSpaceCreate(cluster->clusterComm, PETSC_TRUE, 0, PETSC_NULL, &clusterNS);
- }
- }
- */
+	//
+	// TODO GTG ve vnitrnim feti neni regularni!!!
+	//
+	subClusterSystem
+			= new Feti1(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork);
+	subClusterSystem->setSystemSingular();
+
+	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
+	//if (isLocalSingular) {
+	//	MatNullSpaceCreate(cluster->clusterComm, PETSC_TRUE, 0, PETSC_NULL, &clusterNS);
+	//}
+
+}
 
 HFeti::~HFeti() {
 	delete subClusterSystem;
@@ -1299,7 +1006,8 @@ void HFeti::applyInvA(Vec in, IterationManager *itManager) {
 
 	VecCopy(in, globTemp);
 	VecCopy(globTempGh, clustTempGh);
-	if (isLocalSingular) MatNullSpaceRemove(clusterNS, clustTemp, PETSC_NULL);
+//	if (isLocalSingular) MatNullSpaceRemove(clusterNS, clustTemp, PETSC_NULL);
+//	subClusterSystem->setIsVerbose(true);
 	subClusterSystem->setRequiredPrecision(outerPrec);
 	subClusterSystem->solve(clustTemp);
 	subClusterSystem->copySolution(clustTemp);
@@ -1325,6 +1033,14 @@ Solver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
 void HFeti::setRequiredPrecision(PetscReal reqPrecision) {
 	outerPrec = reqPrecision;
 }
+
+//
+//
+//
+// ******************************************************************************
+//
+//
+
 
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 	PetscInt rank;
@@ -1460,7 +1176,7 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 
 				for (int j = 0; j < cornerSize - 1; j++) {
 
-					PetscReal norm = sqrt((PetscReal)(cornerSize - j - 1) * (cornerSize
+					PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1) * (cornerSize
 							- j - 1) + (cornerSize - j - 1));
 
 					for (int dim = 0; dim < d; dim++) {
@@ -1511,12 +1227,19 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 }
 
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
-		Mat &BGlob, Vec &lmbGlob, Mat &BCluster, Vec &lmbCluster) {
+		Mat &BGlob, Mat &BTGlob, Vec &lmbGlob, Mat &BCluster, Mat &BTCluster,
+		Vec &lmbCluster) {
+
 	PetscInt rank, subRank, size;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 	MPI_Comm_rank(cluster->clusterComm, &subRank);
 
 	MPI_Comm_size(PETSC_COMM_WORLD, &size);
+
+	int d = 2;
+	//
+	//Put all dirchlet nodes to root
+	//
 
 	int dSize;
 	std::set<PetscInt> indDirchlet;
@@ -1526,9 +1249,16 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		for (int j = 0; j < 2; j++) {
 			indDirchlet.insert(mesh->edges[*i]->vetrices[j]);
 		}
+
 	}
 	dSize = indDirchlet.size();
 
+	PetscInt locDirch[dSize];
+	int counter = 0;
+	for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i
+			!= indDirchlet.end(); i++) {
+		locDirch[counter++] = *i;
+	}
 	int dNodeCounts[size];
 	MPI_Allgather(&dSize, 1, MPI_INT, dNodeCounts, 1, MPI_INT, PETSC_COMM_WORLD);
 
@@ -1536,64 +1266,211 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 	for (int i = 0; i < size; i++)
 		dSum += dNodeCounts[i];
 
-	//Preparation - scatter of the informations
-	PetscInt globalPairCount, localPairCount;
-	if (!rank) {
-		globalPairCount = cluster->globalPairing.size() / 2;
-	}
-	MPI_Bcast(&globalPairCount, 1, MPI_INT, 0, PETSC_COMM_WORLD);
-	if (!subRank) {
-		localPairCount = cluster->localPairing.size() / 2;
-	}
-	MPI_Bcast(&localPairCount, 1, MPI_INT, 0, cluster->clusterComm);
+	int globalPairsCount = cluster->globalPairing.size() / 2;
+	MPI_Bcast(&globalPairsCount, 1, MPI_INT, 0, PETSC_COMM_WORLD);
 
-	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, mesh->vetrices.size(), globalPairCount
-			+ dSum, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BGlob);
-	VecCreateMPI(PETSC_COMM_WORLD, mesh->vetrices.size(), PETSC_DECIDE, &lmbGlob);
-
-	int sIndex = 0;
-	for (int i = 0; i < rank; i++)
-		sIndex += dNodeCounts[i];
-
-	for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i
-			!= indDirchlet.end(); i++) {
-		MatSetValue(BGlob, sIndex++, *i, 1, INSERT_VALUES);
-	}
-
-	PetscReal boundVal = 1.0 / sqrt(2.0); // Value is normalized for keeping the B matrix ortonormal
+	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, mesh->vetrices.size() * d, (globalPairsCount
+			+ dSum) * d, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BGlob);
+	MatCreateMPIAIJ(PETSC_COMM_WORLD, mesh->vetrices.size() * d, PETSC_DECIDE, PETSC_DECIDE, (globalPairsCount
+			+ dSum) * d, 2, PETSC_NULL, 2, PETSC_NULL, &BTGlob);
 
 	if (!rank) {
-		std::vector<PetscInt>::iterator i = cluster->globalPairing.begin();
-		for (int rowCounter = 0; rowCounter < globalPairCount; rowCounter++) {
-			MatSetValue(BGlob, rowCounter + dSum, *(i++), boundVal, INSERT_VALUES);
-			MatSetValue(BGlob, rowCounter + dSum, *(i++), -boundVal, INSERT_VALUES);
+
+		PetscInt globDirch[dSum];
+		int displac[size];
+		displac[0] = 0;
+		for (int i = 1; i < size; i++)
+			displac[i] = displac[i - 1] + dNodeCounts[i - 1];
+
+		MPI_Gatherv(locDirch, dSize, MPI_INT, globDirch, dNodeCounts, displac, MPI_INT, 0, PETSC_COMM_WORLD);
+
+		int sIndex = 0;
+		for (int i = 0; i < dSum; i++) {
+			for (int j = 0; j < d; j++) {
+				MatSetValue(BGlob, sIndex, globDirch[i] * d + j, 1, INSERT_VALUES);
+				MatSetValue(BTGlob, globDirch[i] * d + j, sIndex, 1, INSERT_VALUES);
+				sIndex++;
+			}
 		}
+
+		typedef std::map<PetscInt, std::set<PetscInt> > PGroupMap;
+		PGroupMap equalGroups;
+
+		for (std::vector<PetscInt>::iterator i = cluster->globalPairing.begin(); i
+				!= cluster->globalPairing.end(); i = i + 2) {
+
+			std::set<PetscInt> newSet;
+
+			PetscInt pair[] = { *i, *(i + 1) };
+
+			for (int j = 0; j < 2; j++) {
+				newSet.insert(pair[j]);
+
+				for (std::set<PetscInt>::iterator k = equalGroups[pair[j]].begin(); k
+						!= equalGroups[pair[j]].end(); k++) {
+					newSet.insert(*k);
+				}
+			}
+
+			for (std::set<PetscInt>::iterator j = newSet.begin(); j != newSet.end(); j++) {
+				for (std::set<PetscInt>::iterator k = newSet.begin(); k != newSet.end(); k++) {
+					equalGroups[*j].insert(*k);
+				}
+			}
+		}
+
+		// for (PGroupMap::iterator i = equalGroups.begin(); i != equalGroups.end(); i++) {
+		// PetscPrintf(PETSC_COMM_SELF, "[%d] - ", i->first);
+		// for (std::set<PetscInt>::iterator j = i->second.begin(); j
+		// != i->second.end(); j++) {
+		// PetscPrintf(PETSC_COMM_SELF, " %d ", *j);
+		// }
+		// PetscPrintf(PETSC_COMM_SELF, "\n");
+		// }
+
+
+		PetscInt rowCounter = dSum;
+
+		while (equalGroups.size() > 0) {
+
+			std::set<PetscInt> p = equalGroups.begin()->second;
+
+			PetscInt cornerSize = p.size();
+			PetscInt *vetrices = new PetscInt[cornerSize];
+
+			int cc = 0;
+			for (std::set<PetscInt>::iterator j = p.begin(); j != p.end(); j++) {
+				vetrices[cc++] = *j;
+				equalGroups.erase(*j);
+			}
+
+			for (int j = 0; j < cornerSize - 1; j++) {
+
+				PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1) * (cornerSize
+						- j - 1) + (cornerSize - j - 1));
+
+				for (int dim = 0; dim < d; dim++) {
+					MatSetValue(BGlob, rowCounter * d + dim, vetrices[j] * d + dim, -(cornerSize
+							- j - 1) / norm, INSERT_VALUES);
+					MatSetValue(BTGlob, vetrices[j] * d + dim, rowCounter * d + dim, -(cornerSize
+							- j - 1) / norm, INSERT_VALUES);
+
+					for (int k = j + 1; k < cornerSize; k++) {
+						MatSetValue(BGlob, rowCounter * d + dim, vetrices[k] * d + dim, 1
+								/ norm, INSERT_VALUES);
+						MatSetValue(BTGlob, vetrices[k] * d + dim, rowCounter * d + dim, 1
+								/ norm, INSERT_VALUES);
+					}
+				}
+				rowCounter++;
+			}
+			delete[] vetrices;
+		}
+	} else {
+		MPI_Gatherv(locDirch, dSize, MPI_INT, NULL, 0, NULL, MPI_INT, 0, PETSC_COMM_WORLD);
 	}
 
 	MatAssemblyBegin(BGlob, MAT_FINAL_ASSEMBLY);
 	MatAssemblyEnd(BGlob, MAT_FINAL_ASSEMBLY);
+
+	MatAssemblyBegin(BTGlob, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(BTGlob, MAT_FINAL_ASSEMBLY);
+
+	VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, (globalPairsCount + dSum) * d, &lmbGlob);
 	VecSet(lmbGlob, 0);
 
-	MatCreateMPIAIJ(cluster->clusterComm, PETSC_DECIDE, mesh->vetrices.size(), localPairCount, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BCluster);
-	VecCreateMPI(cluster->clusterComm, mesh->vetrices.size(), PETSC_DECIDE, &lmbCluster);
+	int clusterPairCount = cluster->localPairing.size() / 2;
+	MPI_Bcast(&clusterPairCount, 1, MPI_INT, 0, cluster->clusterComm);
+
+	MatCreateMPIAIJ(cluster->clusterComm, PETSC_DECIDE, mesh->vetrices.size() * d, clusterPairCount
+			* d, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BCluster);
+	MatCreateMPIAIJ(cluster->clusterComm, mesh->vetrices.size() * d, PETSC_DECIDE, PETSC_DECIDE, clusterPairCount
+			* d, 2, PETSC_NULL, 2, PETSC_NULL, &BTCluster);
+
+	VecCreateMPI(cluster->clusterComm, PETSC_DECIDE, clusterPairCount, &lmbCluster);
 
 	if (!subRank) {
-		std::vector<PetscInt>::iterator i = cluster->localPairing.begin();
-		for (int rowCounter = 0; rowCounter < localPairCount; rowCounter++) {
-			PetscInt globalIndex = *(i++);
-			PetscInt clusterIndex = globalIndex
-					+ cluster->startIndexesDiff[mesh->getNodeDomain(globalIndex)];
-			MatSetValue(BCluster, rowCounter, clusterIndex, boundVal, INSERT_VALUES);
-			globalIndex = *(i++);
-			clusterIndex = globalIndex
-					+ cluster->startIndexesDiff[mesh->getNodeDomain(globalIndex)];
-			MatSetValue(BCluster, rowCounter, clusterIndex, -boundVal, INSERT_VALUES);
+
+		typedef std::map<PetscInt, std::set<PetscInt> > PGroupMap;
+		PGroupMap equalGroups;
+
+		for (std::vector<PetscInt>::iterator i = cluster->localPairing.begin(); i
+				!= cluster->localPairing.end(); i = i + 2) {
+
+			std::set<PetscInt> newSet;
+
+			PetscInt pair[] = { *i, *(i + 1) };
+
+			for (int j = 0; j < 2; j++) {
+				newSet.insert(pair[j]);
+
+				for (std::set<PetscInt>::iterator k = equalGroups[pair[j]].begin(); k
+						!= equalGroups[pair[j]].end(); k++) {
+					newSet.insert(*k);
+				}
+			}
+
+			for (std::set<PetscInt>::iterator j = newSet.begin(); j != newSet.end(); j++) {
+				for (std::set<PetscInt>::iterator k = newSet.begin(); k != newSet.end(); k++) {
+					equalGroups[*j].insert(*k);
+				}
+			}
+		}
+
+		PetscInt rowCounter = 0;
+		while (equalGroups.size() > 0) {
+
+			std::set<PetscInt> p = equalGroups.begin()->second;
+
+			PetscInt cornerSize = p.size();
+			PetscInt *vetrices = new PetscInt[cornerSize];
+
+			int cc = 0;
+			for (std::set<PetscInt>::iterator j = p.begin(); j != p.end(); j++) {
+
+				PetscInt globalIndex = *j;
+				PetscInt clusterIndex = globalIndex
+						+ cluster->startIndexesDiff[mesh->getNodeDomain(globalIndex)];
+				vetrices[cc++] = clusterIndex;
+
+				equalGroups.erase(*j);
+			}
+
+			for (int j = 0; j < cornerSize - 1; j++) {
+
+				PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1) * (cornerSize
+						- j - 1) + (cornerSize - j - 1));
+
+				for (int dim = 0; dim < d; dim++) {
+
+					MatSetValue(BCluster, rowCounter * d + dim, vetrices[j] * d + dim, -(cornerSize
+							- j - 1) / norm, INSERT_VALUES);
+					MatSetValue(BTCluster, vetrices[j] * d + dim, rowCounter * d + dim, -(cornerSize
+							- j - 1) / norm, INSERT_VALUES);
+
+					for (int k = j + 1; k < cornerSize; k++) {
+						MatSetValue(BCluster, rowCounter * d + dim, vetrices[k] * d + dim, 1
+								/ norm, INSERT_VALUES);
+						MatSetValue(BTCluster, vetrices[k] * d + dim, rowCounter * d + dim, 1
+								/ norm, INSERT_VALUES);
+					}
+				}
+
+				rowCounter++;
+			}
+
+			delete[] vetrices;
 		}
 	}
 
 	MatAssemblyBegin(BCluster, MAT_FINAL_ASSEMBLY);
 	MatAssemblyEnd(BCluster, MAT_FINAL_ASSEMBLY);
+
+	MatAssemblyBegin(BTCluster, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(BTCluster, MAT_FINAL_ASSEMBLY);
+
 	VecSet(lmbCluster, 0);
+
 }
 
 void getLocalJumpPart(Mat B, Mat *Bloc) {
@@ -1832,6 +1709,112 @@ void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster) {
 
 	cluster->outerNullSpace = outNullSpace;
 	cluster->Rin = RClust;
+}
+
+void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster) {
+
+	MPI_Comm comm = cluster->clusterComm;
+	NullSpaceInfo *nullSpace = new NullSpaceInfo();
+	NullSpaceInfo *gNullSpace = new NullSpaceInfo();
+
+	PetscInt rank, size;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+	nullSpace->localDimension = 3;
+	nullSpace->isDomainSingular = true;
+	nullSpace->isSubDomainSingular = true;
+
+	gNullSpace->localDimension = 3;
+	gNullSpace->isDomainSingular = true;
+	gNullSpace->isSubDomainSingular = true;
+
+	//Creating of matrix R - null space basis
+	Mat *R = &(nullSpace->R);
+	Mat *Rglob = &(gNullSpace->R);
+
+	nullSpace->localBasis = new Vec[3];
+	for (int i = 0; i < 3; i++) {
+		VecCreateSeq(PETSC_COMM_SELF, mesh->vetrices.size() * 2, &(nullSpace->localBasis[i]));
+	}
+
+	PetscInt localRSize = mesh->vetrices.size() * 2;
+	PetscInt *rowIndG = new PetscInt[localRSize];
+	PetscInt *rowIndGlob = new PetscInt[localRSize];
+
+	int cRank;
+	MPI_Comm_rank(cluster->clusterComm, &cRank);
+
+	int counter = 0;
+	for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
+			!= mesh->vetrices.end(); v++) {
+
+		rowIndGlob[counter] = v->first * 2;
+		rowIndG[counter++] = (v->first + cluster->indexDiff) * 2;
+		rowIndGlob[counter] = v->first * 2 + 1;
+		rowIndG[counter++] = (v->first + cluster->indexDiff) * 2 + 1;
+
+		VecSetValue(nullSpace->localBasis[0], (v->first - mesh->startIndexes[rank])
+				* 2, 1, INSERT_VALUES);
+		VecSetValue(nullSpace->localBasis[1], (v->first - mesh->startIndexes[rank])
+				* 2 + 1, 1, INSERT_VALUES);
+		VecSetValue(nullSpace->localBasis[2], (v->first - mesh->startIndexes[rank])
+				* 2, -v->second->y, INSERT_VALUES);
+		VecSetValue(nullSpace->localBasis[2], (v->first - mesh->startIndexes[rank])
+				* 2 + 1, v->second->x, INSERT_VALUES);
+	}
+
+	MatCreateMPIAIJ(PETSC_COMM_WORLD, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, cluster->clusterCount
+			* 3, 3, PETSC_NULL, 0, PETSC_NULL, Rglob);
+
+	for (int j = 0; j < 3; j++) {
+		PetscReal *values;
+		PetscInt colIndG = cluster->clusterColor * 3 + j;
+		VecGetArray(nullSpace->localBasis[j], &values);
+		MatSetValues(*Rglob, localRSize, rowIndGlob, 1, &colIndG, values, INSERT_VALUES);
+		VecRestoreArray(nullSpace->localBasis[j], &values);
+	}
+
+	delete[] rowIndGlob;
+
+	MatAssemblyBegin(*Rglob, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(*Rglob, MAT_FINAL_ASSEMBLY);
+
+	//Null space ortonormalization
+	PetscReal vecNorm1, vecNorm2;
+
+	VecNorm(nullSpace->localBasis[0], NORM_2, &vecNorm1);
+	VecScale(nullSpace->localBasis[0], 1 / vecNorm1);
+	VecScale(nullSpace->localBasis[1], 1 / vecNorm1);
+
+	for (int i = 0; i < 2; i++) {
+		PetscReal a0;
+		VecDot(nullSpace->localBasis[i], nullSpace->localBasis[2], &a0);
+		VecAXPY(nullSpace->localBasis[2], -a0, nullSpace->localBasis[i]);
+	}
+
+	VecNorm(nullSpace->localBasis[2], NORM_2, &vecNorm2);
+	VecScale(nullSpace->localBasis[2], 1 / vecNorm2);
+
+	//MatCreateMPIDense(comm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, size
+	//		* 3, PETSC_NULL, R);
+	MatCreateMPIAIJ(cluster->clusterComm, mesh->vetrices.size() * 2, 3, PETSC_DECIDE, PETSC_DECIDE, 3, PETSC_NULL, 0, PETSC_NULL, R);
+
+	for (int j = 0; j < 3; j++) {
+		PetscReal *values;
+		PetscInt colIndG = cRank * 3 + j;
+		VecGetArray(nullSpace->localBasis[j], &values);
+		MatSetValues(*R, localRSize, rowIndG, 1, &colIndG, values, INSERT_VALUES);
+		VecRestoreArray(nullSpace->localBasis[j], &values);
+	}
+
+	delete[] rowIndG;
+
+	MatAssemblyBegin(*R, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(*R, MAT_FINAL_ASSEMBLY);
+
+	cluster->clusterNullSpace = nullSpace;
+	cluster->outerNullSpace = gNullSpace;
 }
 
 Feti1* createFeti(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point),

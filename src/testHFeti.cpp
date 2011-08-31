@@ -1,6 +1,9 @@
 static char help[] = "My first own testing utility for PETSc\n\n";
 
 #include <iostream>
+#include <string>
+#include <sstream>
+
 #include "petscksp.h"
 #include "petscmat.h"
 #include "petscmg.h"
@@ -8,7 +11,18 @@ static char help[] = "My first own testing utility for PETSc\n\n";
 #include "solver.h"
 #include "feti.h"
 
-PetscReal funConst(Point n) {
+static PetscReal den = 7.85e-9;
+
+void funGravity(Element* e, PetscReal density, PetscReal *fs) {
+	fs[0] = 0;
+	fs[1] = -9810 * density;
+}
+
+PetscReal funDensity(Element* e) {
+	return den;
+}
+
+PetscReal funConst(Element *el) {
 	return 1;
 }
 
@@ -33,20 +47,7 @@ int main(int argc, char *argv[]) {
 	PetscErrorCode ierr;
 	PetscMPIInt rank, size;
 
-	//PetscReal E = 2.1e5, mu = 0.3;
-	PetscReal h = 2.0, H = 100;
-	PetscInt m = 3, n = 3;
-
 	PetscInitialize(&argc, &argv, 0, help);
-	//PetscInt f = 2;
-	//PetscTruth flg;
-	//char fileName[PETSC_MAX_PATH_LEN] = "matlab/out.m";
-
-	PetscOptionsGetInt(PETSC_NULL, "-japet_m", &m, PETSC_NULL);
-	PetscOptionsGetInt(PETSC_NULL, "-japet_n", &n, PETSC_NULL);
-	PetscOptionsGetReal(PETSC_NULL, "-japet_h", &h, PETSC_NULL);
-	PetscOptionsGetReal(PETSC_NULL, "-japet_HH", &H, PETSC_NULL);
-	//if (!flg) SETERRQ(1,"Must indicate binary file with the -test_out_file option");
 
 	{
 
@@ -54,35 +55,54 @@ int main(int argc, char *argv[]) {
 		PetscPrintf(PETSC_COMM_WORLD, "                    TEST hFETI \n");
 		PetscPrintf(PETSC_COMM_WORLD, "***************************************************\n\n");
 
+		ConfigManager *conf = ConfigManager::Instance();
+
+		PDCommManager* commManager =
+				new PDCommManager(PETSC_COMM_WORLD, conf->pdStrategy);
+
 		ierr = MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 		CHKERRQ(ierr);
 		MPI_Comm_size(PETSC_COMM_WORLD, &size);
+
 		PetscViewer v;
 		Mesh *mesh = new Mesh();
 
-		PetscPrintf(PETSC_COMM_WORLD, "Generating mesh ... ");
-		//mesh->generateRectangularMesh(m, n, k, l, h);
-
 		bool bound[] = { false, false, false, true };
-		mesh->generateTearedRectMesh(0, m * H, 0, n * H, h, m, n, bound);
 
-		Mat Bl, Bg, B;
+		mesh->generateTearedRectMesh(0, conf->Hx, 0.0, conf->Hy, conf->h, conf->m, conf->n, bound, commManager);
+
+		Mat Bl, Bg, BTg, BTl;
 		Vec lmbG, lmbL, lmb;
-		GenerateTotalJumpOperator(mesh, 1, B, lmb);
+		//GenerateTotalJumpOperator(mesh, 1, B, lmb);
 
 		SubdomainCluster cluster;
-		mesh->generateRectMeshCluster(&cluster, m, n, 2, 2);
+		mesh->generateRectMeshCluster(&cluster, conf->m, conf->n, 2, 2);
+		GenerateClusterJumpOperator(mesh, &cluster, Bg, BTg, lmbG, Bl, BTl, lmbL);
+		Generate2DElasticityClusterNullSpace(mesh, &cluster);
 
-		GenerateClusterJumpOperator(mesh, &cluster, Bg, lmbG, Bl, lmbL);
-		Generate2DLaplaceClusterNullSpace(mesh, &cluster);
+		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/out.m", FILE_MODE_WRITE, &v);
+		MatView(Bg, v);
+		MatView(BTg, v);
+		MatView(cluster.outerNullSpace->R, v);
+		PetscViewerDestroy(v);
+
+		std::stringstream ss;
+
+		ss << "../matlab/out" << cluster.clusterColor << ".m";
+		PetscViewerBinaryOpen(cluster.clusterComm, ss.str().c_str(), FILE_MODE_WRITE, &v);
+		MatView(Bl, v);
+		MatView(BTl, v);
+		MatView(cluster.clusterNullSpace->R, v);
+		PetscViewerDestroy(v);
 
 		Mat A;
 		Vec b;
-		FEMAssembleTotal2DLaplace(PETSC_COMM_WORLD, mesh, A, b, funConst, funConst);
+
+		FEMAssemble2DElasticity(commManager->getPrimal(), mesh, A, b, conf->E, conf->mu, funDensity, funGravity);
 
 		HFeti
 				*hFeti =
-						new HFeti(A, b, Bg, Bl, lmbG, lmbL, &cluster, mesh->vetrices.size(), PETSC_COMM_WORLD);
+						new HFeti(commManager, A, b, Bg, BTg, Bl, BTl, lmbG, lmbL, &cluster, mesh->vetrices.size());
 		//		Feti1
 		//				*feti =
 		//						new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
@@ -95,6 +115,8 @@ int main(int argc, char *argv[]) {
 		hFeti->setIsVerbose(true);
 		PetscPrintf(PETSC_COMM_WORLD, "\n");
 		hFeti->solve();
+
+		/*
 		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
 		mesh->dumpForMatlab(v);
 		PetscViewerDestroy(v);
@@ -114,9 +136,10 @@ int main(int argc, char *argv[]) {
 		PetscViewerDestroy(v);
 
 		delete hFeti;
-	}
+*/
+}
 
-	ierr = PetscFinalize();
-	CHKERRQ(ierr);
-	return 0;
+ierr = PetscFinalize();
+CHKERRQ(ierr);
+return 0;
 }

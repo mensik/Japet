@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
 		MyLogger::Instance()->getTimer("Solving")->startTimer();
 
 		feti->solve();
-/*
+
 		MyLogger::Instance()->getTimer("Solving")->stopTimer();
 		MyLogger::Instance()->getTimer("feti")->stopTimer();
 
@@ -160,12 +160,9 @@ int main(int argc, char *argv[]) {
 			MyTimer* fTimer = MyLogger::Instance()->getTimer("F^-1");
 			PetscPrintf(PETSC_COMM_SELF, "F^-1                   : %e \n", fTimer->getAverageTime());
 
-			PetscPrintf(PETSC_COMM_SELF, "D->P Scatter           : %e \n", MyLogger::Instance()->getTimer("DP scatter")->getAverageTime());
-			PetscPrintf(PETSC_COMM_SELF, "P->D Scatter           : %e \n\n", MyLogger::Instance()->getTimer("PD scatter")->getAverageTime());
-
 			MyLogger::Instance()->getTimer("Coarse init")->printMarkedTime(PETSC_COMM_SELF);
 		}
-*/
+
 		if (conf->saveOutputs) {
 			if (commManager->isPrimal()) {
 

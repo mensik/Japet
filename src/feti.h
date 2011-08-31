@@ -8,6 +8,8 @@
 #define FETI_H
 
 #include <math.h>
+#include <map>
+#include <set>
 
 #include "petscksp.h"
 #include "petscmat.h"
@@ -50,6 +52,9 @@ protected:
 	Vec tgLocIn, tgLocOut;
 	Vec tgA;
 	Vec tgB;
+
+	CGSolver *ggParSol;
+	Vec parT1, parT2;
 
 	Vec lmb; ///< Lambda vector
 	Vec d; ///< dual right side
@@ -233,8 +238,8 @@ class HFeti: public AFeti {
 	PetscReal outerPrec;
 	PetscInt inCounter;
 public:
-	HFeti(Mat A, Vec b, Mat BGlob, Mat BClust, Vec lmbGl, Vec lmbCl,
-			SubdomainCluster *cluster, PetscInt localNodeCount, MPI_Comm comm);
+	HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob, Mat BClust, Mat BTClust, Vec lmbGl, Vec lmbCl,
+			SubdomainCluster *cluster, PetscInt localNodeCount);
 
 	~HFeti();
 
@@ -250,7 +255,7 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 		PDCommManager* commManager);
 
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
-		Mat &BGlob, Vec &lmbGlob, Mat &BCluster, Vec &lmbCluster);
+		Mat &BGlob, Mat &BTGlob, Vec &lmbGlob, Mat &BCluster, Mat &BTCluster, Vec &lmbCluster);
 
 void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 		bool &isLocalSingular, Mat *Rmat, MPI_Comm comm = PETSC_COMM_WORLD);
@@ -262,6 +267,8 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 		MPI_Comm comm = PETSC_COMM_WORLD);
 
 void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
+
+void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
 
 void getLocalJumpPart(Mat B, Mat *Bloc);
 
