@@ -558,8 +558,8 @@ void AFeti::solve() {
 
 
 	VecCopy(b, temp);
-	//applyInvA(temp, NULL);
-	//MatMult(B, temp, d);
+	applyInvA(temp, NULL);
+	MatMult(B, temp, d);
 
 	//Preparation of the right-hand side vector d=PBA^+b
 	//The matrix P is projector on the space orthogonal to range(G)
