@@ -22,11 +22,10 @@ bool GGLinOp::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 }
 
 AFeti::AFeti(PDCommManager* comMan, Vec b, Mat BT, Mat B, Vec lmb,
-		NullSpaceInfo *nullSpace, CoarseProblemMethod cpM) {
+		NullSpaceInfo *nullSpace, CoarseProblemMethod cpM, SystemR *sR) {
 
 	this->cpMethod = cpM;
 	this->cMan = comMan;
-
 
 	outerSolver = NULL;
 	isVerbose = false;
@@ -36,6 +35,8 @@ AFeti::AFeti(PDCommManager* comMan, Vec b, Mat BT, Mat B, Vec lmb,
 	this->b = b;
 	this->BT = BT;
 	this->B = B;
+
+	this->systemR = sR;
 
 	isLocalSingular = nullSpace->isSubDomainSingular;
 	isSingular = nullSpace->isDomainSingular;
@@ -73,7 +74,6 @@ void AFeti::initCoarse() {
 	MyLogger::Instance()->getTimer("Coarse init")->startTimer();
 	MyTimer* timer = MyLogger::Instance()->getTimer("Coarse init");
 
-
 	PetscInt nD;
 	MatGetSize(R, PETSC_NULL, &nD);
 	VecCreateMPI(cMan->getPrimal(), PETSC_DECIDE, nD, &e);
@@ -95,6 +95,10 @@ void AFeti::initCoarse() {
 		linOp = new GGLinOp(B, R);
 		ggParSol = new CGSolver(linOp, parT2, parT2, NULL, cMan->getDual());
 		ggParSol->setSolverCtr(linOp);
+
+		if (systemR != PETSC_NULL && systemR->rDim > 0) {
+			MatNullSpaceCreate(cMan->getDual(), PETSC_FALSE, systemR->rDim, systemR->systemGNullSpace, &GTGNullSpace);
+		}
 
 		VecDuplicate(parT2, &tgA);
 		VecDuplicate(tgA, &tgB);
@@ -270,7 +274,11 @@ void AFeti::initCoarse() {
 
 				MatDestroy(GTGloc);
 
-				PCSetType(pcGTG, "lu");
+				if (systemR == PETSC_NULL || systemR->rDim == 0) {
+					PCSetType(pcGTG, "lu");
+				} else {
+					PCSetType(pcGTG, "ilu");
+				}
 
 				PCSetUp(pcGTG);
 
@@ -297,6 +305,27 @@ void AFeti::initCoarse() {
 
 			VecScatterCreateToZero(tgA, &tgScat, &tgLocIn);
 			VecDuplicate(tgLocIn, &tgLocOut);
+
+			if (systemR != PETSC_NULL && systemR->rDim > 0) {
+				Vec gNullSpace[systemR->rDim];
+				for (int i = 0; i < systemR->rDim; i++) {
+
+					VecCopy(systemR->systemGNullSpace[i], tgA);
+
+					VecScatterBegin(tgScat, tgA, tgLocIn, INSERT_VALUES, SCATTER_FORWARD);
+					VecScatterEnd(tgScat, tgA, tgLocIn, INSERT_VALUES, SCATTER_FORWARD);
+
+					if (cMan->isDualRoot()) {
+						VecDuplicate(tgLocIn, &(gNullSpace[i]));
+						VecCopy(tgLocIn, gNullSpace[i]);
+					}
+				}
+
+				if (cMan->isDualRoot()) {
+					MatNullSpaceCreate(PETSC_COMM_SELF, PETSC_FALSE, systemR->rDim, gNullSpace, &GTGNullSpace);
+					KSPSetNullSpace(kspG, GTGNullSpace);
+				}
+			}
 
 		}
 		break;
@@ -417,7 +446,6 @@ void AFeti::initCoarse() {
 	}
 	MyLogger::Instance()->getTimer("Coarse init")->stopTimer();
 
-
 }
 
 void AFeti::applyInvGTG(Vec in, Vec out) {
@@ -425,18 +453,27 @@ void AFeti::applyInvGTG(Vec in, Vec out) {
 	switch (cpMethod) {
 	case ParaCG:
 
+		//	if (systemR != PETSC_NULL && systemR->rDim > 0)
+		//		MatNullSpaceRemove(GTGNullSpace, in, PETSC_NULL);
+
 		ggParSol->reset(in, out);
 		ggParSol->solve();
 		ggParSol->getX(out);
 
+		//	if (systemR != PETSC_NULL && systemR->rDim > 0)
+		//				MatNullSpaceRemove(GTGNullSpace, out, PETSC_NULL);
+
 		break;
 	case MasterWork:
+
 		VecScatterBegin(tgScat, in, tgLocIn, INSERT_VALUES, SCATTER_FORWARD);
 		VecScatterEnd(tgScat, in, tgLocIn, INSERT_VALUES, SCATTER_FORWARD);
 
 		if (cMan->isDualRoot()) {
 			KSPSetTolerances(kspG, 1e-19, 1e-19, 1e7, 2);
+			if (systemR != PETSC_NULL && systemR->rDim > 0) MatNullSpaceRemove(GTGNullSpace, tgLocIn, PETSC_NULL);
 			KSPSolve(kspG, tgLocIn, tgLocOut);
+			if (systemR != PETSC_NULL && systemR->rDim > 0) MatNullSpaceRemove(GTGNullSpace, tgLocOut, PETSC_NULL);
 		}
 
 		VecScatterBegin(tgScat, tgLocOut, out, INSERT_VALUES, SCATTER_REVERSE);
@@ -446,6 +483,8 @@ void AFeti::applyInvGTG(Vec in, Vec out) {
 		VecCopy(in, out);
 		break;
 	}
+
+	//if (systemR != PETSC_NULL && systemR->rDim > 0) MatNullSpaceRemove(GTGNullSpace, out, PETSC_NULL);
 
 }
 
@@ -552,13 +591,15 @@ void AFeti::solve() {
 	Vec d;
 	//	VecScatter peScat, deScat;
 
+
 	VecDuplicate(lmb, &d);
 
 	if (cpMethod != ParaCG) MatScale(G, -1);
 
-
 	VecCopy(b, temp);
+
 	applyInvA(temp, NULL);
+
 	MatMult(B, temp, d);
 
 	//Preparation of the right-hand side vector d=PBA^+b
@@ -595,6 +636,7 @@ void AFeti::solve() {
 
 		VecSet(lmbKer, 0);
 		projectGOrth(dAlt);
+
 	}
 
 	outerSolver = instanceOuterSolver(dAlt, lmbKer);
@@ -681,7 +723,6 @@ void AFeti::solve() {
 		PetscPrintf(cMan->getPrimal(), "FETI finished   Outer it: %d   Inner it: %d\n", outIterations, inIterations);
 		PetscPrintf(cMan->getPrimal(), "Feasibility err: %e \n", feasErr / uNorm);
 	}
-
 }
 
 void AFeti::copySolution(Vec out) {
@@ -703,8 +744,8 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 
 Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
-		PetscInt *fNodes, CoarseProblemMethod cpM) :
-	AFeti(comMan, b, BT, B, lmb, nullSpace, cpM) {
+		PetscInt *fNodes, CoarseProblemMethod cpM, SystemR *sR) :
+	AFeti(comMan, b, BT, B, lmb, nullSpace, cpM, sR) {
 
 	if (cMan->isPrimal()) {
 
@@ -988,13 +1029,12 @@ HFeti::HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob,
 	// TODO GTG ve vnitrnim feti neni regularni!!!
 	//
 	subClusterSystem
-			= new Feti1(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork);
-	subClusterSystem->setSystemSingular();
+			= new Feti1(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
+	//subClusterSystem->setSystemSingular();
 
 	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
-	//if (isLocalSingular) {
-	//	MatNullSpaceCreate(cluster->clusterComm, PETSC_TRUE, 0, PETSC_NULL, &clusterNS);
-	//}
+
+	MatNullSpaceCreate(cluster->clusterComm, PETSC_FALSE, 3, cluster->outerNullSpace->localBasis, &clusterNS);
 
 }
 
@@ -1006,10 +1046,12 @@ void HFeti::applyInvA(Vec in, IterationManager *itManager) {
 
 	VecCopy(in, globTemp);
 	VecCopy(globTempGh, clustTempGh);
-//	if (isLocalSingular) MatNullSpaceRemove(clusterNS, clustTemp, PETSC_NULL);
-//	subClusterSystem->setIsVerbose(true);
+	MatNullSpaceRemove(clusterNS, clustTemp, PETSC_NULL);
+	//	subClusterSystem->setIsVerbose(true);
 	subClusterSystem->setRequiredPrecision(outerPrec);
+
 	subClusterSystem->solve(clustTemp);
+
 	subClusterSystem->copySolution(clustTemp);
 
 	if (itManager != NULL) {
@@ -1027,7 +1069,7 @@ Solver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
 	outerPrec = 1e-3;
 	lastNorm = 1e-4;
 	inCounter = 0;
-	return new ASinStep(this, d, lmb);
+	return new CGSolver(this, d, lmb);
 }
 
 void HFeti::setRequiredPrecision(PetscReal reqPrecision) {
@@ -1387,7 +1429,7 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 	MatCreateMPIAIJ(cluster->clusterComm, mesh->vetrices.size() * d, PETSC_DECIDE, PETSC_DECIDE, clusterPairCount
 			* d, 2, PETSC_NULL, 2, PETSC_NULL, &BTCluster);
 
-	VecCreateMPI(cluster->clusterComm, PETSC_DECIDE, clusterPairCount, &lmbCluster);
+	VecCreateMPI(cluster->clusterComm, PETSC_DECIDE, clusterPairCount * d, &lmbCluster);
 
 	if (!subRank) {
 
@@ -1732,10 +1774,18 @@ void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster)
 	//Creating of matrix R - null space basis
 	Mat *R = &(nullSpace->R);
 	Mat *Rglob = &(gNullSpace->R);
+	Mat *systemR = &(cluster->clusterR.systemR);
 
 	nullSpace->localBasis = new Vec[3];
+	gNullSpace->localBasis = new Vec[3];
+
+	cluster->clusterR.systemGNullSpace = new Vec[3];
+	cluster->clusterR.rDim = 3;
+
 	for (int i = 0; i < 3; i++) {
 		VecCreateSeq(PETSC_COMM_SELF, mesh->vetrices.size() * 2, &(nullSpace->localBasis[i]));
+		VecCreateMPI(cluster->clusterComm, mesh->vetrices.size() * 2, PETSC_DECIDE, &(gNullSpace->localBasis[i]));
+		VecCreateMPI(cluster->clusterComm, 3, PETSC_DECIDE, &(cluster->clusterR.systemGNullSpace[i]));
 	}
 
 	PetscInt localRSize = mesh->vetrices.size() * 2;
@@ -1762,39 +1812,105 @@ void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster)
 				* 2, -v->second->y, INSERT_VALUES);
 		VecSetValue(nullSpace->localBasis[2], (v->first - mesh->startIndexes[rank])
 				* 2 + 1, v->second->x, INSERT_VALUES);
+
+		VecSetValue(gNullSpace->localBasis[0], (v->first + cluster->indexDiff) * 2, 1, INSERT_VALUES);
+		VecSetValue(gNullSpace->localBasis[1], (v->first + cluster->indexDiff) * 2
+				+ 1, 1, INSERT_VALUES);
+		VecSetValue(gNullSpace->localBasis[2], (v->first + cluster->indexDiff) * 2, -v->second->y, INSERT_VALUES);
+		VecSetValue(gNullSpace->localBasis[2], (v->first + cluster->indexDiff) * 2
+				+ 1, v->second->x, INSERT_VALUES);
 	}
+
+	for (int i = 0; i < 3; i++) {
+		VecAssemblyBegin(gNullSpace->localBasis[i]);
+		VecAssemblyEnd(gNullSpace->localBasis[i]);
+	}
+	//
+	// Global Null space ortonormalization
+	//
+	PetscReal vecNorm1, vecNorm2;
+
+	VecNorm(gNullSpace->localBasis[0], NORM_2, &vecNorm1);
+	VecScale(gNullSpace->localBasis[0], 1 / vecNorm1);
+	VecScale(gNullSpace->localBasis[1], 1 / vecNorm1);
+
+	for (int i = 0; i < 2; i++) {
+		PetscReal a0;
+		VecDot(gNullSpace->localBasis[i], gNullSpace->localBasis[2], &a0);
+		VecAXPY(gNullSpace->localBasis[2], -a0, gNullSpace->localBasis[i]);
+	}
+
+	VecNorm(gNullSpace->localBasis[2], NORM_2, &vecNorm2);
+	VecScale(gNullSpace->localBasis[2], 1 / vecNorm2);
+
+	//
+	// Save to matrices
+	//
 
 	MatCreateMPIAIJ(PETSC_COMM_WORLD, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, cluster->clusterCount
 			* 3, 3, PETSC_NULL, 0, PETSC_NULL, Rglob);
+	MatCreateMPIAIJ(cluster->clusterComm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, 3, 3, PETSC_NULL, 0, PETSC_NULL, systemR);
 
 	for (int j = 0; j < 3; j++) {
 		PetscReal *values;
 		PetscInt colIndG = cluster->clusterColor * 3 + j;
-		VecGetArray(nullSpace->localBasis[j], &values);
+		VecGetArray(gNullSpace->localBasis[j], &values);
 		MatSetValues(*Rglob, localRSize, rowIndGlob, 1, &colIndG, values, INSERT_VALUES);
-		VecRestoreArray(nullSpace->localBasis[j], &values);
+		MatSetValues(*systemR, localRSize, rowIndG, 1, &j, values, INSERT_VALUES);
+		VecRestoreArray(gNullSpace->localBasis[j], &values);
 	}
 
 	delete[] rowIndGlob;
 
 	MatAssemblyBegin(*Rglob, MAT_FINAL_ASSEMBLY);
 	MatAssemblyEnd(*Rglob, MAT_FINAL_ASSEMBLY);
+	MatAssemblyBegin(*systemR, MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(*systemR, MAT_FINAL_ASSEMBLY);
 
-	//Null space ortonormalization
-	PetscReal vecNorm1, vecNorm2;
+	//
+	// Cluster Null space ortonormalization
+	//
 
 	VecNorm(nullSpace->localBasis[0], NORM_2, &vecNorm1);
 	VecScale(nullSpace->localBasis[0], 1 / vecNorm1);
 	VecScale(nullSpace->localBasis[1], 1 / vecNorm1);
 
+	VecSetValue(cluster->clusterR.systemGNullSpace[0], cRank * 3, vecNorm1, INSERT_VALUES);
+	VecSetValue(cluster->clusterR.systemGNullSpace[1], cRank * 3 + 1, vecNorm1, INSERT_VALUES);
+
+	PetscReal a[2];
 	for (int i = 0; i < 2; i++) {
-		PetscReal a0;
-		VecDot(nullSpace->localBasis[i], nullSpace->localBasis[2], &a0);
-		VecAXPY(nullSpace->localBasis[2], -a0, nullSpace->localBasis[i]);
+		VecDot(nullSpace->localBasis[i], nullSpace->localBasis[2], &a[i]);
+		VecAXPY(nullSpace->localBasis[2], -a[i], nullSpace->localBasis[i]);
+
 	}
 
 	VecNorm(nullSpace->localBasis[2], NORM_2, &vecNorm2);
 	VecScale(nullSpace->localBasis[2], 1 / vecNorm2);
+
+	VecSetValue(cluster->clusterR.systemGNullSpace[2], cRank * 3, a[0], INSERT_VALUES);
+	VecSetValue(cluster->clusterR.systemGNullSpace[2], cRank * 3 + 1, a[1], INSERT_VALUES);
+	VecSetValue(cluster->clusterR.systemGNullSpace[2], cRank * 3 + 2, vecNorm2, INSERT_VALUES);
+
+	for (int i = 0; i < 3; i++) {
+		VecAssemblyBegin(cluster->clusterR.systemGNullSpace[i]);
+		VecAssemblyEnd(cluster->clusterR.systemGNullSpace[i]);
+	}
+
+	//System clusteR ortogonalization
+
+	VecNorm(cluster->clusterR.systemGNullSpace[0], NORM_2, &vecNorm1);
+	VecScale(cluster->clusterR.systemGNullSpace[0], 1 / vecNorm1);
+	VecScale(cluster->clusterR.systemGNullSpace[1], 1 / vecNorm1);
+
+	for (int i = 0; i < 2; i++) {
+		PetscReal a0;
+		VecDot(cluster->clusterR.systemGNullSpace[i], cluster->clusterR.systemGNullSpace[2], &a0);
+		VecAXPY(cluster->clusterR.systemGNullSpace[2], -a0, cluster->clusterR.systemGNullSpace[i]);
+	}
+
+	VecNorm(cluster->clusterR.systemGNullSpace[2], NORM_2, &vecNorm2);
+	VecScale(cluster->clusterR.systemGNullSpace[2], 1 / vecNorm2);
 
 	//MatCreateMPIDense(comm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, size
 	//		* 3, PETSC_NULL, R);
@@ -1815,6 +1931,7 @@ void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster)
 
 	cluster->clusterNullSpace = nullSpace;
 	cluster->outerNullSpace = gNullSpace;
+
 }
 
 Feti1* createFeti(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point),

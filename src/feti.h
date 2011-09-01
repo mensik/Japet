@@ -63,6 +63,7 @@ protected:
 	PetscInt gM, gN; ///<	dimensions of G
 	Mat G, GT; ///< BR
 	KSP kspG; ///< Global G'G solver
+	MatNullSpace GTGNullSpace;
 
 	VecScatter dBScat; ///< Scatter from dual group to master
 	Vec dBGlob; ///< gloval version
@@ -77,6 +78,8 @@ protected:
 	Vec b; ///< Global force vector
 	Vec u; ///< solution
 	Mat R; ///< Global null space of A
+
+	SystemR *systemR; ///< NullSpace of the whole system - even with constrains
 
 	Vec temp;
 	Vec tempLoc;
@@ -113,7 +116,7 @@ public:
 	const static int P_ACTION_BREAK = -1;
 
 	AFeti(PDCommManager *comMan, Vec b, Mat BT, Mat B, Vec lmb,
-			NullSpaceInfo *nullSpace, CoarseProblemMethod mcpM = ParaCG);
+			NullSpaceInfo *nullSpace, CoarseProblemMethod mcpM = ParaCG, SystemR *sR = PETSC_NULL);
 	~AFeti();
 
 	virtual void applyInvA(Vec in, IterationManager *itManager) = 0;
@@ -187,7 +190,7 @@ protected:
 public:
 	Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 			NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
-			PetscInt *fNodes, CoarseProblemMethod cpM = ParaCG);
+			PetscInt *fNodes, CoarseProblemMethod cpM = ParaCG, SystemR *sR = PETSC_NULL);
 	~Feti1();
 	virtual void applyInvA(Vec in, IterationManager *itManager);
 	virtual void applyPC(Vec g, Vec z);

@@ -73,7 +73,6 @@ int main(int argc, char *argv[]) {
 
 		Mat Bl, Bg, BTg, BTl;
 		Vec lmbG, lmbL, lmb;
-		//GenerateTotalJumpOperator(mesh, 1, B, lmb);
 
 		SubdomainCluster cluster;
 		mesh->generateRectMeshCluster(&cluster, conf->m, conf->n, 2, 2);
@@ -93,6 +92,8 @@ int main(int argc, char *argv[]) {
 		MatView(Bl, v);
 		MatView(BTl, v);
 		MatView(cluster.clusterNullSpace->R, v);
+		MatView(cluster.clusterR.systemR, v);
+		VecView(cluster.clusterR.systemGNullSpace[2], v);
 		PetscViewerDestroy(v);
 
 		Mat A;

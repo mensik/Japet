@@ -60,6 +60,13 @@ public:
 			std::vector<PetscInt>::iterator &end);
 };
 
+class SystemR {
+public:
+	int rDim;
+	Mat systemR;
+	Vec *systemGNullSpace;
+};
+
 /**
  * @brief Class holding all information related to sub-domain clustering, including pairings
  **/
@@ -79,6 +86,8 @@ public:
 	NullSpaceInfo *outerNullSpace; ///< Domain outer null space info for FETI [global]
 	NullSpaceInfo *clusterNullSpace;
 	Mat Rin; ///< Cluster null space basis [cluster]
+
+	SystemR clusterR;
 
 	//Root only
 	PetscInt *subdomainColors; ///< array with all process cluster colors
