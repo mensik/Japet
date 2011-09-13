@@ -22,7 +22,8 @@ Solver::Solver(Mat A, Vec b, Vec x, SolverPreconditioner *PC, MPI_Comm comm) {
 	init();
 }
 
-Solver::Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC, MPI_Comm comm) {
+Solver::Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC,
+		MPI_Comm comm) {
 	this->sApp = sa;
 	this->b = b;
 	this->x = x;
@@ -69,6 +70,7 @@ void Solver::init() {
 
 	VecNorm(g, NORM_2, &rNorm);
 	r0Norm = rNorm;
+
 }
 
 void Solver::applyMult(Vec in, Vec out, IterationManager *info) {
@@ -128,44 +130,57 @@ CGSolver::~CGSolver() {
 
 void CGSolver::solve() {
 
-	PetscReal relativeCoef = MAX(bNorm, r0Norm);
-	PetscReal gTzPrev, gTz;
+	if (bNorm > 1e-16) {
+		PetscReal relativeCoef = MAX(bNorm, r0Norm);
+		PetscReal gTzPrev, gTz;
 
-	//solProj->applyProjection(g);
-	//	sPC->applyPC(g, z);
-	VecDot(g, z, &gTz);
-
-	while (!sCtr->isConverged(getItCount(), rNorm, relativeCoef, &g)) {
-
-		MyLogger::Instance()->getTimer("Iteration")->startTimer();
-		itManager.setIterationData("Rel. err", rNorm / relativeCoef);
-		nextIteration();
-
-		PetscScalar pAp;
-		sApp->applyMult(p, temp, &itManager);
-		VecDot(p, temp, &pAp);
-
-		PetscReal a = gTz / pAp;
-
-		VecAXPY(x, -a, p);
-		VecAXPY(g, -a, temp);
-
-		sPC->applyPC(g, z);
-
-		gTzPrev = gTz;
-
+		//solProj->applyProjection(g);
+		//	sPC->applyPC(g, z);
 		VecDot(g, z, &gTz);
 
-		PetscReal beta = gTz / gTzPrev;
-		VecAYPX(p, beta, z);
+		while (!sCtr->isConverged(getItCount(), rNorm, relativeCoef, &g)) {
 
-		VecNorm(g, NORM_2, &rNorm);
+			MyLogger::Instance()->getTimer("Iteration")->startTimer();
+			itManager.setIterationData("Rel. err", rNorm / relativeCoef);
+			nextIteration();
 
-		if (gTz != gTz) {
-			PetscPrintf(PETSC_COMM_WORLD, "ERROR!!!");
-			break;
+			PetscScalar pAp;
+			sApp->applyMult(p, temp, &itManager);
+
+			PetscReal tNorm;
+			VecNorm(temp, NORM_2, &tNorm);
+
+			VecDot(p, temp, &pAp);
+
+			PetscReal a = gTz / pAp;
+
+			if (tNorm < 1e-16) {
+			//	PetscPrintf(PETSC_COMM_SELF, "BREAK \n");
+				break;
+			}
+
+			VecAXPY(x, -a, p);
+			VecAXPY(g, -a, temp);
+
+			sPC->applyPC(g, z);
+
+			gTzPrev = gTz;
+
+			VecDot(g, z, &gTz);
+
+			PetscReal beta = gTz / gTzPrev;
+			VecAYPX(p, beta, z);
+
+			VecNorm(g, NORM_2, &rNorm);
+
+			if (gTz != gTz) {
+				PetscPrintf(PETSC_COMM_WORLD, "ERROR!!! %a \n", rNorm);
+				break;
+			}
+			MyLogger::Instance()->getTimer("Iteration")->stopTimer();
 		}
-		MyLogger::Instance()->getTimer("Iteration")->stopTimer();
+	} else {
+		VecSet(x, 0);
 	}
 }
 

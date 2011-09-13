@@ -80,6 +80,7 @@ protected:
 	Mat R; ///< Global null space of A
 
 	SystemR *systemR; ///< NullSpace of the whole system - even with constrains
+	MatNullSpace systemNullSpace;
 
 	Vec temp;
 	Vec tempLoc;
@@ -95,6 +96,7 @@ protected:
 
 	PetscReal lastNorm; ///< last computed norm
 
+	PetscReal precision;
 
 	PetscInt outIterations;
 	PetscInt inIterations;
@@ -116,7 +118,8 @@ public:
 	const static int P_ACTION_BREAK = -1;
 
 	AFeti(PDCommManager *comMan, Vec b, Mat BT, Mat B, Vec lmb,
-			NullSpaceInfo *nullSpace, CoarseProblemMethod mcpM = ParaCG, SystemR *sR = PETSC_NULL);
+			NullSpaceInfo *nullSpace, CoarseProblemMethod mcpM = ParaCG,
+			SystemR *sR = PETSC_NULL);
 	~AFeti();
 
 	virtual void applyInvA(Vec in, IterationManager *itManager) = 0;
@@ -132,6 +135,7 @@ public:
 
 	virtual Solver* instanceOuterSolver(Vec d, Vec l);
 	virtual void applyPC(Vec g, Vec z) {
+		projectGOrth(g);
 		VecCopy(g, z);
 	}
 
@@ -140,12 +144,17 @@ public:
 	void projectGOrth(Vec in); ///< Remove space spaned by G from vec in
 	void copySolution(Vec out); /// <Copy solution to vector out
 	void copyLmb(Vec out);
+	void setPrec(PetscReal prec) {
+		precision = prec;
+	}
 	void setIsVerbose(bool verbose) {
 		isVerbose = verbose;
 	}
 	void saveIterationInfo(const char *fileName) {
 		outerSolver->saveIterationInfo(fileName);
 	}
+
+	void testSomething();
 
 	void setSystemSingular() {
 
@@ -190,7 +199,8 @@ protected:
 public:
 	Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 			NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
-			PetscInt *fNodes, CoarseProblemMethod cpM = ParaCG, SystemR *sR = PETSC_NULL);
+			PetscInt *fNodes, CoarseProblemMethod cpM = ParaCG,
+			SystemR *sR = PETSC_NULL);
 	~Feti1();
 	virtual void applyInvA(Vec in, IterationManager *itManager);
 	virtual void applyPC(Vec g, Vec z);
@@ -240,13 +250,21 @@ class HFeti: public AFeti {
 
 	PetscReal outerPrec;
 	PetscInt inCounter;
+
+	Vec tempInv, tempInvGh, tempInvGhB;
+
+	Mat A;
 public:
-	HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob, Mat BClust, Mat BTClust, Vec lmbGl, Vec lmbCl,
-			SubdomainCluster *cluster, PetscInt localNodeCount);
+	HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob, Mat BClust,
+			Mat BTClust, Vec lmbGl, Vec lmbCl, SubdomainCluster *cluster,
+			PetscInt localNodeCount);
 
 	~HFeti();
+	void test();
 
 	virtual void applyInvA(Vec in, IterationManager *itManager);
+	virtual void applyPC(Vec g, Vec z);
+	virtual void applyPrimalMult(Vec in, Vec out);
 	void removeNullSpace(Vec in);
 	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);
 	virtual void setRequiredPrecision(PetscReal reqPrecision);
@@ -258,7 +276,8 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 		PDCommManager* commManager);
 
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
-		Mat &BGlob, Mat &BTGlob, Vec &lmbGlob, Mat &BCluster, Mat &BTCluster, Vec &lmbCluster);
+		Mat &BGlob, Mat &BTGlob, Vec &lmbGlob, Mat &BCluster, Mat &BTCluster,
+		Vec &lmbCluster);
 
 void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 		bool &isLocalSingular, Mat *Rmat, MPI_Comm comm = PETSC_COMM_WORLD);
@@ -271,7 +290,8 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 
 void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
 
-void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
+void
+Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
 
 void getLocalJumpPart(Mat B, Mat *Bloc);
 
