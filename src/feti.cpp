@@ -1104,13 +1104,13 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		Mat &BGlob, Mat &BTGlob, Vec &lmbGlob, Mat &BCluster, Mat &BTCluster,
-		Vec &lmbCluster) {
+		Vec &lmbCluster, MPI_Comm comm) {
 
 	PetscInt rank, subRank, size;
-	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_rank(comm, &rank);
 	MPI_Comm_rank(cluster->clusterComm, &subRank);
 
-	MPI_Comm_size(PETSC_COMM_WORLD, &size);
+	MPI_Comm_size(comm, &size);
 
 	int d = 2;
 	//
@@ -1136,18 +1136,18 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		locDirch[counter++] = *i;
 	}
 	int dNodeCounts[size];
-	MPI_Allgather(&dSize, 1, MPI_INT, dNodeCounts, 1, MPI_INT, PETSC_COMM_WORLD);
+	MPI_Allgather(&dSize, 1, MPI_INT, dNodeCounts, 1, MPI_INT, comm);
 
 	int dSum = 0;
 	for (int i = 0; i < size; i++)
 		dSum += dNodeCounts[i];
 
 	int globalPairsCount = cluster->globalPairing.size() / 2;
-	MPI_Bcast(&globalPairsCount, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+	MPI_Bcast(&globalPairsCount, 1, MPI_INT, 0, comm);
 
-	MatCreateMPIAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, mesh->vetrices.size() * d, (globalPairsCount
+	MatCreateMPIAIJ(comm, PETSC_DECIDE, mesh->vetrices.size() * d, (globalPairsCount
 			+ dSum) * d, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BGlob);
-	MatCreateMPIAIJ(PETSC_COMM_WORLD, mesh->vetrices.size() * d, PETSC_DECIDE, PETSC_DECIDE, (globalPairsCount
+	MatCreateMPIAIJ(comm, mesh->vetrices.size() * d, PETSC_DECIDE, PETSC_DECIDE, (globalPairsCount
 			+ dSum) * d, 2, PETSC_NULL, 2, PETSC_NULL, &BTGlob);
 
 	if (!rank) {
@@ -1158,7 +1158,7 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		for (int i = 1; i < size; i++)
 			displac[i] = displac[i - 1] + dNodeCounts[i - 1];
 
-		MPI_Gatherv(locDirch, dSize, MPI_INT, globDirch, dNodeCounts, displac, MPI_INT, 0, PETSC_COMM_WORLD);
+		MPI_Gatherv(locDirch, dSize, MPI_INT, globDirch, dNodeCounts, displac, MPI_INT, 0, comm);
 
 		int sIndex = 0;
 		for (int i = 0; i < dSum; i++) {
@@ -1243,7 +1243,7 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 			delete[] vetrices;
 		}
 	} else {
-		MPI_Gatherv(locDirch, dSize, MPI_INT, NULL, 0, NULL, MPI_INT, 0, PETSC_COMM_WORLD);
+		MPI_Gatherv(locDirch, dSize, MPI_INT, NULL, 0, NULL, MPI_INT, 0, comm);
 	}
 
 	MatAssemblyBegin(BGlob, MAT_FINAL_ASSEMBLY);
@@ -1252,7 +1252,7 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 	MatAssemblyBegin(BTGlob, MAT_FINAL_ASSEMBLY);
 	MatAssemblyEnd(BTGlob, MAT_FINAL_ASSEMBLY);
 
-	VecCreateMPI(PETSC_COMM_WORLD, PETSC_DECIDE, (globalPairsCount + dSum) * d, &lmbGlob);
+	VecCreateMPI(comm, PETSC_DECIDE, (globalPairsCount + dSum) * d, &lmbGlob);
 	VecSet(lmbGlob, 0);
 
 	int clusterPairCount = cluster->localPairing.size() / 2;
@@ -1587,15 +1587,15 @@ void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster) {
 	cluster->Rin = RClust;
 }
 
-void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster) {
+void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster, MPI_Comm com_world) {
 
 	MPI_Comm comm = cluster->clusterComm;
 	NullSpaceInfo *nullSpace = new NullSpaceInfo();
 	NullSpaceInfo *gNullSpace = new NullSpaceInfo();
 
 	PetscInt rank, size;
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	MPI_Comm_rank(com_world, &rank);
+	MPI_Comm_size(com_world, &size);
 
 	nullSpace->localDimension = 3;
 	nullSpace->isDomainSingular = true;
@@ -1681,9 +1681,9 @@ void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster)
 	// Save to matrices
 	//
 
-	MatCreateMPIAIJ(PETSC_COMM_WORLD, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, cluster->clusterCount
-			* 3, 3, PETSC_NULL, 0, PETSC_NULL, Rglob);
-	MatCreateMPIAIJ(cluster->clusterComm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, 3, 3, PETSC_NULL, 0, PETSC_NULL, systemR);
+	MatCreateMPIAIJ(com_world, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, cluster->clusterCount
+			* 3, 3, PETSC_NULL, 3, PETSC_NULL, Rglob);
+	MatCreateMPIAIJ(cluster->clusterComm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, 3, 3, PETSC_NULL,3, PETSC_NULL, systemR);
 
 	for (int j = 0; j < 3; j++) {
 		PetscReal *values;
@@ -1748,7 +1748,7 @@ void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster)
 
 	//MatCreateMPIDense(comm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, size
 	//		* 3, PETSC_NULL, R);
-	MatCreateMPIAIJ(cluster->clusterComm, mesh->vetrices.size() * 2, 3, PETSC_DECIDE, PETSC_DECIDE, 3, PETSC_NULL, 0, PETSC_NULL, R);
+	MatCreateMPIAIJ(cluster->clusterComm, mesh->vetrices.size() * 2, 3, PETSC_DECIDE, PETSC_DECIDE, 3, PETSC_NULL, 3, PETSC_NULL, R);
 
 	for (int j = 0; j < 3; j++) {
 		PetscReal *values;

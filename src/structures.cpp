@@ -1410,10 +1410,10 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 }
 
 void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
-		PetscInt n, PetscInt M, PetscInt N) {
+		PetscInt n, PetscInt M, PetscInt N, MPI_Comm comm) {
 
 	PetscInt rank;
-	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+	MPI_Comm_rank(comm, &rank);
 
 	PetscInt k = m / M;
 	PetscInt l = n / N;
@@ -1434,7 +1434,7 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 	}
 
 	MPI_Comm subComm;
-	MPI_Comm_split(PETSC_COMM_WORLD, cluster->clusterColor, rank, &subComm);
+	MPI_Comm_split(comm, cluster->clusterColor, rank, &subComm);
 	cluster->clusterComm = subComm;
 	PetscInt subRank;
 	MPI_Comm_rank(cluster->clusterComm, &subRank);
@@ -1455,7 +1455,7 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 		MPI_Status status;
 		for (int i = 1; i < nparts; i++) {
 			int temp[2];
-			MPI_Recv(temp, 2, MPI_INT, MPI_ANY_SOURCE, 0, PETSC_COMM_WORLD, &status);
+			MPI_Recv(temp, 2, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
 
 			clusterMasters[temp[0]] = temp[1];
 		}
@@ -1482,8 +1482,8 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 						for (int k = 0; k < vSize; k++, p++)
 							temp[k] = *p;
 
-						MPI_Send(&vSize, 1, MPI_INT, clusterMasters[aColor], 0, PETSC_COMM_WORLD);
-						MPI_Send(temp, vSize, MPI_INT, clusterMasters[aColor], 0, PETSC_COMM_WORLD);
+						MPI_Send(&vSize, 1, MPI_INT, clusterMasters[aColor], 0, comm);
+						MPI_Send(temp, vSize, MPI_INT, clusterMasters[aColor], 0, comm);
 
 						delete[] temp;
 					}
@@ -1497,22 +1497,22 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 		for (std::map<int, int>::iterator i = clusterMasters.begin(); i
 				!= clusterMasters.end(); i++) { //Message terminating sharing pairings
 			int msg = -1;
-			MPI_Send(&msg, 1, MPI_INT, i->second, 0, PETSC_COMM_WORLD);
+			MPI_Send(&msg, 1, MPI_INT, i->second, 0, comm);
 		}
 	} else {
 		if (!subRank) {
 			//Send info about master on the cluster == [color, masterRank (in global comm)]
 			PetscInt info[] = { cluster->clusterColor, rank };
-			MPI_Send(info, 2, MPI_INT, 0, 0, PETSC_COMM_WORLD);
+			MPI_Send(info, 2, MPI_INT, 0, 0, comm);
 
 			while (true) { //Receive pairings belonging only to cluster
 				int vSize;
 				MPI_Status status;
-				MPI_Recv(&vSize, 1, MPI_INT, 0, 0, PETSC_COMM_WORLD, &status);
+				MPI_Recv(&vSize, 1, MPI_INT, 0, 0, comm, &status);
 				if (vSize == -1) break;
 
 				PetscInt *temp = new PetscInt[vSize];
-				MPI_Recv(temp, vSize, MPI_INT, 0, 0, PETSC_COMM_WORLD, &status);
+				MPI_Recv(temp, vSize, MPI_INT, 0, 0, comm, &status);
 
 				for (int i = 0; i < vSize; i++)
 					cluster->localPairing.push_back(temp[i]);

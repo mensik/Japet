@@ -182,7 +182,7 @@ ConfigManager::ConfigManager() {
 	PetscTruth flg;
 
 	coarseProblemMethod = MasterWork;
-	pdStrategy = HECTOR;
+	pdStrategy = SAME_COMMS;
 	saveOutputs = false;
 
 	char tName[PETSC_MAX_PATH_LEN] = "FetiTest.log";

@@ -277,7 +277,7 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 
 void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		Mat &BGlob, Mat &BTGlob, Vec &lmbGlob, Mat &BCluster, Mat &BTCluster,
-		Vec &lmbCluster);
+		Vec &lmbCluster, MPI_Comm comm);
 
 void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 		bool &isLocalSingular, Mat *Rmat, MPI_Comm comm = PETSC_COMM_WORLD);
@@ -291,7 +291,7 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
 
 void
-Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
+Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster, MPI_Comm comm);
 
 void getLocalJumpPart(Mat B, Mat *Bloc);
 

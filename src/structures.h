@@ -219,7 +219,7 @@ public:
 	 * @param[in] m,n original rect.mesh layout
 	 * @param[in] M,N cluster division m = k * M; n = j * N
 	 */
-	void generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m, PetscInt n, PetscInt M, PetscInt N);
+	void generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m, PetscInt n, PetscInt M, PetscInt N, MPI_Comm comm);
 	void dumpForMatlab(MPI_Comm comm, PetscViewer v);
 	void save(const char *filename, bool withEdges);
 	void load(const char *filename, bool withEdges);
