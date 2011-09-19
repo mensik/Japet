@@ -38,11 +38,65 @@ public:
 	virtual void applyProjection(Vec w) = 0;
 };
 
+class SolverInvertor {
+public:
+	virtual void applyInversion(Vec b, Vec x) = 0;
+};
+
 enum StepType {
 	CG, Expansion, Proportion
 };
 
-class Solver: public SolverApp, public SolverCtr, public SolverPreconditioner {
+class ASolver {
+protected:
+
+public:
+	ASolver();
+
+	virtual void solve() = 0;
+	virtual void setSolverCtr(SolverCtr *sc) {
+
+	}
+	virtual void getX(Vec x) = 0;
+	virtual void setIsVerbose(bool verbose) {
+
+	}
+	virtual void reset(Vec newB, Vec newX) = 0;
+	virtual void saveIterationInfo(const char *filename, bool rewrite = true) {
+		//Has no meaning for factorization
+	}
+};
+
+class FinitSolverStub : public ASolver {
+	Vec b;
+	Vec x;
+
+	SolverInvertor *invertor;
+public:
+
+	FinitSolverStub(SolverInvertor *inv) {
+		this->invertor = inv;
+	}
+
+	virtual void solve() {
+		invertor->applyInversion(b, x);
+	}
+
+	virtual void getX(Vec x) {
+		VecCopy(this->x, x);
+	}
+
+	virtual void reset(Vec newB, Vec newX) {
+		b = newB;
+		x = newX;
+	}
+
+};
+
+class Solver: public ASolver,
+		public SolverApp,
+		public SolverCtr,
+		public SolverPreconditioner {
 private:
 	Mat A; ///< Matrix A in problem A*x = b
 	PetscReal precision;

@@ -1,5 +1,9 @@
 #include "solver.h"
 
+ASolver::ASolver() {
+
+}
+
 void SolverApp::setRequiredPrecision(PetscReal reqPrecision) {
 
 }

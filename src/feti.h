@@ -41,7 +41,7 @@ protected:
 
 	PDCommManager *cMan;
 
-	Solver *outerSolver; ///< Solver class for outer loop (default is CGSolver)
+	ASolver *outerSolver; ///< Solver class for outer loop (default is CGSolver)
 	bool isVerbose;
 
 	//
@@ -133,7 +133,7 @@ public:
 	virtual bool
 	isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm, Vec *vec);
 
-	virtual Solver* instanceOuterSolver(Vec d, Vec l);
+	virtual ASolver* instanceOuterSolver(Vec d, Vec l);
 	virtual void applyPC(Vec g, Vec z) {
 		projectGOrth(g);
 		VecCopy(g, z);
@@ -210,6 +210,25 @@ public:
 	virtual void applyPrimalMult(Vec in, Vec out);
 };
 
+class FFeti: public Feti1, public SolverInvertor {
+protected:
+
+	VecScatter fToRoot;
+	Vec fLocal, fGlobal;
+
+	KSP kspF;
+public:
+	FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
+			NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
+			PetscInt *fNodes, CoarseProblemMethod cpM = ParaCG,
+			SystemR *sR = PETSC_NULL);
+
+	virtual void applyInversion(Vec b, Vec x);
+
+	virtual ASolver* instanceOuterSolver(Vec d, Vec lmb);
+
+};
+
 class mFeti1: public Feti1 {
 
 public:
@@ -219,7 +238,7 @@ public:
 				Feti1(comMan, A, b, BT, B, lmb, nullSpace, localNodeCount, fNodesCount, fNodes, cpM) {
 	}
 
-	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);
+	virtual ASolver* instanceOuterSolver(Vec d, Vec lmb);
 };
 
 class InexactFeti1: public Feti1 {
@@ -230,7 +249,7 @@ public:
 			PetscInt localNodeCount, MPI_Comm comm);
 
 	virtual void applyInvA(Vec in, IterationManager *itManager);
-	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);
+	virtual ASolver* instanceOuterSolver(Vec d, Vec lmb);
 	void setRequiredPrecision(PetscReal reqPrecision);
 };
 
@@ -266,7 +285,7 @@ public:
 	virtual void applyPC(Vec g, Vec z);
 	virtual void applyPrimalMult(Vec in, Vec out);
 	void removeNullSpace(Vec in);
-	virtual Solver* instanceOuterSolver(Vec d, Vec lmb);
+	virtual ASolver* instanceOuterSolver(Vec d, Vec lmb);
 	virtual void setRequiredPrecision(PetscReal reqPrecision);
 };
 

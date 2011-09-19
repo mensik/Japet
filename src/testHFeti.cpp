@@ -123,47 +123,44 @@ int main(int argc, char *argv[]) {
 		GenerateClusterJumpOperator(mesh, &cluster, Bg, BTg, lmbG, Bl, BTl, lmbL, PERMUTATED_WORLD);
 		Generate2DElasticityClusterNullSpace(mesh, &cluster, PERMUTATED_WORLD);
 
-		/*
-		 PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/out.m", FILE_MODE_WRITE, &v);
-		 MatView(Bg, v);
-		 MatView(BTg, v);
-		 MatView(cluster.outerNullSpace->R, v);
-		 PetscViewerDestroy(v);
+		PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/out.m", FILE_MODE_WRITE, &v);
+		MatView(Bg, v);
+		MatView(BTg, v);
+		MatView(cluster.outerNullSpace->R, v);
+		PetscViewerDestroy(v);
 
-		 std::stringstream ss;
+		std::stringstream ss;
 
-		 ss << "../matlab/out" << cluster.clusterColor << ".m";
-		 PetscViewerBinaryOpen(cluster.clusterComm, ss.str().c_str(), FILE_MODE_WRITE, &v);
-		 MatView(Bl, v);
-		 //MatView(BTl, v);
-		 MatView(cluster.clusterNullSpace->R, v);
+		ss << "../matlab/out" << cluster.clusterColor << ".m";
+		PetscViewerBinaryOpen(cluster.clusterComm, ss.str().c_str(), FILE_MODE_WRITE, &v);
+		MatView(Bl, v);
+		//MatView(BTl, v);
+		MatView(cluster.clusterNullSpace->R, v);
 
-		 MatView(cluster.clusterR.systemR, v);
+		MatView(cluster.clusterR.systemR, v);
 
-		 VecView(cluster.clusterR.systemGNullSpace[0], v);
-		 VecView(cluster.clusterR.systemGNullSpace[1], v);
-		 VecView(cluster.clusterR.systemGNullSpace[2], v);
+		VecView(cluster.clusterR.systemGNullSpace[0], v);
+		VecView(cluster.clusterR.systemGNullSpace[1], v);
+		VecView(cluster.clusterR.systemGNullSpace[2], v);
 
-		 VecView(cluster.outerNullSpace->localBasis[0], v);
-		 VecView(cluster.outerNullSpace->localBasis[1], v);
-		 VecView(cluster.outerNullSpace->localBasis[2], v);
+		VecView(cluster.outerNullSpace->localBasis[0], v);
+		VecView(cluster.outerNullSpace->localBasis[1], v);
+		VecView(cluster.outerNullSpace->localBasis[2], v);
 
-		 PetscViewerDestroy(v);
-		 */
+		PetscViewerDestroy(v);
 
 		Mat A;
 		Vec b;
 
 		FEMAssemble2DElasticity(commManager->getPrimal(), mesh, A, b, conf->E, conf->mu, funDensity, funGravity);
 
-		/*
-		 std::stringstream ss2;
+		std::stringstream ss2;
 
-		 ss2 << "../matlab/A" << rank << ".m";
-		 PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
-		 MatView(A, v);
-		 PetscViewerDestroy(v);
-		 */
+		ss2 << "../matlab/A" << rank << ".m";
+		PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
+		MatView(A, v);
+		PetscViewerDestroy(v);
+
 		HFeti
 				*hFeti =
 						new HFeti(commManager, A, b, Bg, BTg, Bl, BTl, lmbG, lmbL, &cluster, mesh->vetrices.size());

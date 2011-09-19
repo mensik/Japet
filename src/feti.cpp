@@ -368,7 +368,7 @@ void AFeti::applyPrimalMult(Vec in, Vec out) {
 	VecCopy(in, out);
 }
 
-Solver* AFeti::instanceOuterSolver(Vec d, Vec l) {
+ASolver* AFeti::instanceOuterSolver(Vec d, Vec l) {
 	return new CGSolver(this, d, l, this, cMan->getDual());
 }
 
@@ -729,6 +729,108 @@ void Feti1::applyPrimalMult(Vec in, Vec out) {
 	VecCopy(tempInv, out);
 
 }
+
+FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
+		NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
+		PetscInt *fNodes, CoarseProblemMethod cpM, SystemR *sR) :
+			Feti1(comMan, A, b, BT, B, lmb, nullSpace, localNodeCount, fNodesCount, fNodes, cpM, sR) {
+
+	PetscInt BRowCount, BLocalColCount, BLocalRowCount;
+	PetscInt myStart, myEnd;
+
+	MatGetLocalSize(B, &BLocalRowCount, &BLocalColCount);
+	MatGetSize(B, &BRowCount, PETSC_NULL);
+	MatGetOwnershipRange(B, &myStart, &myEnd);
+
+	Vec bRow;
+	VecCreateMPI(comMan->getPrimal(), BLocalColCount, PETSC_DECIDE, &bRow);
+	VecCreateMPI(comMan->getPrimal(), BLocalRowCount, PETSC_DECIDE, &fGlobal);
+
+	VecScatterCreateToZero(fGlobal, &fToRoot, &fLocal);
+
+	Mat F;
+
+	if (comMan->isPrimalRoot()) {
+		MatCreateSeqAIJ(PETSC_COMM_SELF, BRowCount, BRowCount, BRowCount, PETSC_NULL, &F);
+	}
+
+	PetscInt ncols;
+	const PetscInt *cols;
+	const PetscScalar *vals;
+
+	for (int row = 0; row < BRowCount; row++) {
+		VecSet(bRow, 0);
+		if (row >= myStart && row < myEnd) {
+			MatGetRow(B, row, &ncols, &cols, &vals);
+			for (int i = 0; i < ncols; i++)
+				VecSetValue(bRow, cols[i], vals[i], INSERT_VALUES);
+			MatRestoreRow(B, row, &ncols, &cols, &vals);
+		}
+		VecAssemblyBegin(bRow);
+		VecAssemblyEnd(bRow);
+
+		applyInvA(bRow, NULL);
+		MatMult(B, bRow, fGlobal);
+
+		VecScatterBegin(fToRoot, fGlobal, fLocal, INSERT_VALUES, SCATTER_FORWARD);
+		VecScatterEnd(fToRoot, fGlobal, fLocal, INSERT_VALUES, SCATTER_FORWARD);
+
+		if (cMan->isPrimalRoot()) {
+			PetscScalar *fVals;
+			VecGetArray(fLocal, &fVals);
+
+			for (int i = 0; i < BRowCount; i++) {
+				if (fVals[i] != 0) {
+					MatSetValue(F, i, row, fVals[i], INSERT_VALUES);
+				}
+			}
+			VecRestoreArray(fLocal, &fVals);
+			MatAssemblyBegin(F, MAT_FINAL_ASSEMBLY);
+			MatAssemblyEnd(F, MAT_FINAL_ASSEMBLY);
+		}
+	}
+
+	if (cMan->isPrimalRoot()) {
+
+		PC pcF;
+		PCCreate(PETSC_COMM_SELF, &pcF);
+		PCSetOperators(pcF, F, F, SAME_PRECONDITIONER);
+		PCSetType(pcF, "cholesky");
+		PCSetUp(pcF);
+
+		KSPCreate(PETSC_COMM_SELF, &kspF);
+		KSPSetTolerances(kspF, 1e-10, 1e-10, 1e7, 1);
+		KSPSetPC(kspF, pcF);
+		KSPSetOperators(kspF, F, F, SAME_PRECONDITIONER);
+
+		MatDestroy(F);
+		PCDestroy(pcF);
+	}
+	//PetscViewer v;
+	//PetscViewerBinaryOpen(comMan->getPrimal(), "../matlab/F.m", FILE_MODE_WRITE, &v);
+	//MatView(F, v);
+	//PetscViewerDestroy(v);
+}
+
+void FFeti::applyInversion(Vec b, Vec x) {
+
+	VecScatterBegin(fToRoot, b, fLocal, INSERT_VALUES, SCATTER_FORWARD);
+	VecScatterEnd(fToRoot, b, fLocal, INSERT_VALUES, SCATTER_FORWARD);
+
+	if (cMan->isPrimalRoot()) {
+		KSPSolve(kspF, fLocal, fLocal);
+	}
+
+	VecScatterBegin(fToRoot, fLocal, x, INSERT_VALUES, SCATTER_REVERSE);
+	VecScatterEnd(fToRoot, fLocal, x, INSERT_VALUES, SCATTER_REVERSE);
+}
+
+ASolver* FFeti::instanceOuterSolver(Vec d, Vec lmb) {
+	ASolver* solver = new FinitSolverStub(this);
+	solver->reset(d, lmb);
+	return solver;
+}
+
 /*
  InexactFeti1::InexactFeti1(Mat A, Vec b, Mat B, Vec lmb,
  NullSpaceInfo *nullSpace, PetscInt localNodeCount, MPI_Comm comm) :
@@ -745,7 +847,7 @@ void Feti1::applyPrimalMult(Vec in, Vec out) {
  outerPrec = 1e-7;
  }
  */
-Solver* mFeti1::instanceOuterSolver(Vec d, Vec lmb) {
+ASolver* mFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 	//outerPrec = 1e-4;
 	//lastNorm = 1e-4;
 	//inCounter = 0;
@@ -759,7 +861,7 @@ Solver* mFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 	return outerSolver;
 }
 
-Solver* InexactFeti1::instanceOuterSolver(Vec d, Vec lmb) {
+ASolver* InexactFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 	//outerPrec = 1e-4;
 	//lastNorm = 1e-4;
 	//inCounter = 0;
@@ -814,8 +916,10 @@ HFeti::HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob,
 	//
 	// TODO GTG ve vnitrnim feti neni regularni!!!
 	//
+
 	subClusterSystem
-			= new Feti1(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
+			= new FFeti(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
+
 	subClusterSystem->setPrec(1e-5);
 
 	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
@@ -899,7 +1003,7 @@ void HFeti::applyInvA(Vec in, IterationManager *itManager) {
 	VecCopy(globTemp, in);
 }
 
-Solver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
+ASolver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
 	outerPrec = 1e-3;
 	lastNorm = 1e-4;
 	inCounter = 0;
@@ -1587,7 +1691,8 @@ void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster) {
 	cluster->Rin = RClust;
 }
 
-void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster, MPI_Comm com_world) {
+void Generate2DElasticityClusterNullSpace(Mesh *mesh,
+		SubdomainCluster *cluster, MPI_Comm com_world) {
 
 	MPI_Comm comm = cluster->clusterComm;
 	NullSpaceInfo *nullSpace = new NullSpaceInfo();
@@ -1683,7 +1788,7 @@ void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster,
 
 	MatCreateMPIAIJ(com_world, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, cluster->clusterCount
 			* 3, 3, PETSC_NULL, 3, PETSC_NULL, Rglob);
-	MatCreateMPIAIJ(cluster->clusterComm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, 3, 3, PETSC_NULL,3, PETSC_NULL, systemR);
+	MatCreateMPIAIJ(cluster->clusterComm, mesh->vetrices.size() * 2, PETSC_DECIDE, PETSC_DECIDE, 3, 3, PETSC_NULL, 3, PETSC_NULL, systemR);
 
 	for (int j = 0; j < 3; j++) {
 		PetscReal *values;
