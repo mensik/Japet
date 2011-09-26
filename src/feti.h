@@ -10,6 +10,8 @@
 #include <math.h>
 #include <map>
 #include <set>
+#include <string>
+#include <sstream>
 
 #include "petscksp.h"
 #include "petscmat.h"
@@ -226,6 +228,8 @@ public:
 	virtual void applyInversion(Vec b, Vec x);
 
 	virtual ASolver* instanceOuterSolver(Vec d, Vec lmb);
+
+	virtual void solve();
 
 };
 

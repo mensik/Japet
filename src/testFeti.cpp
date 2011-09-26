@@ -1,6 +1,8 @@
 static char help[] = "My first own testing utility for PETSc\n\n";
 
 #include <iostream>
+#include <sstream>
+#include <string>
 #include "petscksp.h"
 #include "petscmat.h"
 #include "petscmg.h"
@@ -64,7 +66,7 @@ int main(int argc, char *argv[]) {
 
 		if (commManager->isPrimal()) {
 			if (conf->saveOutputs) {
-				PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/mesh.m", FILE_MODE_WRITE, &v);
+				PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/data/mesh.m", FILE_MODE_WRITE, &v);
 				mesh->dumpForMatlab(commManager->getPrimal(), v);
 				PetscViewerDestroy(v);
 			}
@@ -164,26 +166,34 @@ int main(int argc, char *argv[]) {
 		}
 
 		if (conf->saveOutputs) {
+
+			std::stringstream ss2;
+
+			ss2 << "../matlab/data/A" << rank << ".m";
+			PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
+			MatView(A, v);
+			PetscViewerDestroy(v);
+
 			if (commManager->isPrimal()) {
 
 				Vec x;
 				VecDuplicate(b, &x);
 				feti->copySolution(x);
 
-				PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/outP.m", FILE_MODE_WRITE, &v);
+				PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/data/outP.m", FILE_MODE_WRITE, &v);
 				//MatView(A, v);
 				VecView(b, v);
-				MatView(BT, v);
+				//MatView(BT, v);
 				MatView(B, v);
 				MatView(nullSpace.R, v);
 				VecView(x, v);
-				PetscViewerDestroy(v);
+				//PetscViewerDestroy(v);
 
 				VecDestroy(x);
 			}
 
 			if (commManager->isDual()) {
-				PetscViewerBinaryOpen(commManager->getDual(), "../matlab/outD.m", FILE_MODE_WRITE, &v);
+				PetscViewerBinaryOpen(commManager->getDual(), "../matlab/data/outD.m", FILE_MODE_WRITE, &v);
 				VecView(lmb, v);
 				PetscViewerDestroy(v);
 			}
