@@ -571,7 +571,7 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 				fixingNodes[3] = (firstRow / nodeDim + lastRow / nodeDim - 1) / 2 - 5;
 				fixingNodes[4] = (firstRow / nodeDim + lastRow / nodeDim - 1) / 2;
 
-				PetscPrintf(PETSC_COMM_SELF, "%d %d %d %d %d \n", fixingNodes[0], fixingNodes[1], fixingNodes[2], fixingNodes[3], fixingNodes[4]);
+				//PetscPrintf(PETSC_COMM_SELF, "%d %d %d %d %d \n", fixingNodes[0], fixingNodes[1], fixingNodes[2], fixingNodes[3], fixingNodes[4]);
 			}
 		} else {
 			for (int i = 0; i < fNodesCount; i++) {
@@ -614,17 +614,17 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		Mat Areg;
 		MatDuplicate(Aloc, MAT_COPY_VALUES, &Areg);
 
-		MatAXPY(Areg, 600000, REGREGT, DIFFERENT_NONZERO_PATTERN);
+		MatAXPY(Areg, 1, REGREGT, DIFFERENT_NONZERO_PATTERN);
 
-		std::stringstream ss2;
-		ss2 << "../matlab/data/Ar" << cMan->getPrimalRank() << ".m";
+		//std::stringstream ss2;
+		//ss2 << "../matlab/data/Ar" << cMan->getPrimalRank() << ".m";
 
-		int rank;
+		//	int rank;
 
-		PetscViewer v;
-		PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
-		MatView(Areg, v);
-		PetscViewerDestroy( v);
+		//	PetscViewer v;
+		//	PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
+		//	MatView(Areg, v);
+		//	PetscViewerDestroy(v);
 
 		PC pc;
 
@@ -655,6 +655,8 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		VecDuplicate(tempInvGh, &tempInvGhB);
 
 	}
+
+	//PetscPrintf(PETSC_COMM_WORLD, "FETI1 const. done \n");
 
 }
 
@@ -700,9 +702,11 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 	VecCopy(in, tempInv);
 
-	//if (isLocalSingular) MatNullSpaceRemove(locNS, tempInvGh, PETSC_NULL);
+	MatNullSpaceRemove(locNS, tempInvGh, PETSC_NULL);
 
 	KSPSolve(kspA, tempInvGh, tempInvGhB);
+
+	MatNullSpaceRemove(locNS, tempInvGhB, PETSC_NULL);
 
 	PetscInt itNumber;
 	KSPGetIterationNumber(kspA, &itNumber);
@@ -758,7 +762,9 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 	MatGetSize(B, &BRowCount, PETSC_NULL);
 	MatGetOwnershipRange(B, &myStart, &myEnd);
 
+	//Vec unitVector;
 	Vec bRow;
+
 	VecCreateMPI(comMan->getPrimal(), BLocalColCount, PETSC_DECIDE, &bRow);
 	VecCreateMPI(comMan->getPrimal(), BLocalRowCount, PETSC_DECIDE, &fGlobal);
 
@@ -776,6 +782,15 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 
 	for (int row = 0; row < BRowCount; row++) {
 
+		//VecSet(unitVector, 0);
+		//if (comMan->isPrimalRoot()) VecSetValue(unitVector, row, 1, INSERT_VALUES);
+
+		//VecAssemblyBegin(unitVector);
+		//VecAssemblyEnd(unitVector);
+
+		//applyMult(unitVector, fGlobal, NULL);
+
+
 		VecSet(bRow, 0);
 		if (row >= myStart && row < myEnd) {
 			MatGetRow(B, row, &ncols, &cols, &vals);
@@ -783,17 +798,17 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 				VecSetValue(bRow, cols[i], vals[i], INSERT_VALUES);
 			MatRestoreRow(B, row, &ncols, &cols, &vals);
 		}
-		VecAssemblyBegin(bRow);
+		VecAssemblyBegin( bRow);
 		VecAssemblyEnd(bRow);
 
 		applyInvA(bRow, NULL);
 
-		if (row == 70) {
-			PetscViewer v;
-			PetscViewerBinaryOpen(comMan->getPrimal(), "../matlab/data/fTest.m", FILE_MODE_WRITE, &v);
-			VecView(bRow, v);
-			PetscViewerDestroy(v);
-		}
+		//if (row == 70) {
+		//	PetscViewer v;
+		////	PetscViewerBinaryOpen(comMan->getPrimal(), "../matlab/data/fTest.m", FILE_MODE_WRITE, &v);
+		//	VecView(bRow, v);
+		//	PetscViewerDestroy(v);
+	//	}
 
 		MatMult(B, bRow, fGlobal);
 
@@ -817,7 +832,7 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		}
 	}
 
-	VecDestroy(bRow);
+	//VecDestroy(bRow);
 
 	if (cMan->isPrimalRoot()) {
 
@@ -867,175 +882,6 @@ ASolver* FFeti::instanceOuterSolver(Vec d, Vec lmb) {
 	ASolver* solver = new FinitSolverStub(this);
 	solver->reset(d, lmb);
 	return solver;
-}
-
-void FFeti::solve() {
-
-	inIterations = 0;
-	outIterations = 0;
-
-	Vec d;
-	//	VecScatter peScat, deScat;
-
-	VecDuplicate(lmb, &d);
-
-	VecCopy(b, temp);
-
-	applyInvA(temp, NULL);
-
-	//VecView(temp, PETSC_VIEWER_STDOUT_SELF);
-
-	MatMult(B, temp, d);
-
-	//Preparation of the right-hand side vector d=PBA^+b
-	//The matrix P is projector on the space orthogonal to range(G)
-
-	//projectGOrth(d); //Projection
-
-	//Feasible lambda_0 preparation
-
-
-	Vec lmbIm, lmbKer, dAlt;
-
-	if (isSingular) { //Je li singularni, je treba pripavit vhodne vstupni lambda
-
-		MatMultTranspose(R, b, e);
-
-		//VecView(b, PETSC_VIEWER_STDOUT_WORLD);
-
-		VecScale(e, -1);
-
-		Vec eTemp;
-		VecDuplicate(e, &eTemp);
-
-		applyInvGTG(e, eTemp);
-
-		if (cpMethod != ParaCG) {
-			MatMult(G, eTemp, lmb);
-		} else {
-			MatMult(R, eTemp, parT1);
-			MatMult(B, parT1, lmb);
-			VecScale(lmb, -1);
-		}
-
-		Vec lmbTemp;
-		VecDuplicate(lmb, &lmbKer);
-		VecDuplicate(d, &dAlt);
-		applyMult(lmb, lmbKer, NULL);
-
-		VecCopy(d, dAlt);
-		VecAXPY(dAlt, -1, lmbKer);
-
-		VecSet(lmbKer, 0);
-		projectGOrth(dAlt);
-
-	}
-
-	//PetscViewer v;
-	//PetscViewerBinaryOpen(cMan->getPrimal(), "../matlab/dTemp.m", FILE_MODE_WRITE, &v);
-	//VecView(dAlt, v);
-	//PetscViewerDestroy(v);
-
-	//	outerSolver = instanceOuterSolver(dAlt, lmbKer);
-	//	outerSolver->setSolverCtr(this);
-	//	outerSolver->setIsVerbose(isVerbose);
-
-	//Solve!!!
-	//	outerSolver->solve();
-	//	outerSolver->getX(lmbKer);
-
-	//	projectGOrth(lmbKer);
-
-	//	VecAXPY(lmb, 1, lmbKer);
-
-	//KSPSolve(kspF, d, lmb);
-
-	VecScatterBegin(fToRoot, dAlt, fLocal, INSERT_VALUES, SCATTER_FORWARD);
-	VecScatterEnd(fToRoot, dAlt, fLocal, INSERT_VALUES, SCATTER_FORWARD);
-
-	//VecView(fLocal, PETSC_VIEWER_STDOUT_SELF);
-
-	if (cMan->isPrimalRoot()) {
-		KSPSolve(kspF, fLocal, fLocal);
-	}
-
-	VecScatterBegin(fToRoot, fLocal, lmbKer, INSERT_VALUES, SCATTER_REVERSE);
-	VecScatterEnd(fToRoot, fLocal, lmbKer, INSERT_VALUES, SCATTER_REVERSE);
-
-	//	projectGOrth(lmbKer);
-	VecAXPY(lmb, 1, lmbKer);
-
-	//
-	// Rigid body motions
-	//
-	if (isSingular) {
-
-		Vec lmbTemp;
-		VecDuplicate(lmb, &lmbTemp);
-		applyMult(lmb, lmbTemp, NULL);
-
-		VecAYPX(lmbTemp, -1, d);
-
-		Vec bAlp, alpha;
-
-		VecCreateMPI(cMan->getDual(), PETSC_DECIDE, gN, &bAlp);
-		VecDuplicate(bAlp, &alpha);
-
-		if (cpMethod == ParaCG) {
-
-			MatMultTranspose(B, lmbTemp, parT1);
-			MatMultTranspose(R, parT1, bAlp);
-
-			VecScale(bAlp, -1);
-			applyInvGTG(bAlp, alpha);
-
-		} else {
-			MatMultTranspose(G, lmbTemp, bAlp);
-			applyInvGTG(bAlp, alpha);
-		}
-
-		VecCopy(b, u);
-
-		VecScale(lmb, -1);
-		MatMultAdd(BT, lmb, u, u);
-		VecScale(lmb, -1);
-		applyInvA(u, NULL);
-		MatMultAdd(R, alpha, u, u);
-
-	}
-
-	//VecScale(lmb, -1);
-	//VecDestroy(d);
-
-	if (isVerbose) {
-		PetscReal feasErr, uNorm;
-
-		MatMult(B, u, d);
-
-		VecNorm(d, NORM_2, &feasErr);
-		VecNorm(u, NORM_2, &uNorm);
-
-		PetscPrintf(cMan->getPrimal(), "\n");
-		PetscPrintf(cMan->getPrimal(), "FETI finished   Outer it: %d   Inner it: %d\n", outIterations, inIterations);
-		PetscPrintf(cMan->getPrimal(), "Feasibility err: %e \n", feasErr / uNorm);
-	}
-
-	if (isVerbose) {
-
-		PetscReal normB, error;
-
-		VecNorm(b, NORM_2, &normB);
-
-		applyPrimalMult(u, temp);
-		VecAXPY(temp, -1, b);
-		MatMult(BT, lmb, tempInv);
-		VecAXPY(temp, 1, tempInv);
-
-		VecNorm(temp, NORM_2, &error);
-
-		PetscPrintf(cMan->getPrimal(), "Relative error: %e\n\n", error / normB);
-
-	}
 }
 
 /*

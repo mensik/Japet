@@ -229,7 +229,7 @@ public:
 
 	virtual ASolver* instanceOuterSolver(Vec d, Vec lmb);
 
-	virtual void solve();
+//	virtual void solve();
 
 };
 
