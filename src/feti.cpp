@@ -78,7 +78,7 @@ void AFeti::initCoarse() {
 	Mat GTemp, GLOC, GTGloc;
 
 	MyLogger::Instance()->getTimer("Coarse init")->startTimer();
-	MyTimer* timer = MyLogger::Instance()->getTimer("Coarse init");
+//	MyTimer* timer = MyLogger::Instance()->getTimer("Coarse init");
 
 	PetscInt nD;
 	MatGetSize(R, PETSC_NULL, &nD);
@@ -397,7 +397,7 @@ void AFeti::solve() {
 
 	//Feasible lambda_0 preparation
 
-	Vec lmbIm, lmbKer, dAlt;
+	Vec lmbKer, dAlt;
 
 	if (isSingular) { //Je li singularni, je treba pripavit vhodne vstupni lambda
 
@@ -420,7 +420,6 @@ void AFeti::solve() {
 			VecScale(lmb, -1);
 		}
 
-		Vec lmbTemp;
 		VecDuplicate(lmb, &lmbKer);
 		VecDuplicate(d, &dAlt);
 		applyMult(lmb, lmbKer, NULL);
@@ -971,7 +970,7 @@ HFeti::HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob,
 	//
 
 	subClusterSystem
-			= new Feti1(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
+			= new FFeti(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
 
 	subClusterSystem->setPrec(1e-5);
 
@@ -985,7 +984,6 @@ HFeti::HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob,
 	VecSet(tempInv, 0);
 	VecGhostGetLocalForm(tempInv, &tempInvGh);
 	VecDuplicate(tempInvGh, &tempInvGhB);
-
 }
 
 HFeti::~HFeti() {
@@ -1300,6 +1298,7 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		dSum += dNodeCounts[i];
 
 	int globalPairsCount = cluster->globalPairing.size() / 2;
+	PetscPrintf(PETSC_COMM_WORLD, "GPSize: %d \n", globalPairsCount);
 	MPI_Bcast(&globalPairsCount, 1, MPI_INT, 0, comm);
 
 	MatCreateMPIAIJ(comm, PETSC_DECIDE, mesh->vetrices.size() * d, (globalPairsCount
@@ -1747,7 +1746,6 @@ void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster) {
 void Generate2DElasticityClusterNullSpace(Mesh *mesh,
 		SubdomainCluster *cluster, MPI_Comm com_world) {
 
-	MPI_Comm comm = cluster->clusterComm;
 	NullSpaceInfo *nullSpace = new NullSpaceInfo();
 	NullSpaceInfo *gNullSpace = new NullSpaceInfo();
 

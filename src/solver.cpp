@@ -159,7 +159,7 @@ void CGSolver::solve() {
 			PetscReal a = gTz / pAp;
 
 			if (tNorm < 1e-16) {
-			//	PetscPrintf(PETSC_COMM_SELF, "BREAK \n");
+				//	PetscPrintf(PETSC_COMM_SELF, "BREAK \n");
 				break;
 			}
 
@@ -395,6 +395,7 @@ void GLanczos::solve() {
 		}
 
 		delete[] lambda, mju, beta;
+
 	}
 
 	Vec vNew, vCur, vPrev;

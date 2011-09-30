@@ -2,7 +2,7 @@
 LINKERFLAGS = -lpetsc -lparmetis
 CPPCOMP = mpic++
 CLINKER = mpic++
-CPPFLAGS = -I/usr/include/petsc -I/usr/include/  
+CPPFLAGS = -I/usr/include/petsc -I/usr/include/ 
 
 headerDir = ../src
 MYLIB = structures.o fem.o feti.o solver.o japetUtils.o japetLa.o

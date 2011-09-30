@@ -197,8 +197,8 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 
 		numOfPartitions = size;
 
-		PetscReal Hx = (x1 - x0) / (PetscReal)m;
-		PetscReal Hy = (y1 - y0) / (PetscReal)n;
+		PetscReal Hx = (x1 - x0) / (PetscReal) m;
+		PetscReal Hy = (y1 - y0) / (PetscReal) n;
 
 		PetscInt xEdges = (PetscInt) ceil(Hx / h);
 		PetscInt yEdges = (PetscInt) ceil(Hy / h);
@@ -213,8 +213,8 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 		PetscInt subDomainNodeCount = (xEdges + 1) * (yEdges + 1);
 		PetscInt subDomainElementCount = xEdges * yEdges * 2;
 
-		PetscReal hx = Hx / (PetscReal)xEdges;
-		PetscReal hy = Hy / (PetscReal)yEdges;
+		PetscReal hx = Hx / (PetscReal) xEdges;
+		PetscReal hy = Hy / (PetscReal) yEdges;
 
 		PetscInt nodeIndex = rank * subDomainNodeCount;
 		PetscInt elementIndex = rank * subDomainElementCount;
@@ -1239,7 +1239,7 @@ void Mesh::createCluster(SubdomainCluster *cluster) {
 
 		int wgtflag = 1; //weights on edges
 		int numFlag = 0; //C style
-		nparts = floor(sqrt((double)numOfPartitions));
+		nparts = floor(sqrt((double) numOfPartitions));
 
 		cluster->clusterCount = nparts;
 		int options[] = { 0, 0, 0, 0, 0 };
@@ -1464,21 +1464,50 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 
 		typedef std::map<PetscInt, std::vector<PetscInt> > mapIn;
 		typedef std::map<PetscInt, mapIn> mapOut;
+
 		for (mapOut::iterator i = pairings.data.begin(); i != pairings.data.end(); i++)
 			for (mapIn::iterator j = (*i).second.begin(); j != (*i).second.end(); j++) {
 				int aColor = cluster->subdomainColors[i->first];
 				int bColor = cluster->subdomainColors[j->first];
 
 				if (aColor == bColor) {
+
 					if (aColor == cluster->clusterColor) { //local cluster
+
+						int size = j->second.size() / 2;
+						int count = 0;
 						for (std::vector<PetscInt>::iterator p = j->second.begin(); p
-								!= j->second.end(); p++)
-							cluster->localPairing.push_back(*p);
+								!= j->second.end();) {
+							if (count == size / 2 || count == 0 || count == size - 1) {
+								cluster->localPairing.push_back(*p++);
+								cluster->localPairing.push_back(*p++);
+							} else {
+								cluster->globalPairing.push_back(*p++);
+								cluster->globalPairing.push_back(*p++);
+							}
+							count++;
+						}
 
 					} else { //send pairings to other cluster roots
-						int vSize = j->second.size();
+
+						std::vector<PetscInt> tempVec;
+						int size = j->second.size() / 2;
+						int count = 0;
+						for (std::vector<PetscInt>::iterator p = j->second.begin(); p
+								!= j->second.end();) {
+							if (count == size / 2 || count == 0 || count == size - 1) {
+								tempVec.push_back(*p++);
+								tempVec.push_back(*p++);
+							} else {
+								cluster->globalPairing.push_back(*p++);
+								cluster->globalPairing.push_back(*p++);
+							}
+							count++;
+						}
+
+						int vSize = tempVec.size();
 						PetscInt *temp = new PetscInt[vSize];
-						std::vector<PetscInt>::iterator p = j->second.begin();
+						std::vector<PetscInt>::iterator p = tempVec.begin();
 						for (int k = 0; k < vSize; k++, p++)
 							temp[k] = *p;
 
@@ -1553,8 +1582,6 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 	}
 
 	corners.clear();
-
-
 }
 
 PetscInt Mesh::getNodeDomain(PetscInt index) {
