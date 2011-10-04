@@ -432,10 +432,10 @@ void AFeti::solve() {
 
 	}
 
-	PetscViewer v;
-	PetscViewerBinaryOpen(cMan->getPrimal(), "../matlab/dTemp.m", FILE_MODE_WRITE, &v);
-	VecView(dAlt, v);
-	PetscViewerDestroy(v);
+//	PetscViewer v;
+//	PetscViewerBinaryOpen(cMan->getPrimal(), "../matlab/dTemp.m", FILE_MODE_WRITE, &v);
+//	VecView(dAlt, v);
+//	PetscViewerDestroy(v);
 
 	outerSolver = instanceOuterSolver(dAlt, lmbKer);
 	outerSolver->setSolverCtr(this);
@@ -523,7 +523,7 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
 	lastNorm = norm;
 
-	return norm / bNorm < precision || itNumber > 60;
+	return norm / bNorm < precision || itNumber > 200;
 }
 
 Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
@@ -772,7 +772,8 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 	Mat F;
 
 	if (comMan->isPrimalRoot()) {
-		MatCreateSeqAIJ(PETSC_COMM_SELF, BRowCount, BRowCount, BRowCount, PETSC_NULL, &F);
+		MatCreateSeqDense(PETSC_COMM_SELF,BRowCount, BRowCount,PETSC_NULL, &F);
+		//MatCreateSeqAIJ(PETSC_COMM_SELF, BRowCount, BRowCount, BRowCount, PETSC_NULL, &F);
 	}
 
 	PetscInt ncols;
@@ -835,10 +836,10 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 
 	if (cMan->isPrimalRoot()) {
 
-		PetscViewer v;
-		PetscViewerBinaryOpen(PETSC_COMM_SELF, "../matlab/data/F.m", FILE_MODE_WRITE, &v);
-		MatView(F, v);
-		PetscViewerDestroy(v);
+//		PetscViewer v;
+//		PetscViewerBinaryOpen(PETSC_COMM_SELF, "../matlab/data/F.m", FILE_MODE_WRITE, &v);
+//		MatView(F, v);
+//		PetscViewerDestroy(v);
 
 		PC pcF;
 		PCCreate(PETSC_COMM_SELF, &pcF);
@@ -970,7 +971,7 @@ HFeti::HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob,
 	//
 
 	subClusterSystem
-			= new FFeti(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
+			= new Feti1(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
 
 	subClusterSystem->setPrec(1e-5);
 

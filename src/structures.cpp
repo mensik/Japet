@@ -1478,7 +1478,7 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 						int count = 0;
 						for (std::vector<PetscInt>::iterator p = j->second.begin(); p
 								!= j->second.end();) {
-							if (count == size / 2 || count == 0 || count == size - 1) {
+							if (count == size / 3 || count == 2 * size / 3) {
 								cluster->localPairing.push_back(*p++);
 								cluster->localPairing.push_back(*p++);
 							} else {
