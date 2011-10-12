@@ -30,6 +30,8 @@ AFeti::AFeti(PDCommManager* comMan, Vec b, Mat BT, Mat B, Vec lmb,
 	outerSolver = NULL;
 	isVerbose = false;
 
+
+
 	isSingular = true; /// FIX - only works for total FETI
 
 	this->b = b;
@@ -67,6 +69,9 @@ AFeti::AFeti(PDCommManager* comMan, Vec b, Mat BT, Mat B, Vec lmb,
 	//VecScatterCreateToZero(pBGlob, &pBScat, &pBLoc);
 
 	this->lmb = lmb;
+
+	VecDuplicate(lmb, &lmbKerPrev);
+	VecSet(lmbKerPrev, 0);
 
 	//If the matrix A is singular, the matrix G and G'G has to be prepared.
 	if (isSingular) initCoarse();
@@ -369,7 +374,14 @@ void AFeti::applyPrimalMult(Vec in, Vec out) {
 }
 
 ASolver* AFeti::instanceOuterSolver(Vec d, Vec l) {
-	return new CGSolver(this, d, l, this, cMan->getDual());
+	//return new CGSolver(this, d, l, this);
+	if (outerSolver == NULL) {
+		outerSolver = new CGSolver(this, d, l, this);
+	} else {
+		outerSolver->reset(d, l);
+	}
+
+	return outerSolver;
 }
 
 void AFeti::solve() {
@@ -428,6 +440,7 @@ void AFeti::solve() {
 		VecAXPY(dAlt, -1, lmbKer);
 
 		VecSet(lmbKer, 0);
+
 		projectGOrth(dAlt);
 
 	}
@@ -437,7 +450,7 @@ void AFeti::solve() {
 //	VecView(dAlt, v);
 //	PetscViewerDestroy(v);
 
-	outerSolver = instanceOuterSolver(dAlt, lmbKer);
+	outerSolver = instanceOuterSolver(dAlt, lmbKerPrev);
 	outerSolver->setSolverCtr(this);
 	outerSolver->setIsVerbose(isVerbose);
 
@@ -448,6 +461,8 @@ void AFeti::solve() {
 	projectGOrth(lmbKer);
 
 	VecAXPY(lmb, 1, lmbKer);
+
+	VecCopy(lmbKer, lmbKerPrev);
 
 	//
 	// Rigid body motions
@@ -523,7 +538,7 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 		Vec *vec) {
 	lastNorm = norm;
 
-	return norm / bNorm < precision || itNumber > 200;
+	return norm / bNorm < precision || itNumber > 1000;
 }
 
 Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
@@ -973,7 +988,7 @@ HFeti::HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob,
 	subClusterSystem
 			= new Feti1(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
 
-	subClusterSystem->setPrec(1e-5);
+	subClusterSystem->setPrec(1e-8);
 
 	//Sestaveni Nuloveho prostoru lokalni casti matice tuhosti A
 	MatNullSpaceCreate(cluster->clusterComm, PETSC_TRUE, 3, cluster->outerNullSpace->localBasis, &clusterNS);
@@ -1059,7 +1074,7 @@ ASolver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
 	outerPrec = 1e-3;
 	lastNorm = 1e-4;
 	inCounter = 0;
-	return new CGSolver(this, d, lmb, this);
+	return new CGSolver(this, d, lmb, this, cMan->getPrimal(), 5);
 }
 
 void HFeti::setRequiredPrecision(PetscReal reqPrecision) {

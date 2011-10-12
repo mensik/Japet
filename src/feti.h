@@ -62,6 +62,8 @@ protected:
 	Vec d; ///< dual right side
 	Vec e;
 
+	Vec lmbKerPrev;
+
 	PetscInt gM, gN; ///<	dimensions of G
 	Mat G, GT; ///< BR
 	KSP kspG; ///< Global G'G solver

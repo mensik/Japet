@@ -164,17 +164,30 @@ void CGSolver::solve() {
 			}
 
 			VecAXPY(x, -a, p);
-			VecAXPY(g, -a, temp);
 
-			sPC->applyPC(g, z);
+			if (restartRate != -1 && getItCount() > 1 && getItCount() % restartRate
+					== 0) {
 
-			gTzPrev = gTz;
+				VecCopy(b, g);
+				sApp->applyMult(x, temp, &itManager);
+				VecAYPX(g, -1, temp); // g = Ax - b
+				sPC->applyPC(g, z);
+				VecCopy(z, p);
+				VecDot(g, z, &gTz);
+			} else {
 
-			VecDot(g, z, &gTz);
+				VecAXPY(g, -a, temp);
 
-			PetscReal beta = gTz / gTzPrev;
-			VecAYPX(p, beta, z);
+				sPC->applyPC(g, z);
 
+				gTzPrev = gTz;
+
+				VecDot(g, z, &gTz);
+
+				PetscReal beta = gTz / gTzPrev;
+				VecAYPX(p, beta, z);
+
+			}
 			VecNorm(g, NORM_2, &rNorm);
 
 			if (gTz != gTz) {
@@ -207,8 +220,10 @@ void ReCGSolver::initSolver() {
 
 void ReCGSolver::project() {
 
+
 	if (P.size() > 0) {
-		//PetscPrintf(PETSC_COMM_WORLD, "RE - projection\n");
+
+		//PetscPrintf(PETSC_COMM_SELF, "p");
 
 		for (int i = 0; i < P.size(); i++) {
 
@@ -243,11 +258,12 @@ void ReCGSolver::clearSubspace() {
 	P.clear();
 	AP.clear();
 	PAP.clear();
+
 }
 
 void ReCGSolver::solve() {
 
-	project();
+//	project();
 
 	PetscReal relativeCoef = MAX(bNorm, r0Norm);
 	PetscReal gTzPrev, gTz;
@@ -264,6 +280,14 @@ void ReCGSolver::solve() {
 		PetscScalar pAp;
 		sApp->applyMult(p, Ap, &itManager);
 		VecDot(p, Ap, &pAp);
+
+		PetscReal tNorm;
+		VecNorm(Ap, NORM_2, &tNorm);
+
+		if (tNorm < 1e-16) {
+			//	PetscPrintf(PETSC_COMM_SELF, "BREAK \n");
+			break;
+		}
 
 		PetscReal a = gTz / pAp;
 
@@ -288,6 +312,8 @@ void ReCGSolver::solve() {
 		P.push_back(pT);
 		AP.push_back(ApT);
 		PAP.push_back(pAp);
+
+		//PetscPrintf(PETSC_COMM_SELF,"P%d ", P.size());
 		//}
 		gCounter++;
 

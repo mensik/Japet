@@ -190,6 +190,7 @@ class CGSolver: public Solver {
 
 	Vec p; ///< direction vector
 	Vec temp; ///< temp Vector
+	int restartRate;
 
 	void initSolver();
 public:
@@ -199,9 +200,10 @@ public:
 	}
 	;
 	CGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL,
-			MPI_Comm comm = MPI_COMM_WORLD) :
+			MPI_Comm comm = MPI_COMM_WORLD, int restartRate = -1) :
 		Solver(sa, b, x, pc, comm) {
 		initSolver();
+		this->restartRate = restartRate;
 	}
 	;
 	~CGSolver();
