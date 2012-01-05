@@ -30,8 +30,6 @@ AFeti::AFeti(PDCommManager* comMan, Vec b, Mat BT, Mat B, Vec lmb,
 	outerSolver = NULL;
 	isVerbose = false;
 
-
-
 	isSingular = true; /// FIX - only works for total FETI
 
 	this->b = b;
@@ -83,7 +81,7 @@ void AFeti::initCoarse() {
 	Mat GTemp, GLOC, GTGloc;
 
 	MyLogger::Instance()->getTimer("Coarse init")->startTimer();
-//	MyTimer* timer = MyLogger::Instance()->getTimer("Coarse init");
+	//	MyTimer* timer = MyLogger::Instance()->getTimer("Coarse init");
 
 	PetscInt nD;
 	MatGetSize(R, PETSC_NULL, &nD);
@@ -163,14 +161,14 @@ void AFeti::initCoarse() {
 				}
 			}
 
-			MatCreateSeqAIJWithArrays(PETSC_COMM_SELF, totalRows, ln, locIA, locJA, locVal, &GLOC);
+			MatCreateSeqAIJWithArrays(PETSC_COMM_SELF, totalRows, ln, locIA, locJA, locVal, &Groot);
 
-			MatMatMultTranspose(GLOC, GLOC, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GTGloc);
+			MatMatMultTranspose(Groot, Groot, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GTGloc);
 
-			MatDestroy(GLOC);
-			delete[] locJA;
-			delete[] locIA;
-			delete[] locVal;
+			//MatDestroy(Groot);
+			//delete[] locJA;
+			//delete[] locIA;
+			//delete[] locVal;
 
 			PC pcGTG;
 			PCCreate(PETSC_COMM_SELF, &pcGTG);
@@ -242,6 +240,7 @@ void AFeti::initCoarse() {
 	MyLogger::Instance()->getTimer("Coarse init")->stopTimer();
 
 	if (cpMethod != ParaCG) MatScale(G, -1);
+
 }
 
 void AFeti::applyInvGTG(Vec in, Vec out) {
@@ -375,6 +374,8 @@ void AFeti::applyPrimalMult(Vec in, Vec out) {
 
 ASolver* AFeti::instanceOuterSolver(Vec d, Vec l) {
 	//return new CGSolver(this, d, l, this);
+
+
 	if (outerSolver == NULL) {
 		outerSolver = new CGSolver(this, d, l, this);
 	} else {
@@ -445,10 +446,10 @@ void AFeti::solve() {
 
 	}
 
-//	PetscViewer v;
-//	PetscViewerBinaryOpen(cMan->getPrimal(), "../matlab/dTemp.m", FILE_MODE_WRITE, &v);
-//	VecView(dAlt, v);
-//	PetscViewerDestroy(v);
+	//	PetscViewer v;
+	//	PetscViewerBinaryOpen(cMan->getPrimal(), "../matlab/dTemp.m", FILE_MODE_WRITE, &v);
+	//	VecView(dAlt, v);
+	//	PetscViewerDestroy(v);
 
 	outerSolver = instanceOuterSolver(dAlt, lmbKerPrev);
 	outerSolver->setSolverCtr(this);
@@ -578,7 +579,7 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 				FIX_NODE_COUNT = 1;
 				fixingNodes[0] = (firstRow / nodeDim + lastRow / nodeDim - 1) / 2;
 			} else if (nodeDim == 2) { //Elasticity
-				FIX_NODE_COUNT = 3;
+				FIX_NODE_COUNT = 5;
 				fixingNodes[0] = firstRow / nodeDim + 4;
 				fixingNodes[1] = lastRow / nodeDim - 4;
 				fixingNodes[2] = (firstRow / nodeDim + lastRow / nodeDim - 1) / 2 + 5;
@@ -784,10 +785,8 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 
 	VecScatterCreateToZero(fGlobal, &fToRoot, &fLocal);
 
-	Mat F;
-
 	if (comMan->isPrimalRoot()) {
-		MatCreateSeqDense(PETSC_COMM_SELF,BRowCount, BRowCount,PETSC_NULL, &F);
+		MatCreateSeqDense(PETSC_COMM_SELF, BRowCount, BRowCount, PETSC_NULL, &F);
 		//MatCreateSeqAIJ(PETSC_COMM_SELF, BRowCount, BRowCount, BRowCount, PETSC_NULL, &F);
 	}
 
@@ -813,7 +812,7 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 				VecSetValue(bRow, cols[i], vals[i], INSERT_VALUES);
 			MatRestoreRow(B, row, &ncols, &cols, &vals);
 		}
-		VecAssemblyBegin( bRow);
+		VecAssemblyBegin(bRow);
 		VecAssemblyEnd(bRow);
 
 		applyInvA(bRow, NULL);
@@ -823,7 +822,7 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		////	PetscViewerBinaryOpen(comMan->getPrimal(), "../matlab/data/fTest.m", FILE_MODE_WRITE, &v);
 		//	VecView(bRow, v);
 		//	PetscViewerDestroy(v);
-	//	}
+		//	}
 
 		MatMult(B, bRow, fGlobal);
 
@@ -838,7 +837,7 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 
 			for (int i = 0; i < BRowCount; i++) {
 				if (fVals[i] != 0) {
-					MatSetValue(F, row, i, fVals[i], INSERT_VALUES);
+					MatSetValue(F, i, row, fVals[i], INSERT_VALUES);
 				}
 			}
 			VecRestoreArray(fLocal, &fVals);
@@ -848,13 +847,10 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 	}
 
 	//VecDestroy(bRow);
+	//Mat Groot;
+	//gatherMatrix(G, Groot, 0, cMan->getPrimal());
 
 	if (cMan->isPrimalRoot()) {
-
-//		PetscViewer v;
-//		PetscViewerBinaryOpen(PETSC_COMM_SELF, "../matlab/data/F.m", FILE_MODE_WRITE, &v);
-//		MatView(F, v);
-//		PetscViewerDestroy(v);
 
 		PC pcF;
 		PCCreate(PETSC_COMM_SELF, &pcF);
@@ -867,8 +863,70 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		KSPSetPC(kspF, pcF);
 		KSPSetOperators(kspF, F, F, SAME_PRECONDITIONER);
 
-		MatDestroy(F);
+		//MatDestroy(F);
 		PCDestroy(pcF);
+
+		Vec gCol, sCol;
+		Mat GrootT, S;
+		PetscInt gRows, gCols;
+		MatGetSize(Groot, &gRows, &gCols);
+
+		VecCreateSeq(PETSC_COMM_SELF, gRows, &gCol);
+		VecCreateSeq(PETSC_COMM_SELF, gCols, &sCol);
+		MatCreateSeqDense(PETSC_COMM_SELF, gCols, gCols, PETSC_NULL, &S);
+
+		MatTranspose(Groot, MAT_INITIAL_MATRIX, &GrootT);
+
+		PetscInt ncols;
+		const PetscInt *cols;
+		const PetscScalar *vals;
+
+		for (int col = 0; col < gCols; col++) {
+			VecSet(gCol, 0);
+			MatGetRow(GrootT, col, &ncols, &cols, &vals);
+			for (int i = 0; i < ncols; i++)
+				VecSetValue(gCol, cols[i], vals[i], INSERT_VALUES);
+			MatRestoreRow(GrootT, col, &ncols, &cols, &vals);
+			VecAssemblyBegin(gCol);
+			VecAssemblyEnd(gCol);
+
+			KSPSolve(kspF, gCol, gCol);
+
+			MatMult(GrootT, gCol, sCol);
+
+			PetscScalar *sVals;
+			VecGetArray(sCol, &sVals);
+
+			for (int i = 0; i < gCols; i++) {
+				if (sVals[i] != 0) {
+					MatSetValue(S, col, i, sVals[i], INSERT_VALUES);
+				}
+			}
+			VecRestoreArray(sCol, &sVals);
+			MatAssemblyBegin(S, MAT_FINAL_ASSEMBLY);
+			MatAssemblyEnd(S, MAT_FINAL_ASSEMBLY);
+
+		}
+		//PetscViewer v;
+		//PetscViewerBinaryOpen(PETSC_COMM_SELF, "../matlab/data/F.m", FILE_MODE_WRITE, &v);
+		//MatView(S, v);
+		//PetscViewerDestroy(v);
+
+		PC pcS;
+		PCCreate(PETSC_COMM_SELF, &pcS);
+		PCSetOperators(pcS, S, S, SAME_PRECONDITIONER);
+		PCSetType(pcS, "lu");
+		PCSetUp(pcS);
+
+
+		KSPCreate(PETSC_COMM_SELF, &kspS);
+		KSPSetTolerances(kspS, 1e-10, 1e-10, 1e7, 1);
+		KSPSetPC(kspS, pcS);
+		KSPSetOperators(kspS, S, S, SAME_PRECONDITIONER);
+
+		//MatDestroy(F);
+		PCDestroy(pcS);
+
 	}
 	//PetscViewer v;
 	//PetscViewerBinaryOpen(comMan->getPrimal(), "../matlab/F.m", FILE_MODE_WRITE, &v);
@@ -885,6 +943,11 @@ void FFeti::applyInversion(Vec b, Vec x) {
 
 	if (cMan->isPrimalRoot()) {
 		KSPSolve(kspF, fLocal, fLocal);
+		//	Vec fTemp;
+		//	VecDuplicate(fLocal, &fTemp);
+		//	MatSolve(F, fLocal, fTemp);
+		//	VecCopy(fTemp, fLocal);
+		//	VecDestroy(fTemp);
 	}
 
 	VecScatterBegin(fToRoot, fLocal, x, INSERT_VALUES, SCATTER_REVERSE);
@@ -894,9 +957,15 @@ void FFeti::applyInversion(Vec b, Vec x) {
 }
 
 ASolver* FFeti::instanceOuterSolver(Vec d, Vec lmb) {
-	ASolver* solver = new FinitSolverStub(this);
-	solver->reset(d, lmb);
-	return solver;
+
+	/*
+	 ASolver* solver = new FinitSolverStub(this);
+	 solver->reset(d, lmb);*/
+	return AFeti::instanceOuterSolver(d, lmb);
+}
+
+void FFeti::solve() {
+	Feti1::solve();
 }
 
 /*
@@ -978,6 +1047,8 @@ HFeti::HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob,
 
 	this->cluster = cluster;
 
+	precision = 5e-4;
+
 	PDCommManager *clustComMan =
 			new PDCommManager(cluster->clusterComm, SAME_COMMS);
 
@@ -986,7 +1057,7 @@ HFeti::HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob,
 	//
 
 	subClusterSystem
-			= new Feti1(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
+			= new FFeti(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
 
 	subClusterSystem->setPrec(1e-8);
 
@@ -1074,7 +1145,7 @@ ASolver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
 	outerPrec = 1e-3;
 	lastNorm = 1e-4;
 	inCounter = 0;
-	return new CGSolver(this, d, lmb, this, cMan->getPrimal(), 5);
+	return new CGSolver(this, d, lmb, this, cMan->getPrimal(), 15);
 }
 
 void HFeti::setRequiredPrecision(PetscReal reqPrecision) {

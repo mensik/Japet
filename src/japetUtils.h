@@ -14,7 +14,7 @@
 #include <vector>
 #include <map>
 #include "petscsys.h"
-#include "petscvec.h"
+#include "petscmat.h"
 #include "mpi.h"
 #include <time.h>
 #include <sys/timeb.h>
@@ -257,4 +257,11 @@ public:
 		return t;
 	}
 };
+
+//*
+// Gather matrix on one (root) proces
+//
+
+void gatherMatrix(Mat A, Mat Aloc, int root, MPI_Comm comm);
+
 #endif /* JAPETUTILS_H_ */

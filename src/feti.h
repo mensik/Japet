@@ -66,6 +66,9 @@ protected:
 
 	PetscInt gM, gN; ///<	dimensions of G
 	Mat G, GT; ///< BR
+
+	Mat Groot;
+
 	KSP kspG; ///< Global G'G solver
 	MatNullSpace GTGNullSpace;
 
@@ -216,11 +219,13 @@ public:
 
 class FFeti: public Feti1, public SolverInvertor {
 protected:
+	Mat F;
 
 	VecScatter fToRoot;
 	Vec fLocal, fGlobal;
 
 	KSP kspF;
+	KSP kspS;
 public:
 	FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 			NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
@@ -230,6 +235,8 @@ public:
 	virtual void applyInversion(Vec b, Vec x);
 
 	virtual ASolver* instanceOuterSolver(Vec d, Vec lmb);
+
+	virtual void solve();
 
 //	virtual void solve();
 

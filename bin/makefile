@@ -14,19 +14,19 @@ vpath %.h $(headerDir)
 	$(CPPCOMP) $(CPPFLAGS) -o $@ -c $<
 
 feti: $(MYLIB) testFeti.o
-	$(CLINKER) $(LINKERFLAGS) $(MYLIB) testFeti.o -o testFeti
+	$(CLINKER) $(MYLIB) testFeti.o -o testFeti $(LINKERFLAGS)
 	mv testFeti ../deploy
 
 hfeti: $(MYLIB) testHFeti.o
-	$(CLINKER) $(LINKERFLAGS) $(MYLIB) testHFeti.o -o testHFeti
+	$(CLINKER) $(MYLIB) testHFeti.o -o testHFeti $(LINKERFLAGS) 
 	mv testHFeti ../deploy
 
 test: $(MYLIB) test.o
-	$(CLINKER) $(LINKERFLAGS) $(MYLIB) test.o -o testSolver
+	$(CLINKER)  $(MYLIB) test.o -o testSolver $(LINKERFLAGS) 
 	mv testSolver ../deploy
 
 structures: $(MYLIB) testStructures.o
-	$(CLINKER) $(LINKERFLAGS) $(MYLIB) testStructures.o -o testStructures
+	$(CLINKER)  $(MYLIB) testStructures.o -o testStructures $(LINKERFLAGS) 
 	mv testStructures ../deploy
 
 clean:

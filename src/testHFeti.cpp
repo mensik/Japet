@@ -62,15 +62,17 @@ int main(int argc, char *argv[]) {
 		int oRank; //old Rank
 		MPI_Comm_rank(PETSC_COMM_WORLD, &oRank);
 
-		//int clXCount = 3;
-		//int clYCount = 2;
-		//int clXsize = conf->m / clXCount;
-		//int clYsize = conf->n / clYCount;
+	//	int clXCount = 2;
+	//	int clYCount = 2;
+	//	int clXsize = conf->m / clXCount;
+	//	int clYsize = conf->n / clYCount;
 
 		int clXsize = 2;
 		int clYsize = 2;
 		int clXCount = conf->m /clXsize;
 		int clYCount = conf->n /clYsize;
+
+		PetscPrintf(PETSC_COMM_WORLD, "Cluster count x: %d \t y: %d \n", clXCount, clYCount);
 
 		int clInd = oRank % (clXsize * clYsize); // index inside cluster
 		int clX = clInd % clXsize;
@@ -127,7 +129,7 @@ int main(int argc, char *argv[]) {
 		Vec lmbG, lmbL, lmb;
 
 		SubdomainCluster cluster;
-		//
+		//		/*
 		//		 Mat B, BT;
 		//		 GenerateTotalJumpOperator(mesh, 2, B, BT, lmb, commManager);
 		//		 PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/B.m", FILE_MODE_WRITE, &v);
@@ -188,22 +190,23 @@ int main(int argc, char *argv[]) {
 		// mesh->dumpForMatlab(v);
 		// PetscViewerDestroy(v);
 
-			delete mesh;
-
-//		 Vec u;
-//		 VecDuplicate(b, &u);
-//		 hFeti->copySolution(u);
+		//	delete mesh;
+		/*
+		 Vec u;
+		 VecDuplicate(b, &u);
+		 hFeti->copySolution(u);
 		 //hFeti->copyLmb(lmb);
 
-		 //PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/out.m", FILE_MODE_WRITE, &v);
+		 PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/out.m", FILE_MODE_WRITE, &v);
 		 //MatView(A, v);
-		 //VecView(b, v);
+		 VecView(b, v);
 		 //	MatView(B, v);
-		// VecView(u, v);
+		 VecView(u, v);
 		 //VecView(lmb, v);
-		 //PetscViewerDestroy(v);
-
+		 PetscViewerDestroy(v);
+		 */
 		//	delete hFeti;
+
 	}
 
 	ierr = PetscFinalize();

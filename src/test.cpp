@@ -1,23 +1,23 @@
 static char help[] = "My first own testing utility for PETSc\n\n";
 
 #include <iostream>
-#include "fem.h"
-#include "structures.h"
-#include "solver.h"
+//#include "fem.h"
+//#include "structures.h"
+//#include "solver.h"
 #include "petscmat.h"
-#include "japetUtils.h"
+//#include "japetUtils.h"
 
-PetscReal funConst(Point n) {
-	return 1;
-}
+//PetscReal funConst(Point n) {
+//	return 1;
+//}
 
 int main(int argc, char *argv[]) {
 
 	PetscInitialize(&argc, &argv, (char *) 0, help);
 
-	PDCommManager pdManager(MPI_COMM_WORLD, ALL_ONE_SAMEROOT);
+	//PDCommManager pdManager(MPI_COMM_WORLD, ALL_ONE_SAMEROOT);
 
-	if (pdManager.isDual()) PetscPrintf(pdManager.getDual(), "TEST");
+	//if (pdManager.isDual()) PetscPrintf(pdManager.getDual(), "TEST");
 
 	/*
 	 PetscInt size, rank;

@@ -208,3 +208,76 @@ ConfigManager::ConfigManager() {
 
 }
 
+void gatherMatrix(Mat A, Mat Aloc, int root, MPI_Comm comm) {
+
+	Mat ATemp;
+	int rank;
+
+	MPI_Comm_rank(comm, &rank);
+	MatGetLocalMat(A, MAT_INITIAL_MATRIX, &ATemp);
+
+	PetscScalar *val;
+	PetscInt *ia, *ja;
+	PetscInt n;
+	PetscTruth done;
+	PetscInt lm, ln;
+	PetscInt Arows, Acols;
+
+	MatGetSize(A, &Arows, &Acols);
+	MatGetSize(ATemp, &lm, &ln);
+	MatGetArray(ATemp, &val);
+	MatGetRowIJ(ATemp, 0, PETSC_FALSE, PETSC_FALSE, &n, &ia, &ja, &done);
+
+	if (rank == root) {
+
+		PetscInt lNumRow[Arows], lNNZ[Arows], firstRowIndex[Arows + 1],
+				displ[Arows], totalNNZ, totalRows;
+		MPI_Gather(&n, 1, MPI_INT, lNumRow, 1, MPI_INT, 0, comm);
+		MPI_Gather(&ia[n], 1, MPI_INT, lNNZ, 1, MPI_INT, 0, comm);
+
+		totalNNZ = 0;
+		totalRows = 0;
+
+		for (int i = 0; i < Arows; i++) {
+			firstRowIndex[i] = totalRows;
+			displ[i] = totalNNZ;
+			totalNNZ += lNNZ[i];
+			totalRows += lNumRow[i];
+		}
+		firstRowIndex[Arows] = totalRows;
+
+		PetscInt *locJA = new PetscInt[totalNNZ];
+		PetscInt *locIA = new PetscInt[totalRows + 1];
+		PetscScalar *locVal = new PetscScalar[totalNNZ];
+
+		locIA[0] = 0;
+		MPI_Gatherv(ja, ia[n], MPI_INT, locJA, lNNZ, displ, MPI_INT, 0, comm);
+		MPI_Gatherv(ia + 1, n, MPI_INT, locIA + 1, lNumRow, firstRowIndex, MPI_INT, 0, comm);
+		MPI_Gatherv(val, ia[n], MPI_DOUBLE, locVal, lNNZ, displ, MPI_DOUBLE, 0, comm);
+
+		for (int j = 0; j < Arows; j++) {
+			for (int i = firstRowIndex[j] + 1; i < firstRowIndex[j + 1] + 1; i++) {
+				locIA[i] += displ[j];
+			}
+		}
+
+		MatCreateSeqAIJWithArrays(PETSC_COMM_SELF, totalRows, ln, locIA, locJA, locVal, &Aloc);
+
+		delete[] locJA;
+		delete[] locIA;
+		delete[] locVal;
+
+	} else {
+		MPI_Gather(&n, 1, MPI_INT, PETSC_NULL, 1, MPI_INT, root, comm);
+		MPI_Gather(&ia[n], 1, MPI_INT, PETSC_NULL, 1, MPI_INT, root,comm);
+
+		MPI_Gatherv(ja, ia[n], MPI_INT, NULL, NULL, NULL, MPI_INT, root, comm);
+		MPI_Gatherv(ia + 1, n, MPI_INT, NULL, NULL, NULL, MPI_INT, root, comm);
+		MPI_Gatherv(val, ia[n], MPI_DOUBLE, NULL, NULL, NULL, MPI_DOUBLE, root, comm);
+	}
+
+	MatRestoreRowIJ(ATemp, 0, PETSC_FALSE, PETSC_FALSE, &n, &ia, &ja, &done);
+	MatRestoreArray(ATemp, &val);
+	MatDestroy(ATemp);
+}
+
