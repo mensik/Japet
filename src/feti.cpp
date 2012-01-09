@@ -65,6 +65,7 @@ AFeti::AFeti(PDCommManager* comMan, Vec b, Mat BT, Mat B, Vec lmb,
 	MatGetSize(B, &dualSize, PETSC_NULL);
 	VecCreateMPI(cMan->getPrimal(), PETSC_DECIDE, dualSize, &pBGlob);
 	//VecScatterCreateToZero(pBGlob, &pBScat, &pBLoc);
+	VecScatterCreateToZero(lmb, &dBScat, &dBLoc);
 
 	this->lmb = lmb;
 
@@ -826,8 +827,6 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 
 		MatMult(B, bRow, fGlobal);
 
-		//projectGOrth(fGlobal);
-
 		VecScatterBegin(fToRoot, fGlobal, fLocal, INSERT_VALUES, SCATTER_FORWARD);
 		VecScatterEnd(fToRoot, fGlobal, fLocal, INSERT_VALUES, SCATTER_FORWARD);
 
@@ -846,16 +845,64 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		}
 	}
 
+	//
+	// Prepare G regularization (if necessary)
+	//
+
+	Mat RgLOC; // Local matrix of null space of G (tricky, isn't it ;-))
+	Mat RRt;
+
+	if (sR != NULL && sR->rDim > 0) {
+		VecScatter rScat;
+		Vec rLocal;
+		VecScatterCreateToZero(sR->systemGNullSpace[0], &rScat, &rLocal);
+
+		PetscInt rRows;
+		if (cMan->isPrimalRoot()) {
+			VecGetSize(rLocal, &rRows);
+			MatCreateSeqDense(PETSC_COMM_SELF, rRows, sR->rDim, PETSC_NULL, &RgLOC);
+		}
+
+		for (int i = 0; i < sR->rDim; i++) {
+			VecScatterBegin(rScat, sR->systemGNullSpace[i], rLocal, INSERT_VALUES, SCATTER_FORWARD);
+			VecScatterEnd(rScat, sR->systemGNullSpace[i], rLocal, INSERT_VALUES, SCATTER_FORWARD);
+
+			if (cMan->isPrimalRoot()) {
+				PetscScalar *rVals;
+				VecGetArray(rLocal, &rVals);
+				for (int j = 0; j < rRows; j++) {
+					MatSetValue(RgLOC, j, i, rVals[j], INSERT_VALUES);
+				}
+				VecRestoreArray(rLocal, &rVals);
+				MatAssemblyBegin(RgLOC, MAT_FINAL_ASSEMBLY);
+				MatAssemblyEnd(RgLOC, MAT_FINAL_ASSEMBLY);
+			}
+		}
+
+		if (cMan->isPrimalRoot()) {
+			Mat Rt;
+			MatTranspose(RgLOC, MAT_INITIAL_MATRIX, &Rt);
+			MatMatMult(RgLOC, Rt, MAT_INITIAL_MATRIX, 1, &RRt);
+			MatDestroy(Rt);
+		}
+	}
+
 	//VecDestroy(bRow);
 	//Mat Groot;
 	//gatherMatrix(G, Groot, 0, cMan->getPrimal());
 
 	if (cMan->isPrimalRoot()) {
 
+		PetscViewer v;
+		PetscViewerBinaryOpen(PETSC_COMM_SELF, "../matlab/data/F.m", FILE_MODE_WRITE, &v);
+		MatView(F, v);
+		MatView(Groot, v);
+		PetscViewerDestroy(v);
+
 		PC pcF;
 		PCCreate(PETSC_COMM_SELF, &pcF);
 		PCSetOperators(pcF, F, F, SAME_PRECONDITIONER);
-		PCSetType(pcF, "lu");
+		PCSetType(pcF, "cholesky");
 		PCSetUp(pcF);
 
 		KSPCreate(PETSC_COMM_SELF, &kspF);
@@ -907,17 +954,16 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 			MatAssemblyEnd(S, MAT_FINAL_ASSEMBLY);
 
 		}
-		//PetscViewer v;
-		//PetscViewerBinaryOpen(PETSC_COMM_SELF, "../matlab/data/F.m", FILE_MODE_WRITE, &v);
-		//MatView(S, v);
-		//PetscViewerDestroy(v);
+
+		if (sR != NULL && sR->rDim > 0) {
+			MatAXPY(S, 1, RRt, SAME_NONZERO_PATTERN);
+		}
 
 		PC pcS;
 		PCCreate(PETSC_COMM_SELF, &pcS);
 		PCSetOperators(pcS, S, S, SAME_PRECONDITIONER);
-		PCSetType(pcS, "lu");
+		PCSetType(pcS, "cholesky");
 		PCSetUp(pcS);
-
 
 		KSPCreate(PETSC_COMM_SELF, &kspS);
 		KSPSetTolerances(kspS, 1e-10, 1e-10, 1e7, 1);
@@ -932,6 +978,7 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 	//PetscViewerBinaryOpen(comMan->getPrimal(), "../matlab/F.m", FILE_MODE_WRITE, &v);
 	//MatView(F, v);
 	//PetscViewerDestroy(v);
+
 }
 
 void FFeti::applyInversion(Vec b, Vec x) {
@@ -964,8 +1011,114 @@ ASolver* FFeti::instanceOuterSolver(Vec d, Vec lmb) {
 	return AFeti::instanceOuterSolver(d, lmb);
 }
 
+void FFeti::applyMult(Vec in, Vec out, IterationManager *info) {
+
+	outIterations++;
+
+	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("BA+BT")->startTimer();
+
+	VecScatterBegin(fToRoot, in, fLocal, INSERT_VALUES, SCATTER_FORWARD);
+	VecScatterEnd(fToRoot, in, fLocal, INSERT_VALUES, SCATTER_FORWARD);
+
+	if (cMan->isPrimalRoot()) MatMult(F, fLocal, dBLoc);
+
+	VecScatterBegin(fToRoot, dBLoc, out, INSERT_VALUES, SCATTER_REVERSE);
+	VecScatterEnd(fToRoot, dBLoc, out, INSERT_VALUES, SCATTER_REVERSE);
+
+	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("BA+BT")->stopTimer();
+
+}
+
 void FFeti::solve() {
-	Feti1::solve();
+	//Feti1::solve();
+
+	Vec d;
+	VecDuplicate(lmb, &d);
+
+	VecCopy(b, temp);
+
+	applyInvA(temp, NULL);
+	MatMult(B, temp, d);
+
+	MatMultTranspose(R, b, e);
+
+	Vec eLOC, dLOC, alpha;
+
+	VecDuplicate(e, &alpha);
+
+	VecScatter dualScatter, modesScatter;
+	VecScatterCreateToZero(d, &dualScatter, &dLOC);
+	VecScatterCreateToZero(e, &modesScatter, &eLOC);
+
+	VecScatterBegin(dualScatter, d, dLOC, INSERT_VALUES, SCATTER_FORWARD);
+	VecScatterEnd(dualScatter, d, dLOC, INSERT_VALUES, SCATTER_FORWARD);
+
+	VecScatterBegin(modesScatter, e, eLOC, INSERT_VALUES, SCATTER_FORWARD);
+	VecScatterEnd(modesScatter, e, eLOC, INSERT_VALUES, SCATTER_FORWARD);
+	if (cMan->isPrimalRoot()) {
+
+		// Alpha computation upfront
+		Vec Fpd, GFpd, alphaLOC, lmbLOC, Galph;
+		VecDuplicate(dLOC, &Fpd);
+		VecDuplicate(dLOC, &lmbLOC);
+		VecDuplicate(dLOC, &Galph);
+		VecCopy(dLOC, lmbLOC);
+
+		VecDuplicate(eLOC, &GFpd);
+		VecDuplicate(eLOC, &alphaLOC);
+
+		KSPSolve(kspF, dLOC, Fpd);
+		MatMultTranspose(Groot, Fpd, GFpd);
+
+		VecAXPY(GFpd, -1, eLOC);
+		KSPSolve(kspS, GFpd, eLOC);
+
+		MatMult(Groot, eLOC, Galph);
+		VecAXPY(lmbLOC, -1, Galph);
+
+		KSPSolve(kspF, lmbLOC, dLOC);
+
+	}
+
+	VecScatterBegin(dualScatter, dLOC, lmb, INSERT_VALUES, SCATTER_REVERSE);
+	VecScatterEnd(dualScatter, dLOC, lmb, INSERT_VALUES, SCATTER_REVERSE);
+
+	VecScatterBegin(modesScatter, eLOC, alpha, INSERT_VALUES, SCATTER_REVERSE);
+	VecScatterEnd(modesScatter, eLOC, alpha, INSERT_VALUES, SCATTER_REVERSE);
+
+	VecScale(lmb, -1);
+	MatMultAdd(BT, lmb, b, u);
+	VecScale(lmb, -1);
+	applyInvA(u, NULL);
+	VecScale(alpha, -1);
+	MatMultAdd(R, alpha, u, u);
+
+	PetscReal normB, error;
+
+	if (isVerbose) {
+
+		VecNorm(b, NORM_2, &normB);
+
+		applyPrimalMult(u, temp);
+		VecAXPY(temp, -1, b);
+		MatMult(BT, lmb, tempInv);
+		VecAXPY(temp, 1, tempInv);
+
+		VecNorm(temp, NORM_2, &error);
+
+		PetscPrintf(cMan->getPrimal(), "Relative error: %e\n\n", error / normB);
+
+	}
+	if (isVerbose) {
+		PetscReal feasErr, uNorm;
+
+		MatMult(B, u, d);
+
+		VecNorm(d, NORM_2, &feasErr);
+		VecNorm(u, NORM_2, &uNorm);
+
+		PetscPrintf(cMan->getPrimal(), "Feasibility err: %e \n", feasErr / uNorm);
+	}
 }
 
 /*

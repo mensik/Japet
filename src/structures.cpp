@@ -1436,10 +1436,14 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 	MPI_Comm subComm;
 	MPI_Comm_split(comm, cluster->clusterColor, rank, &subComm);
 	cluster->clusterComm = subComm;
+
 	PetscInt subRank;
 	MPI_Comm_rank(cluster->clusterComm, &subRank);
 
 	PetscInt nparts = M * N;
+
+	//MPI_Barrier(cluster->clusterComm);
+	//		PetscPrintf(cluster->clusterComm, "WOW %d \n", cluster->clusterColor);
 
 	if (!rank) {
 
@@ -1460,6 +1464,8 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 			clusterMasters[temp[0]] = temp[1];
 		}
 
+
+
 		//Distribution of pairings to cluster masters
 
 		typedef std::map<PetscInt, std::vector<PetscInt> > mapIn;
@@ -1478,7 +1484,7 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 						int count = 0;
 						for (std::vector<PetscInt>::iterator p = j->second.begin(); p
 								!= j->second.end();) {
-							if (count == size / 3 || count == 2 * size / 3) {
+							if (count == size / 2 || count == 0 || count == size - 1) {
 								cluster->localPairing.push_back(*p++);
 								cluster->localPairing.push_back(*p++);
 							} else {
@@ -1528,6 +1534,7 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 			int msg = -1;
 			MPI_Send(&msg, 1, MPI_INT, i->second, 0, comm);
 		}
+
 	} else {
 		if (!subRank) {
 			//Send info about master on the cluster == [color, masterRank (in global comm)]
@@ -1561,10 +1568,17 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 
 	cluster->indexDiff -= startIndexes[rank];
 
-	if (!subRank) {
+	int cRank;
+	MPI_Comm_rank(cluster->clusterComm, &cRank);
+
+	if (cRank == 0) {
 		int clusterSize;
+
+
 		MPI_Comm_size(cluster->clusterComm, &clusterSize);
 		PetscInt *clusterStartIndexesDiff = new PetscInt[clusterSize];
+		//PetscPrintf(PETSC_COMM_SELF, "[clust: %d] size : %d \n", cluster->clusterColor, clusterSize);
+
 		MPI_Gather(&(cluster->indexDiff), 1, MPI_INT, clusterStartIndexesDiff, 1, MPI_INT, 0, cluster->clusterComm);
 
 		MPI_Status status;
@@ -1582,6 +1596,7 @@ void Mesh::generateRectMeshCluster(SubdomainCluster *cluster, PetscInt m,
 	}
 
 	corners.clear();
+
 }
 
 PetscInt Mesh::getNodeDomain(PetscInt index) {

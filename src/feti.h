@@ -238,6 +238,8 @@ public:
 
 	virtual void solve();
 
+	virtual void applyMult(Vec in, Vec out, IterationManager *info);
+
 //	virtual void solve();
 
 };

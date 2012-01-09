@@ -157,16 +157,24 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
 void FEMAssemble2DElasticity(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
 		PetscReal E, PetscReal mi, PetscReal(*dens)(Element *),
 		void(*f)(Element*, PetscReal, PetscReal*)) {
+
+
+
 	PetscInt rank;
 	MPI_Comm_rank(comm, &rank);
 
 	PetscInt size = mesh->vetrices.size();
 
+
 	MatCreateSeqAIJ(PETSC_COMM_SELF, size * 2, size * 2, 14, PETSC_NULL, &A);
 	VecCreateMPI(comm, size * 2, PETSC_DECIDE, &b);
 
+
+
 	for (std::map<PetscInt, Element*>::iterator e = mesh->elements.begin(); e
 			!= mesh->elements.end(); e++) {
+
+
 
 		Point* vetrices[3];
 		PetscInt vIndex[3];
