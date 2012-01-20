@@ -66,8 +66,8 @@ int main(int argc, char *argv[]) {
 		//	int clXsize = conf->m / clXCount;
 		//	int clYsize = conf->n / clYCount;
 
-		int clXsize = 3;
-		int clYsize = 3;
+		int clXsize = 5;
+		int clYsize = 5;
 		int clXCount = conf->m / clXsize;
 		int clYCount = conf->n / clYsize;
 
@@ -154,7 +154,7 @@ int main(int argc, char *argv[]) {
 		 mesh->generateRectMeshCluster(&cluster, conf->m, conf->n, clXCount, clYCount, PERMUTATED_WORLD);
 
 		 GenerateClusterJumpOperator(mesh, &cluster, Bg, BTg, lmbG, Bl, BTl, lmbL, PERMUTATED_WORLD);
-/*
+
 		 Generate2DElasticityClusterNullSpace(mesh, &cluster, PERMUTATED_WORLD);
 
 		 //PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/data/out.m", FILE_MODE_WRITE, &v);
@@ -200,7 +200,7 @@ int main(int argc, char *argv[]) {
 		 hFeti->setIsVerbose(true);
 
 		 hFeti->solve();
-*/
+
 		// PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
 		// mesh->dumpForMatlab(v);
 		// PetscViewerDestroy(v);
