@@ -127,7 +127,19 @@ void CGSolver::initSolver() {
 	setTitle("CG");
 }
 
+void BBSolver::initSolver() {
+	VecDuplicate(b, &temp);
+	VecDuplicate(g, &p);
+	VecCopy(z, p);
+	setTitle("BB");
+}
+
 CGSolver::~CGSolver() {
+	VecDestroy(p);
+	VecDestroy(temp);
+}
+
+BBSolver::~BBSolver() {
 	VecDestroy(p);
 	VecDestroy(temp);
 }
@@ -201,6 +213,62 @@ void CGSolver::solve() {
 	}
 }
 
+void BBSolver::solve() {
+
+	if (bNorm > 1e-16) {
+		PetscReal relativeCoef = MAX(bNorm, r0Norm);
+		PetscReal tempTg, gTg;
+
+		PetscReal alpha, alpha_old;
+
+		sPC->applyPC(g, temp);
+		sApp->applyMult(temp, p, &itManager);
+		sPC->applyPC(p, temp);
+
+		VecDot(g, g, &gTg);
+		VecDot(temp, g, &tempTg);
+
+		alpha = gTg / tempTg;
+
+		VecAXPY(x, -alpha, g);
+
+		sPC->applyPC(x, temp);
+		sApp->applyMult(temp, p, &itManager);
+		sPC->applyPC(p, g);
+		VecAXPY(g, -1, b);
+
+		VecNorm(g, NORM_2, &rNorm);
+
+		while (!sCtr->isConverged(getItCount(), rNorm, relativeCoef, &g)) {
+
+			itManager.setIterationData("Rel. err", rNorm / relativeCoef);
+			itManager.setIterationData("alpha", alpha);
+			nextIteration();
+
+			VecAXPY(x, -alpha, g);
+			alpha_old = alpha;
+
+			sPC->applyPC(g, temp);
+			sApp->applyMult(temp, p, &itManager);
+			sPC->applyPC(p, temp);
+
+			VecDot(g, g, &gTg);
+			VecDot(temp, g, &tempTg);
+
+			alpha = gTg / tempTg;
+
+			sPC->applyPC(x, temp);
+			sApp->applyMult(temp, p, &itManager);
+			sPC->applyPC(p, g);
+			VecAXPY(g, -1, b);
+
+			VecNorm(g, NORM_2, &rNorm);
+		}
+	} else {
+		VecSet(x, 0);
+	}
+}
+
 ReCGSolver::~ReCGSolver() {
 	clearSubspace();
 	VecDestroy(p);
@@ -219,7 +287,6 @@ void ReCGSolver::initSolver() {
 }
 
 void ReCGSolver::project() {
-
 
 	if (P.size() > 0) {
 
@@ -263,7 +330,7 @@ void ReCGSolver::clearSubspace() {
 
 void ReCGSolver::solve() {
 
-//	project();
+	//	project();
 
 	PetscReal relativeCoef = MAX(bNorm, r0Norm);
 	PetscReal gTzPrev, gTz;

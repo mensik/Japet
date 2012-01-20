@@ -108,7 +108,7 @@ PetscErrorCode FEMAssemble2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A, Vec &b,
 		PetscReal R[4];
 
 		PetscInt elSize = e->second->numVetrices;
-		Point vetrices[elSize];
+		Point *vetrices = new Point[elSize];
 		PetscInt ixs[elSize];
 		for (int j = 0; j < elSize; j++) {
 			ixs[j] = e->second->vetrices[j];
@@ -231,7 +231,7 @@ PetscErrorCode FEMAssembleTotal2DLaplace(MPI_Comm comm, Mesh *mesh, Mat &A,
 		PetscReal R[4];
 
 		PetscInt elSize = e->second->numVetrices;
-		Point vetrices[elSize];
+		Point *vetrices = new Point[elSize];
 		PetscInt ixs[elSize];
 		for (int j = 0; j < elSize; j++) {
 			ixs[j] = e->second->vetrices[j];

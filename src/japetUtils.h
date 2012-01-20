@@ -15,7 +15,6 @@
 #include <map>
 #include "petscsys.h"
 #include "petscmat.h"
-#include "mpi.h"
 #include <time.h>
 #include <sys/timeb.h>
 #include <sys/resource.h>

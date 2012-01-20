@@ -67,7 +67,7 @@ public:
 	}
 };
 
-class FinitSolverStub : public ASolver {
+class FinitSolverStub: public ASolver {
 	Vec b;
 	Vec x;
 
@@ -207,6 +207,31 @@ public:
 	}
 	;
 	~CGSolver();
+
+	void solve(); ///< begin solving
+};
+
+class BBSolver: public Solver {
+
+	Vec p; ///< direction vector
+	Vec temp; ///< temp Vector
+	int restartRate;
+
+	void initSolver();
+public:
+	BBSolver(Mat A, Vec b, Vec x) :
+		Solver(A, b, x) {
+		initSolver();
+	}
+	;
+	BBSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL,
+			MPI_Comm comm = MPI_COMM_WORLD, int restartRate = -1) :
+		Solver(sa, b, x, pc, comm) {
+		initSolver();
+		this->restartRate = restartRate;
+	}
+	;
+	~BBSolver();
 
 	void solve(); ///< begin solving
 };

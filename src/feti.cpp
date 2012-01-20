@@ -749,9 +749,10 @@ void Feti1::applyPC(Vec g, Vec z) {
 	//if (systemNullSpace != PETSC_NULL) MatNullSpaceRemove(systemNullSpace, temp, PETSC_NULL);
 	MatMult(B, temp, z);
 
+	//VecCopy(g, z);
 	if (isSingular) projectGOrth(z);
 
-	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->stopTimer();
+	//if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->stopTimer();
 
 }
 

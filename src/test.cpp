@@ -1,11 +1,11 @@
 static char help[] = "My first own testing utility for PETSc\n\n";
 
 #include <iostream>
-//#include "fem.h"
-//#include "structures.h"
-//#include "solver.h"
+#include "fem.h"
+#include "structures.h"
+#include "solver.h"
 #include "petscmat.h"
-//#include "japetUtils.h"
+#include "japetUtils.h"
 
 //PetscReal funConst(Point n) {
 //	return 1;
@@ -19,7 +19,7 @@ int main(int argc, char *argv[]) {
 
 	//if (pdManager.isDual()) PetscPrintf(pdManager.getDual(), "TEST");
 
-	/*
+
 	 PetscInt size, rank;
 	 PetscTruth flg;
 	 MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -55,12 +55,12 @@ int main(int argc, char *argv[]) {
 	 VecDuplicate(b, &bo);
 	 VecCopy(b, bo);
 
-	 Solver *solver = new ReCGSolver(A, b, x);
+	 Solver *solver = new BBSolver(A, b, x);
 	 solver->setPrecision(prec);
 	 solver->setIsVerbose(true);
 	 solver->solve();
-	 solver->reset(bo, x2);
-	 solver->solve();
+	 //solver->reset(bo, x2);
+	 //solver->solve();
 	 solver->saveIterationInfo("lanczos.dat");
 
 	 PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/x.m", FILE_MODE_WRITE, &v);
@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
 	 VecDestroy(bo);
 	 MatDestroy(A);
 
-	 */
+
 
 	PetscFinalize();
 	return 0;

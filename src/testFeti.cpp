@@ -115,7 +115,7 @@ int main(int argc, char *argv[]) {
 		MyLogger::Instance()->getTimer("feti")->startTimer();
 		Feti1
 				*feti =
-						new FFeti(commManager, A, b, BT, B, lmb, &nullSpace, mesh->vetrices.size(), 0, NULL, MasterWork);
+						new Feti1(commManager, A, b, BT, B, lmb, &nullSpace, mesh->vetrices.size(), 0, NULL, MasterWork);
 
 		feti->setIsVerbose(true);
 
