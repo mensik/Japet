@@ -740,19 +740,11 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 }
 
 void Feti1::applyPC(Vec g, Vec z) {
-
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->startTimer();
-
 	MatMult(BT, g, temp);
-	//if (systemNullSpace != PETSC_NULL) MatNullSpaceRemove(systemNullSpace, temp, PETSC_NULL);
 	applyPrimalMult(temp, temp);
-	//if (systemNullSpace != PETSC_NULL) MatNullSpaceRemove(systemNullSpace, temp, PETSC_NULL);
 	MatMult(B, temp, z);
-
-	//VecCopy(g, z);
-
-
-	//if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->stopTimer();
+	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->stopTimer();
 
 }
 
@@ -980,36 +972,6 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 	//MatView(F, v);
 	//PetscViewerDestroy(v);
 
-}
-
-void FFeti::applyInversion(Vec b, Vec x) {
-
-	//projectGOrth(x);
-
-	VecScatterBegin(fToRoot, b, fLocal, INSERT_VALUES, SCATTER_FORWARD);
-	VecScatterEnd(fToRoot, b, fLocal, INSERT_VALUES, SCATTER_FORWARD);
-
-	if (cMan->isPrimalRoot()) {
-		KSPSolve(kspF, fLocal, fLocal);
-		//	Vec fTemp;
-		//	VecDuplicate(fLocal, &fTemp);
-		//	MatSolve(F, fLocal, fTemp);
-		//	VecCopy(fTemp, fLocal);
-		//	VecDestroy(fTemp);
-	}
-
-	VecScatterBegin(fToRoot, fLocal, x, INSERT_VALUES, SCATTER_REVERSE);
-	VecScatterEnd(fToRoot, fLocal, x, INSERT_VALUES, SCATTER_REVERSE);
-
-	//projectGOrth(x);
-}
-
-ASolver* FFeti::instanceOuterSolver(Vec d, Vec lmb) {
-
-	/*
-	 ASolver* solver = new FinitSolverStub(this);
-	 solver->reset(d, lmb);*/
-	return AFeti::instanceOuterSolver(d, lmb);
 }
 
 void FFeti::applyMult(Vec in, Vec out, IterationManager *info) {

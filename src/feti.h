@@ -218,7 +218,7 @@ public:
 	virtual void applyPrimalMult(Vec in, Vec out);
 };
 
-class FFeti: public Feti1, public SolverInvertor {
+class FFeti: public Feti1 {
 protected:
 	Mat F;
 
@@ -232,10 +232,6 @@ public:
 			NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
 			PetscInt *fNodes, CoarseProblemMethod cpM = ParaCG,
 			SystemR *sR = PETSC_NULL);
-
-	virtual void applyInversion(Vec b, Vec x);
-
-	virtual ASolver* instanceOuterSolver(Vec d, Vec lmb);
 
 	virtual void solve();
 
