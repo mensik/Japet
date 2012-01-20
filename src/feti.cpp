@@ -79,7 +79,7 @@ AFeti::AFeti(PDCommManager* comMan, Vec b, Mat BT, Mat B, Vec lmb,
 
 void AFeti::initCoarse() {
 	//PetscInt rank;
-	Mat GTemp, GLOC, GTGloc;
+	Mat GTemp, GTGloc;
 
 	MyLogger::Instance()->getTimer("Coarse init")->startTimer();
 	//	MyTimer* timer = MyLogger::Instance()->getTimer("Coarse init");
@@ -320,7 +320,7 @@ AFeti::~AFeti() {
 			MatDestroy(R);
 		}
 
-		VecScatterDestroy(pBScat);
+		//VecScatterDestroy(pBScat);
 	}
 
 	if (cMan->isDual()) {
@@ -1414,7 +1414,7 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 
 			std::set<PetscInt> cornerInd;
 
-			for (int i = 0; i < mesh->corners.size(); i++) {
+			for (unsigned int i = 0; i < mesh->corners.size(); i++) {
 				for (int j = 0; j < mesh->corners[i]->cornerSize; j++) {
 					cornerInd.insert(mesh->corners[i]->vetrices[j]);
 				}
@@ -1441,7 +1441,7 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 				}
 			}
 
-			for (int i = 0; i < mesh->corners.size(); i++) {
+			for (unsigned int i = 0; i < mesh->corners.size(); i++) {
 
 				PetscInt *vetrices = mesh->corners[i]->vetrices;
 				PetscInt cornerSize = mesh->corners[i]->cornerSize;
@@ -1539,7 +1539,6 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		dSum += dNodeCounts[i];
 
 	int globalPairsCount = cluster->globalPairing.size() / 2;
-	PetscPrintf(PETSC_COMM_WORLD, "GPSize: %d \n", globalPairsCount);
 	MPI_Bcast(&globalPairsCount, 1, MPI_INT, 0, comm);
 
 	MatCreateMPIAIJ(comm, PETSC_DECIDE, mesh->vetrices.size() * d, (globalPairsCount

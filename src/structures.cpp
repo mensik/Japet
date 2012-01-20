@@ -375,7 +375,7 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 			nPairs = pairings.size() / 2;
 			pointPairing = new PetscInt[nPairs * 2];
 
-			for (int i = 0; i < pairings.size(); i++) {
+			for (unsigned int i = 0; i < pairings.size(); i++) {
 				pointPairing[i] = pairings[i];
 			}
 
@@ -384,7 +384,7 @@ void Mesh::generateTearedRectMesh(PetscReal x0, PetscReal x1, PetscReal y0,
 		}
 		MPI_Bcast(&nPairs, 1, MPI_INT, 0, commManager->getPrimal());
 
-		delete[] bNodes, lNodes, rNodes, tNodes;
+		delete [] bNodes, lNodes, rNodes, tNodes;
 	}
 }
 

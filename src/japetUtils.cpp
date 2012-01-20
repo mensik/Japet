@@ -150,7 +150,7 @@ PetscLogDouble MyTimer::getMaxOverComm(MPI_Comm comm) {
 
 void MyTimer::printMarkedTime(MPI_Comm comm) {
 	PetscPrintf(comm, "Marked times : \n");
-	for (int i = 0; i < markedTimes.size(); i++) {
+	for (unsigned int i = 0; i < markedTimes.size(); i++) {
 		PetscPrintf(comm, "%s \t\t %e s \n", markedTimes[i]->title, markedTimes[i]->time);
 	}
 }

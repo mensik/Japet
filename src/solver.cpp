@@ -219,7 +219,7 @@ void BBSolver::solve() {
 		PetscReal relativeCoef = MAX(bNorm, r0Norm);
 		PetscReal tempTg, gTg;
 
-		PetscReal alpha, alpha_old;
+		PetscReal alpha;
 
 		sPC->applyPC(g, temp);
 		sApp->applyMult(temp, p, &itManager);
@@ -246,7 +246,7 @@ void BBSolver::solve() {
 			nextIteration();
 
 			VecAXPY(x, -alpha, g);
-			alpha_old = alpha;
+			//alpha_old = alpha;
 
 			sPC->applyPC(g, temp);
 			sApp->applyMult(temp, p, &itManager);
@@ -292,7 +292,7 @@ void ReCGSolver::project() {
 
 		//PetscPrintf(PETSC_COMM_SELF, "p");
 
-		for (int i = 0; i < P.size(); i++) {
+		for (unsigned int i = 0; i < P.size(); i++) {
 
 			PetscReal a;
 			VecDot(P[i], g, &a);
@@ -318,7 +318,7 @@ void ReCGSolver::project() {
 }
 
 void ReCGSolver::clearSubspace() {
-	for (int i = 0; i < P.size(); i++) {
+	for (unsigned int i = 0; i < P.size(); i++) {
 		VecDestroy(P[i]);
 		VecDestroy(AP[i]);
 	}

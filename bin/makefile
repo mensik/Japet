@@ -12,13 +12,17 @@ vpath %.cpp ../src
 vpath %.h $(headerDir)
 
 .cpp.o:
+	echo Compiling $<
 	$(CPPCOMP) $(CPPFLAGS) -o $@ -c $<
+
+.SILENT:
 
 feti: $(MYLIB) testFeti.o
 	$(CLINKER) $(MYLIB) testFeti.o -o testFeti $(LINKERFLAGS)
 	mv testFeti ../deploy
 
 hfeti: $(MYLIB) testHFeti.o
+	echo Linking hFeti
 	$(CLINKER) $(MYLIB) testHFeti.o -o testHFeti $(LINKERFLAGS) 
 	mv testHFeti ../deploy
 
@@ -27,6 +31,7 @@ test: $(MYLIB) test.o
 	mv testSolver ../deploy
 
 structures: $(MYLIB) testStructures.o
+	echo Linking structures
 	$(CLINKER)  $(MYLIB) testStructures.o -o testStructures $(LINKERFLAGS) 
 	mv testStructures ../deploy
 
