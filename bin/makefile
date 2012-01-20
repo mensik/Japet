@@ -3,7 +3,7 @@ LINKERFLAGS = -Wl,-rpath,/home/martin/documents/code/petsc-3.1-p8/linux-gnu-cxx-
 
 CPPCOMP = mpic++.mpich2
 CLINKER = mpic++.mpich2
-CPPFLAGS = -Wall -I/home/martin/documents/code/petsc-3.1-p8/linux-gnu-cxx-debug/include -I/home/martin/documents/code/petsc-3.1-p8/include -I/home/martin/documents/code/petsc-3.1-p8/linux-gnu-cxx-debug/include -I/usr/include/mpich2
+CPPFLAGS = -I/home/martin/documents/code/petsc-3.1-p8/linux-gnu-cxx-debug/include -I/home/martin/documents/code/petsc-3.1-p8/include -I/home/martin/documents/code/petsc-3.1-p8/linux-gnu-cxx-debug/include -I/usr/include/mpich2
 
 headerDir = ../src
 MYLIB = structures.o fem.o feti.o solver.o japetUtils.o japetLa.o

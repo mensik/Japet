@@ -100,7 +100,7 @@ void AFeti::initCoarse() {
 		VecSet(parT2, 0);
 
 		linOp = new GGLinOp(B, R);
-		ggParSol = new CGSolver(linOp, parT2, parT2, NULL, cMan->getDual());
+		ggParSol = new CGSolver(linOp, NULL, cMan->getDual());
 		ggParSol->setSolverCtr(linOp);
 
 		if (systemR != PETSC_NULL && systemR->rDim > 0) {
@@ -251,9 +251,8 @@ void AFeti::applyInvGTG(Vec in, Vec out) {
 
 		if (systemR != PETSC_NULL && systemR->rDim > 0) MatNullSpaceRemove(GTGNullSpace, in, PETSC_NULL);
 
-		ggParSol->reset(in, out);
-		ggParSol->solve();
-		ggParSol->getX(out);
+		ggParSol->solve(in, out);
+
 
 		if (systemR != PETSC_NULL && systemR->rDim > 0) MatNullSpaceRemove(GTGNullSpace, out, PETSC_NULL);
 
@@ -378,9 +377,7 @@ ASolver* AFeti::instanceOuterSolver(Vec d, Vec l) {
 
 
 	if (outerSolver == NULL) {
-		outerSolver = new CGSolver(this, d, l, this);
-	} else {
-		outerSolver->reset(d, l);
+		outerSolver = new CGSolver(this, this);
 	}
 
 	return outerSolver;
@@ -457,8 +454,8 @@ void AFeti::solve() {
 	outerSolver->setIsVerbose(isVerbose);
 
 	//Solve!!!
-	outerSolver->solve();
-	outerSolver->getX(lmbKer);
+	outerSolver->solve(dAlt, lmbKer);
+
 
 	projectGOrth(lmbKer);
 
@@ -1144,9 +1141,7 @@ ASolver* mFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 	//inCounter = 0;
 
 	if (outerSolver == NULL) {
-		outerSolver = new CGSolver(this, d, lmb, this);
-	} else {
-		outerSolver->reset(d, lmb);
+		outerSolver = new CGSolver(this, this);
 	}
 
 	return outerSolver;
@@ -1156,7 +1151,10 @@ ASolver* InexactFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 	//outerPrec = 1e-4;
 	//lastNorm = 1e-4;
 	//inCounter = 0;
-	return new ASinStep(this, d, lmb);
+
+
+	//TODO!!!!!!!
+	return NULL;
 }
 
 void InexactFeti1::applyInvA(Vec in, IterationManager *itManager) {
@@ -1299,7 +1297,7 @@ ASolver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
 	outerPrec = 1e-3;
 	lastNorm = 1e-4;
 	inCounter = 0;
-	return new CGSolver(this, d, lmb, this, cMan->getPrimal(), 15);
+	return new CGSolver(this, this, cMan->getPrimal(), 15);
 }
 
 void HFeti::setRequiredPrecision(PetscReal reqPrecision) {

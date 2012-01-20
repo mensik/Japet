@@ -53,23 +53,21 @@ protected:
 public:
 	ASolver();
 
-	virtual void solve() = 0;
+	virtual void solve(Vec b, Vec x) = 0;
 	virtual void setSolverCtr(SolverCtr *sc) {
 
 	}
-	virtual void getX(Vec x) = 0;
+
 	virtual void setIsVerbose(bool verbose) {
 
 	}
-	virtual void reset(Vec newB, Vec newX) = 0;
+
 	virtual void saveIterationInfo(const char *filename, bool rewrite = true) {
 		//Has no meaning for factorization
 	}
 };
 
 class FinitSolverStub: public ASolver {
-	Vec b;
-	Vec x;
 
 	SolverInvertor *invertor;
 public:
@@ -78,17 +76,8 @@ public:
 		this->invertor = inv;
 	}
 
-	virtual void solve() {
+	virtual void solve(Vec b, Vec x) {
 		invertor->applyInversion(b, x);
-	}
-
-	virtual void getX(Vec x) {
-		VecCopy(this->x, x);
-	}
-
-	virtual void reset(Vec newB, Vec newX) {
-		b = newB;
-		x = newX;
 	}
 
 };
@@ -101,34 +90,26 @@ private:
 	Mat A; ///< Matrix A in problem A*x = b
 	PetscReal precision;
 
-	void init();
 protected:
-
-	Vec x; ///< Vector x in problem A*x = b
-	Vec b; ///< Vector b in problem A*x = b
-	Vec g; ///< residual vector
-	Vec z; ///< PC vector
-
-	PetscReal rNorm;
-	PetscReal bNorm;
-	PetscReal r0Norm;
 
 	SolverApp *sApp;
 	SolverCtr *sCtr;
+	SolverProjector *sProj;
+	SolverPreconditioner *sPC;
 
 	MPI_Comm comm;
 
-	SolverPreconditioner *sPC;
-	bool isPCset;
+	PetscReal rNorm, r0Norm, bNorm;
 
 	void nextIteration();
+	void init();
 
 public:
 	IterationManager itManager;
 
-	Solver(Mat A, Vec b, Vec x, SolverPreconditioner *PC = NULL,
-			MPI_Comm comm = MPI_COMM_WORLD);
-	Solver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *PC = NULL,
+			Solver(Mat A, SolverPreconditioner *PC = NULL,
+					MPI_Comm comm = MPI_COMM_WORLD);
+	Solver(SolverApp *sa, SolverPreconditioner *PC = NULL,
 			MPI_Comm comm = MPI_COMM_WORLD);
 	virtual ~Solver();
 
@@ -138,9 +119,11 @@ public:
 	void setIsVerbose(bool isVerbose) {
 		itManager.setIsVerbose(isVerbose);
 	}
+
 	int getItCount() {
 		return itManager.getItCount();
 	}
+
 	void applyMult(Vec in, Vec out, IterationManager *info = NULL);
 	void applyPC(Vec r, Vec z);
 	bool isConverged(PetscInt itNum, PetscReal rNorm, PetscReal bNorm, Vec *vec);
@@ -159,31 +142,8 @@ public:
 	void setTitle(std::string title) {
 		itManager.setTitle(title);
 	}
-	PetscReal getNormG() {
-		return rNorm;
-	}
-	Vec getX() {
-		return x;
-	} ///< @return solution
-	void getX(Vec temp) {
-		VecCopy(x, temp);
-	} ///< @return copy of solution
 
-	virtual void solve() = 0;
-	virtual void reset(Vec newB, Vec newX);
-};
-
-class RichardsSolver: public Solver {
-	PetscReal alpha;
-
-public:
-	RichardsSolver(SolverApp *sa, Vec b, Vec x, PetscReal alpha) :
-		Solver(sa, b, x) {
-		this->alpha = alpha;
-	}
-	;
-
-	void solve();
+	virtual void solve(Vec b, Vec x) = 0;
 };
 
 class CGSolver: public Solver {
@@ -194,180 +154,178 @@ class CGSolver: public Solver {
 
 	void initSolver();
 public:
-	CGSolver(Mat A, Vec b, Vec x) :
-		Solver(A, b, x) {
-		initSolver();
+	CGSolver(Mat A) :
+		Solver(A) {
 	}
-	;
-	CGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL,
+
+	CGSolver(SolverApp *sa, SolverPreconditioner *pc = NULL,
 			MPI_Comm comm = MPI_COMM_WORLD, int restartRate = -1) :
-		Solver(sa, b, x, pc, comm) {
-		initSolver();
+		Solver(sa, pc, comm) {
 		this->restartRate = restartRate;
 	}
-	;
+
 	~CGSolver();
 
-	void solve(); ///< begin solving
+	void solve(Vec b, Vec x); ///< begin solving
 };
+/*
+ class BBSolver: public Solver {
 
-class BBSolver: public Solver {
+ Vec p; ///< direction vector
+ Vec temp; ///< temp Vector
+ int restartRate;
 
-	Vec p; ///< direction vector
-	Vec temp; ///< temp Vector
-	int restartRate;
+ void initSolver();
+ public:
+ BBSolver(Mat A, Vec b, Vec x) :
+ Solver(A, b, x) {
+ initSolver();
+ }
+ ;
+ BBSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL,
+ MPI_Comm comm = MPI_COMM_WORLD, int restartRate = -1) :
+ Solver(sa, b, x, pc, comm) {
+ initSolver();
+ this->restartRate = restartRate;
+ }
+ ;
+ ~BBSolver();
 
-	void initSolver();
-public:
-	BBSolver(Mat A, Vec b, Vec x) :
-		Solver(A, b, x) {
-		initSolver();
-	}
-	;
-	BBSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL,
-			MPI_Comm comm = MPI_COMM_WORLD, int restartRate = -1) :
-		Solver(sa, b, x, pc, comm) {
-		initSolver();
-		this->restartRate = restartRate;
-	}
-	;
-	~BBSolver();
+ void solve(); ///< begin solving
+ };
+ /*
+ class ReCGSolver: public Solver {
 
-	void solve(); ///< begin solving
-};
+ std::vector<Vec> P;
+ std::vector<Vec> AP;
+ std::vector<PetscReal> PAP;
 
-class ReCGSolver: public Solver {
+ Vec p; ///< direction vector
+ Vec Ap; ///< temp Vector
 
-	std::vector<Vec> P;
-	std::vector<Vec> AP;
-	std::vector<PetscReal> PAP;
+ int maxSize;
+ PetscInt gCounter;
 
-	Vec p; ///< direction vector
-	Vec Ap; ///< temp Vector
+ void initSolver();
+ void project();
+ void clearSubspace();
+ public:
 
-	int maxSize;
-	PetscInt gCounter;
+ SolverProjector *solProj;
 
-	void initSolver();
-	void project();
-	void clearSubspace();
-public:
+ ReCGSolver(Mat A, Vec b, Vec x, SolverPreconditioner *pc = NULL) :
+ Solver(A, b, x, pc) {
+ initSolver();
+ }
+ ReCGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL,
+ SolverProjector *proj = NULL) :
+ Solver(sa, b, x, pc) {
+ solProj = proj;
+ initSolver();
+ }
 
-	SolverProjector *solProj;
+ ~ReCGSolver();
 
-	ReCGSolver(Mat A, Vec b, Vec x, SolverPreconditioner *pc = NULL) :
-		Solver(A, b, x, pc) {
-		initSolver();
-	}
-	ReCGSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL,
-			SolverProjector *proj = NULL) :
-		Solver(sa, b, x, pc) {
-		solProj = proj;
-		initSolver();
-	}
+ void solve();
 
-	~ReCGSolver();
+ };
 
-	void solve();
+ class GLanczos: public Solver {
 
-};
+ PetscInt prevSize;
+ Mat Vprev;
+ PetscReal *lambda, *mju, *beta;
 
-class GLanczos: public Solver {
+ MPI_Comm comm;
 
-	PetscInt prevSize;
-	Mat Vprev;
-	PetscReal *lambda, *mju, *beta;
+ public:
+ static const PetscInt MAXSTEPS = 500;
 
-	MPI_Comm comm;
+ GLanczos(MPI_Comm cm, Mat A, Vec b, Vec x) :
+ Solver(A, b, x) {
+ comm = cm;
+ prevSize = 0;
+ }
+ ;
+ GLanczos(MPI_Comm cm, SolverApp *sa, Vec b, Vec x) :
+ Solver(sa, b, x) {
+ prevSize = 0;
+ comm = cm;
+ }
+ ;
 
-public:
-	static const PetscInt MAXSTEPS = 500;
+ void solve();
 
-	GLanczos(MPI_Comm cm, Mat A, Vec b, Vec x) :
-		Solver(A, b, x) {
-		comm = cm;
-		prevSize = 0;
-	}
-	;
-	GLanczos(MPI_Comm cm, SolverApp *sa, Vec b, Vec x) :
-		Solver(sa, b, x) {
-		prevSize = 0;
-		comm = cm;
-	}
-	;
+ };
 
-	void solve();
+ class ASinStep: public Solver {
+ PetscReal tau;
+ PetscReal fi;
+ PetscReal z;
+ PetscReal m, M;
 
-};
+ void initSolver();
+ public:
+ ASinStep(Mat A, Vec b, Vec x) :
+ Solver(A, b, x) {
+ initSolver();
+ }
+ ASinStep(SolverApp *sa, Vec b, Vec x) :
+ Solver(sa, b, x) {
+ initSolver();
+ }
+ void solve();
+ PetscReal getRequiredMultPrecision();
+ };
 
-class ASinStep: public Solver {
-	PetscReal tau;
-	PetscReal fi;
-	PetscReal z;
-	PetscReal m, M;
+ class MPRGP: public Solver {
+ Vec l;
 
-	void initSolver();
-public:
-	ASinStep(Mat A, Vec b, Vec x) :
-		Solver(A, b, x) {
-		initSolver();
-	}
-	ASinStep(SolverApp *sa, Vec b, Vec x) :
-		Solver(sa, b, x) {
-		initSolver();
-	}
-	void solve();
-	PetscReal getRequiredMultPrecision();
-};
+ PetscReal G;
+ PetscReal alp;
 
-class MPRGP: public Solver {
-	Vec l;
+ PetscInt localRangeStart;
+ PetscInt localRangeEnd;
+ PetscInt localRangeSize;
 
-	PetscReal G;
-	PetscReal alp;
+ PetscReal e;
 
-	PetscInt localRangeStart;
-	PetscInt localRangeEnd;
-	PetscInt localRangeSize;
+ Vec p;
+ Vec temp;
 
-	PetscReal e;
+ SolverPreconditioner *sPC;
 
-	Vec p;
-	Vec temp;
+ void projectFeas(Vec &v); //< @param[out] vector with changed infeasible parts to feasible
+ void partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG); //< divides gradient into its free, chopped and reduced parts
+ PetscReal alpFeas(); //< @return feasible step length for current gradient
+ void initSolver(Vec l, PetscReal G, PetscReal alp);
+ void pcAction(Vec free, Vec z);
 
-	SolverPreconditioner *sPC;
+ public:
+ /**
+ @param[in] A stiffness (mass) matrix
+ @param[in] b force vector
+ @param[in] l "floor" vector, any part of solution x can't be less than according part of l
+ @param[in] G Gamma operator, used to decide about domination of free part of gradient
+ @param[in] alp fixed step length - <0, 2/||A||>
 
-	void projectFeas(Vec &v); //< @param[out] vector with changed infeasible parts to feasible
-	void partGradient(Vec &freeG, Vec &chopG, Vec &rFreeG); //< divides gradient into its free, chopped and reduced parts
-	PetscReal alpFeas(); //< @return feasible step length for current gradient
-	void initSolver(Vec l, PetscReal G, PetscReal alp);
-	void pcAction(Vec free, Vec z);
+ MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) :
+ Solver(A, b, x) {
+ initSolver(l, G, alp);
+ }
+ ;
+ MPRGP(SolverApp *app, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) :
+ Solver(app, b, x) {
+ initSolver(l, G, alp);
+ }
+ ;
+ ~MPRGP();
 
-public:
-	/**
-	 @param[in] A stiffness (mass) matrix
-	 @param[in] b force vector
-	 @param[in] l "floor" vector, any part of solution x can't be less than according part of l
-	 @param[in] G Gamma operator, used to decide about domination of free part of gradient
-	 @param[in] alp fixed step length - <0, 2/||A||>
-	 */
-	MPRGP(Mat A, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) :
-		Solver(A, b, x) {
-		initSolver(l, G, alp);
-	}
-	;
-	MPRGP(SolverApp *app, Vec b, Vec l, Vec x, PetscReal G, PetscReal alp) :
-		Solver(app, b, x) {
-		initSolver(l, G, alp);
-	}
-	;
-	~MPRGP();
+ void setPC(SolverPreconditioner *pc) {
+ this->sPC = pc;
+ }
 
-	void setPC(SolverPreconditioner *pc) {
-		this->sPC = pc;
-	}
-
-	void solve();
-};
-
+ void solve();
+ };
+ */
 #endif
