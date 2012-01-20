@@ -35,7 +35,7 @@ public:
 
 class SolverProjector {
 public:
-	virtual void applyProjection(Vec w) = 0;
+	virtual void applyProjection(Vec v, Vec vp) = 0;
 };
 
 class SolverInvertor {
@@ -49,14 +49,14 @@ enum StepType {
 
 class ASolver {
 protected:
+	SolverCtr *sCtr;
+	SolverProjector *sProj;
+	SolverPreconditioner *sPC;
 
 public:
 	ASolver();
 
 	virtual void solve(Vec b, Vec x) = 0;
-	virtual void setSolverCtr(SolverCtr *sc) {
-
-	}
 
 	virtual void setIsVerbose(bool verbose) {
 
@@ -64,6 +64,18 @@ public:
 
 	virtual void saveIterationInfo(const char *filename, bool rewrite = true) {
 		//Has no meaning for factorization
+	}
+
+	void setSolverCtr(SolverCtr *sc) {
+		sCtr = sc;
+	}
+
+	void setPreconditioner(SolverPreconditioner *sp) {
+		sPC = sp;
+	}
+
+	void setProjector(SolverProjector *sp) {
+		sProj = sp;
 	}
 };
 
@@ -93,9 +105,6 @@ private:
 protected:
 
 	SolverApp *sApp;
-	SolverCtr *sCtr;
-	SolverProjector *sProj;
-	SolverPreconditioner *sPC;
 
 	MPI_Comm comm;
 
@@ -127,12 +136,11 @@ public:
 	void applyMult(Vec in, Vec out, IterationManager *info = NULL);
 	void applyPC(Vec r, Vec z);
 	bool isConverged(PetscInt itNum, PetscReal rNorm, PetscReal bNorm, Vec *vec);
+
 	void setSolverApp(SolverApp *sa) {
 		sApp = sa;
 	}
-	void setSolverCtr(SolverCtr *sc) {
-		sCtr = sc;
-	}
+
 	void setPrecision(PetscReal precision) {
 		this->precision = precision;
 	}

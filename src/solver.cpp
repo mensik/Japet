@@ -85,7 +85,9 @@ void CGSolver::solve(Vec b, Vec x) {
 	sApp->applyMult(x, temp, &itManager);
 	VecAYPX(g, -1, temp); // g = Ax - b
 
+	sProj->applyProjection(g, g);
 	sPC->applyPC(g, z);
+	sProj->applyProjection(z, z);
 
 	VecNorm(g, NORM_2, &rNorm);
 	r0Norm = rNorm;
@@ -129,14 +131,20 @@ void CGSolver::solve(Vec b, Vec x) {
 				VecCopy(b, g);
 				sApp->applyMult(x, temp, &itManager);
 				VecAYPX(g, -1, temp); // g = Ax - b
+
+				sProj->applyProjection(g, g);
 				sPC->applyPC(g, z);
+				sProj->applyProjection(z, z);
+
 				VecCopy(z, p);
 				VecDot(g, z, &gTz);
 			} else {
 
 				VecAXPY(g, -a, temp);
 
+				sProj->applyProjection(g, g);
 				sPC->applyPC(g, z);
+				sProj->applyProjection(z, z);
 
 				gTzPrev = gTz;
 

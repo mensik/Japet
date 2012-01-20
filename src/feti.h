@@ -38,7 +38,7 @@ public:
  *
  **/
 
-class AFeti: public SolverApp, public SolverCtr, public SolverPreconditioner {
+class AFeti: public SolverApp, public SolverCtr, public SolverPreconditioner, public SolverProjector {
 protected:
 
 	PDCommManager *cMan;
@@ -131,6 +131,7 @@ public:
 
 	virtual void applyInvA(Vec in, IterationManager *itManager) = 0;
 	virtual void applyPrimalMult(Vec in, Vec out);
+	virtual void applyProjection(Vec v, Vec pv);
 	void solve(Vec b) {
 		this->b = b;
 		solve();

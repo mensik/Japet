@@ -253,7 +253,6 @@ void AFeti::applyInvGTG(Vec in, Vec out) {
 
 		ggParSol->solve(in, out);
 
-
 		if (systemR != PETSC_NULL && systemR->rDim > 0) MatNullSpaceRemove(GTGNullSpace, out, PETSC_NULL);
 
 		break;
@@ -368,6 +367,11 @@ void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
 
 }
 
+void AFeti::applyProjection(Vec v, Vec pv) {
+	if (v != pv) VecCopy(v, pv);
+	projectGOrth(pv);
+}
+
 void AFeti::applyPrimalMult(Vec in, Vec out) {
 	VecCopy(in, out);
 }
@@ -377,7 +381,9 @@ ASolver* AFeti::instanceOuterSolver(Vec d, Vec l) {
 
 
 	if (outerSolver == NULL) {
-		outerSolver = new CGSolver(this, this);
+		outerSolver = new CGSolver(this);
+		outerSolver->setPreconditioner(this);
+		outerSolver->setProjector(this);
 	}
 
 	return outerSolver;
@@ -455,7 +461,6 @@ void AFeti::solve() {
 
 	//Solve!!!
 	outerSolver->solve(dAlt, lmbKer);
-
 
 	projectGOrth(lmbKer);
 
@@ -738,8 +743,6 @@ void Feti1::applyPC(Vec g, Vec z) {
 
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->startTimer();
 
-	if (isSingular) projectGOrth(g);
-
 	MatMult(BT, g, temp);
 	//if (systemNullSpace != PETSC_NULL) MatNullSpaceRemove(systemNullSpace, temp, PETSC_NULL);
 	applyPrimalMult(temp, temp);
@@ -747,7 +750,7 @@ void Feti1::applyPC(Vec g, Vec z) {
 	MatMult(B, temp, z);
 
 	//VecCopy(g, z);
-	if (isSingular) projectGOrth(z);
+
 
 	//if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->stopTimer();
 
@@ -1235,7 +1238,7 @@ void HFeti::test() {
 
 void HFeti::applyPC(Vec g, Vec z) {
 
-	projectGOrth(g);
+	//projectGOrth(g);
 
 	MatMult(BT, g, temp);
 	//if (systemNullSpace != PETSC_NULL) MatNullSpaceRemove(systemNullSpace, temp, PETSC_NULL);
@@ -1243,7 +1246,7 @@ void HFeti::applyPC(Vec g, Vec z) {
 	//if (systemNullSpace != PETSC_NULL) MatNullSpaceRemove(systemNullSpace, temp, PETSC_NULL);
 	MatMult(B, temp, z);
 
-	projectGOrth(z);
+	//projectGOrth(z);
 
 }
 
@@ -1297,7 +1300,11 @@ ASolver* HFeti::instanceOuterSolver(Vec d, Vec lmb) {
 	outerPrec = 1e-3;
 	lastNorm = 1e-4;
 	inCounter = 0;
-	return new CGSolver(this, this, cMan->getPrimal(), 15);
+
+	ASolver *sol = new CGSolver(this, this, cMan->getPrimal(), 15);
+	sol->setProjector(this);
+
+	return sol;
 }
 
 void HFeti::setRequiredPrecision(PetscReal reqPrecision) {
