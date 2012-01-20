@@ -3,5 +3,8 @@
 doc/
 log
 bin/
+deploy/
+matlab/data/
+results/
 .*
 update.sh
