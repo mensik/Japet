@@ -175,6 +175,9 @@ public:
 	PetscReal Hx;
 	PetscReal Hy;
 
+	PetscInt clustM;
+	PetscInt clustN;
+
 	PetscInt problem; //< 0 - Laplace, 1 - lin.elasticity
 
 	CoarseProblemMethod coarseProblemMethod;

@@ -66,8 +66,8 @@ int main(int argc, char *argv[]) {
 		//	int clXsize = conf->m / clXCount;
 		//	int clYsize = conf->n / clYCount;
 
-		int clXsize = 5;
-		int clYsize = 5;
+		int clXsize = conf->clustM;
+		int clYsize = conf->clustN;
 		int clXCount = conf->m / clXsize;
 		int clYCount = conf->n / clYsize;
 
@@ -83,7 +83,6 @@ int main(int argc, char *argv[]) {
 				* clXsize + clX;
 
 		MPI_Comm PERMUTATED_WORLD;
-
 
 		MPI_Barrier(PETSC_COMM_WORLD);
 		//int stat = MPI_Comm_split(PETSC_COMM_WORLD, 48, oRank, &PERMUTATED_WORLD);
@@ -106,100 +105,106 @@ int main(int argc, char *argv[]) {
 
 		//		MPI_Comm PERMUTATED_WORLD = PETSC_COMM_WORLD;
 
-		 PDCommManager* commManager =
-		 new PDCommManager(PERMUTATED_WORLD, conf->pdStrategy);
+		PDCommManager* commManager =
+				new PDCommManager(PERMUTATED_WORLD, conf->pdStrategy);
 
-		 //	CHKERRQ(ierr);
-		 int size;
-		 MPI_Comm_size(PERMUTATED_WORLD, &size);
+		//	CHKERRQ(ierr);
+		int size;
+		MPI_Comm_size(PERMUTATED_WORLD, &size);
 
-		 PetscViewer v;
-		 Mesh *mesh = new Mesh();
+		PetscViewer v;
+		Mesh *mesh = new Mesh();
 
-		 bool bound[] = { false, false, false, true };
-		 PetscReal h = conf->Hx / (PetscReal) ((PetscReal) (conf->m)
-		 * (PetscReal) (conf->reqSize));
+		bool bound[] = { false, false, false, true };
+		PetscReal h = conf->Hx / (PetscReal) ((PetscReal) (conf->m)
+				* (PetscReal) (conf->reqSize));
 
-		 mesh->generateTearedRectMesh(0, conf->Hx, 0.0, conf->Hy, h, conf->m, conf->n, bound, commManager);
+		mesh->generateTearedRectMesh(0, conf->Hx, 0.0, conf->Hy, h, conf->m, conf->n, bound, commManager);
 
-		 Mat A;
-		 Vec b;
+		Mat A;
+		Vec b;
 
-		 FEMAssemble2DElasticity(commManager->getPrimal(), mesh, A, b, conf->E, conf->mu, funDensity, funGravity);
-		 PetscPrintf(PERMUTATED_WORLD, "Elasticity assembled \n\n");
-		 //
-		 //		std::stringstream ss2;//
-		 //
-		 //		ss2 << "../matlab/data/A" << rank << ".m";
-		 //		PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
-		 //		MatView(A, v);
-		 //		PetscViewerDestroy(v);
+		FEMAssemble2DElasticity(commManager->getPrimal(), mesh, A, b, conf->E, conf->mu, funDensity, funGravity);
+		PetscPrintf(PERMUTATED_WORLD, "Elasticity assembled \n\n");
+		//
+		//		std::stringstream ss2;//
+		//
+		//		ss2 << "../matlab/data/A" << rank << ".m";
+		//		PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
+		//		MatView(A, v);
+		//		PetscViewerDestroy(v);
 
-		 Mat Bl, Bg, BTg, BTl;
-		 Vec lmbG, lmbL, lmb;
+		Mat Bl, Bg, BTg, BTl;
+		Vec lmbG, lmbL, lmb;
 
-		 SubdomainCluster cluster;
-		 MPI_Barrier(PERMUTATED_WORLD);
-		 //		/*
-		 //		 Mat B, BT;
-		 //		 GenerateTotalJumpOperator(mesh, 2, B, BT, lmb, commManager);
-		 //		 PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/B.m", FILE_MODE_WRITE, &v);
-		 //		 MatView(B, v);
-		 //		 //MatView(BTg, v);
-		 //		 //MatView(cluster.outerNullSpace->R, v);
-		 //		 PetscViewerDestroy(v);
-		 //
-
-
-		 mesh->generateRectMeshCluster(&cluster, conf->m, conf->n, clXCount, clYCount, PERMUTATED_WORLD);
-
-		 GenerateClusterJumpOperator(mesh, &cluster, Bg, BTg, lmbG, Bl, BTl, lmbL, PERMUTATED_WORLD);
-
-		 Generate2DElasticityClusterNullSpace(mesh, &cluster, PERMUTATED_WORLD);
-
-		 //PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/data/out.m", FILE_MODE_WRITE, &v);
-		 //MatView(Bg, v);
-		 //MatView(BTg, v);
-		 //MatView(cluster.outerNullSpace->R, v);
-		 //PetscViewerDestroy(v);
-
-		 //std::stringstream ss;
-
-		 //ss << "../matlab/data/out" << cluster.clusterColor << ".m";
-		 //PetscViewerBinaryOpen(cluster.clusterComm, ss.str().c_str(), FILE_MODE_WRITE, &v);
-		 //		MatView(Bl, v);
-		 //		MatView(BTl, v);
-		 //		MatView(cluster.clusterNullSpace->R, v);
-		 //
-		 //		MatView(cluster.clusterR.systemR, v);
-
-		 //VecView(cluster.clusterR.systemGNullSpace[0], v);
-		 //VecView(cluster.clusterR.systemGNullSpace[1], v);
-		 //VecView(cluster.clusterR.systemGNullSpace[2], v);
-		 //
-		 //		VecView(cluster.outerNullSpace->localBasis[0], v);
-		 //		VecView(cluster.outerNullSpace->localBasis[1], v);
-		 //		VecView(cluster.outerNullSpace->localBasis[2], v);
-
-		 //PetscViewerDestroy(v);
-
-		 HFeti
-		 *hFeti =
-		 new HFeti(commManager, A, b, Bg, BTg, Bl, BTl, lmbG, lmbL, &cluster, mesh->vetrices.size());
-
-		 //		Feti1
-		 //				*feti =
-		 //						new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
-
-		 //		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/system.m", FILE_MODE_WRITE, &v);
-		 //		feti->dumpSystem(v);
-		 //		hFeti->dumpSolution(v);
-		 //		PetscViewerDestroy(v);
+		SubdomainCluster cluster;
+		MPI_Barrier(PERMUTATED_WORLD);
+		//		/*
+		//		 Mat B, BT;
+		//		 GenerateTotalJumpOperator(mesh, 2, B, BT, lmb, commManager);
+		//		 PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/B.m", FILE_MODE_WRITE, &v);
+		//		 MatView(B, v);
+		//		 //MatView(BTg, v);
+		//		 //MatView(cluster.outerNullSpace->R, v);
+		//		 PetscViewerDestroy(v);
+		//
 
 
-		 hFeti->setIsVerbose(true);
+		mesh->generateRectMeshCluster(&cluster, conf->m, conf->n, clXCount, clYCount, PERMUTATED_WORLD);
 
-		 hFeti->solve();
+		PetscPrintf(PERMUTATED_WORLD, "CLuster constructed \n");
+
+		GenerateClusterJumpOperator(mesh, &cluster, Bg, BTg, lmbG, Bl, BTl, lmbL, PERMUTATED_WORLD);
+
+		PetscPrintf(PERMUTATED_WORLD, "CLuster jump operator constructed \n");
+
+		Generate2DElasticityClusterNullSpace(mesh, &cluster, PERMUTATED_WORLD);
+
+		PetscPrintf(PERMUTATED_WORLD, "CLuster null space constructed \n");
+
+		//PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/data/out.m", FILE_MODE_WRITE, &v);
+		//MatView(Bg, v);
+		//MatView(BTg, v);
+		//MatView(cluster.outerNullSpace->R, v);
+		//PetscViewerDestroy(v);
+
+		//std::stringstream ss;
+
+		//ss << "../matlab/data/out" << cluster.clusterColor << ".m";
+		//PetscViewerBinaryOpen(cluster.clusterComm, ss.str().c_str(), FILE_MODE_WRITE, &v);
+		//		MatView(Bl, v);
+		//		MatView(BTl, v);
+		//		MatView(cluster.clusterNullSpace->R, v);
+		//
+		//		MatView(cluster.clusterR.systemR, v);
+
+		//VecView(cluster.clusterR.systemGNullSpace[0], v);
+		//VecView(cluster.clusterR.systemGNullSpace[1], v);
+		//VecView(cluster.clusterR.systemGNullSpace[2], v);
+		//
+		//		VecView(cluster.outerNullSpace->localBasis[0], v);
+		//		VecView(cluster.outerNullSpace->localBasis[1], v);
+		//		VecView(cluster.outerNullSpace->localBasis[2], v);
+
+		//PetscViewerDestroy(v);
+
+		HFeti
+				*hFeti =
+						new HFeti(commManager, A, b, Bg, BTg, Bl, BTl, lmbG, lmbL, &cluster, mesh->vetrices.size());
+
+		//		Feti1
+		//				*feti =
+		//						new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
+
+		//		PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/system.m", FILE_MODE_WRITE, &v);
+		//		feti->dumpSystem(v);
+		//		hFeti->dumpSolution(v);
+		//		PetscViewerDestroy(v);
+
+
+		hFeti->setIsVerbose(true);
+
+		hFeti->solve();
 
 		// PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
 		// mesh->dumpForMatlab(v);

@@ -962,7 +962,7 @@ void Mesh::tear() {
 		}
 
 		// Count vetrices,elements and edges per domain
-		std::set<PetscInt> vetSetPerDom[numOfPartitions];
+		std::set<PetscInt> *vetSetPerDom = new std::set<PetscInt>[numOfPartitions];
 		PetscInt elementPerDom[numOfPartitions];
 		PetscInt edgesPerDom[numOfPartitions];
 		startIndexes = new PetscInt[numOfPartitions];
@@ -1025,6 +1025,8 @@ void Mesh::tear() {
 				MPI_Send(coords, 3, MPI_DOUBLE, p->second->domainInd, 0, PETSC_COMM_WORLD);
 			}
 		}
+
+		delete [] vetSetPerDom;
 
 		vetrices = masterVetrices;
 

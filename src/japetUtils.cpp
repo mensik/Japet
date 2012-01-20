@@ -177,6 +177,9 @@ ConfigManager::ConfigManager() {
 	n = 3;
 	problem = 0;
 
+	clustM = 2;
+	clustN = 2;
+
 	reqSize = 100;
 
 	PetscTruth flg;
@@ -192,6 +195,8 @@ ConfigManager::ConfigManager() {
 	PetscOptionsGetInt(PETSC_NULL, "-japet_problem", &problem, PETSC_NULL);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_m", &m, PETSC_NULL);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_n", &n, PETSC_NULL);
+	PetscOptionsGetInt(PETSC_NULL, "-japet_clust_m", &clustM, PETSC_NULL);
+		PetscOptionsGetInt(PETSC_NULL, "-japet_clust_n", &clustN, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_h", &h, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_size_x", &Hx, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_size_y", &Hy, PETSC_NULL);
