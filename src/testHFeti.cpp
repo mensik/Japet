@@ -42,6 +42,25 @@ bool cf(PetscInt itNumber, PetscReal rNorm, Vec *r) {
 	return itNumber > 5;
 }
 
+int getDesiredRank(int m, int n, int cm, int cn, int rank) {
+
+	int cSize = cm * cn;
+	int clustInRow = m / cm;
+
+	int clusterNumber = rank / cSize;
+	int clusterPos = rank % cSize;
+
+	int cY = clusterPos / cm;
+	int cX = clusterPos % cm;
+
+	int desRank = (clusterNumber / clustInRow) * cSize * clustInRow + // Number of ranks in row o clusters
+			cY * m + // Number of ranks in rows
+			(clusterNumber % clustInRow) * cm + // Number of ranks in row preceding actual cluster
+			cX;
+
+	return desRank;
+}
+
 int main(int argc, char *argv[]) {
 	//PetscReal (*fList[])(Point) = {funConst, funSin, funStep};
 	PetscErrorCode ierr;
@@ -66,22 +85,14 @@ int main(int argc, char *argv[]) {
 		int clXCount = conf->m / clXsize;
 		int clYCount = conf->n / clYsize;
 
-		int clInd = oRank % (clXsize * clYsize); // index inside cluster
-		int clX = clInd % clXsize;
-		int clY = (clInd - clX) / clXsize;
-
-		int gInd = (oRank - clInd) / (clXsize * clYsize); //index of cluster
-		int gX = gInd % clXCount; // X index of cluster
-		int gY = (gInd - gX) / clXCount; // Y index of cluster
-
-		int desiredRank = gY * clXsize * clYsize * clXCount + clY * conf->n + gX
-				* clXsize + clX;
-
 		MPI_Comm PERMUTATED_WORLD;
 
+		int desRank =
+				getDesiredRank(conf->m, conf->n, conf->clustM, conf->clustN, oRank);
+
 		MPI_Barrier(PETSC_COMM_WORLD);
-		//int stat = MPI_Comm_split(PETSC_COMM_WORLD, 48, oRank, &PERMUTATED_WORLD);
-		PERMUTATED_WORLD = PETSC_COMM_WORLD;
+		MPI_Comm_split(PETSC_COMM_WORLD, 0, desRank, &PERMUTATED_WORLD);
+		//PERMUTATED_WORLD = PETSC_COMM_WORLD;
 		MPI_Barrier(PERMUTATED_WORLD);
 
 		int rank;
@@ -125,10 +136,12 @@ int main(int argc, char *argv[]) {
 		Generate2DElasticityClusterNullSpace(mesh, &cluster, PERMUTATED_WORLD);
 		PetscPrintf(PERMUTATED_WORLD, "Cluster null space constructed \n");
 
+		MyLogger::Instance()->getTimer("Initiation")->startTimer();
 		HFeti
 				*hFeti =
 						new HFeti(commManager, A, b, Bg, BTg, Bl, BTl, lmbG, lmbL, &cluster, mesh->vetrices.size());
 
+		MyLogger::Instance()->getTimer("Initiation")->stopTimer();
 		//		Feti1
 		//				*feti =
 		//						new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
@@ -140,7 +153,17 @@ int main(int argc, char *argv[]) {
 
 
 		hFeti->setIsVerbose(true);
+
+		MyLogger::Instance()->getTimer("Solving")->startTimer();
 		hFeti->solve();
+		MyLogger::Instance()->getTimer("Solving")->stopTimer();
+
+		if (commManager->isPrimalRoot()) {
+
+			PetscPrintf(PETSC_COMM_SELF, "Init time              : %e \n", MyLogger::Instance()->getTimer("Initiation")->getTotalTime());
+			PetscPrintf(PETSC_COMM_SELF, "Solve time             : %e \n", MyLogger::Instance()->getTimer("Solving")->getTotalTime());
+
+		}
 
 		delete mesh;
 		delete hFeti;
