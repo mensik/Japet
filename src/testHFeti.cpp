@@ -160,8 +160,8 @@ int main(int argc, char *argv[]) {
 
 		if (commManager->isPrimalRoot()) {
 
-			PetscPrintf(PETSC_COMM_SELF, "Init time              : %e \n", MyLogger::Instance()->getTimer("Initiation")->getTotalTime());
 			PetscPrintf(PETSC_COMM_SELF, "Solve time             : %e \n", MyLogger::Instance()->getTimer("Solving")->getTotalTime());
+			PetscPrintf(PETSC_COMM_SELF, "Init time              : %e \n", MyLogger::Instance()->getTimer("Initiation")->getTotalTime());
 
 		}
 

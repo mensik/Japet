@@ -38,7 +38,10 @@ public:
  *
  **/
 
-class AFeti: public SolverApp, public SolverCtr, public SolverPreconditioner, public SolverProjector {
+class AFeti: public SolverApp,
+		public SolverCtr,
+		public SolverPreconditioner,
+		public SolverProjector {
 protected:
 
 	PDCommManager *cMan;
@@ -237,8 +240,20 @@ public:
 
 	virtual void applyMult(Vec in, Vec out, IterationManager *info);
 
-//	virtual void solve();
+	//	virtual void solve();
 
+};
+
+class iFeti1: public Feti1 {
+
+public:
+	iFeti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
+			NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
+			PetscInt *fNodes, CoarseProblemMethod cpM = ParaCG) :
+				Feti1(comMan, A, b, BT, B, lmb, nullSpace, localNodeCount, fNodesCount, fNodes, cpM) {
+	}
+
+	virtual ASolver* instanceOuterSolver(Vec d, Vec lmb);
 };
 
 class mFeti1: public Feti1 {
@@ -322,7 +337,8 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster);
 
 void
-Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster, MPI_Comm comm);
+Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster,
+		MPI_Comm comm);
 
 void getLocalJumpPart(Mat B, Mat *Bloc);
 

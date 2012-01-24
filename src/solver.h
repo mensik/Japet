@@ -156,8 +156,6 @@ public:
 
 class CGSolver: public Solver {
 
-	Vec p; ///< direction vector
-	Vec temp; ///< temp Vector
 	int restartRate;
 
 	void initSolver();
@@ -176,32 +174,24 @@ public:
 
 	void solve(Vec b, Vec x); ///< begin solving
 };
+
+class BBSolver: public Solver {
+
+	void projectedMult(Vec in, Vec out);
+
+public:
+	BBSolver(Mat A) :
+		Solver(A) {
+	}
+
+	BBSolver(SolverApp *sa, SolverPreconditioner *pc = NULL,
+			MPI_Comm comm = MPI_COMM_WORLD) :
+		Solver(sa, pc, comm) {
+	}
+
+	void solve(Vec b, Vec x); ///< begin solving
+};
 /*
- class BBSolver: public Solver {
-
- Vec p; ///< direction vector
- Vec temp; ///< temp Vector
- int restartRate;
-
- void initSolver();
- public:
- BBSolver(Mat A, Vec b, Vec x) :
- Solver(A, b, x) {
- initSolver();
- }
- ;
- BBSolver(SolverApp *sa, Vec b, Vec x, SolverPreconditioner *pc = NULL,
- MPI_Comm comm = MPI_COMM_WORLD, int restartRate = -1) :
- Solver(sa, b, x, pc, comm) {
- initSolver();
- this->restartRate = restartRate;
- }
- ;
- ~BBSolver();
-
- void solve(); ///< begin solving
- };
- /*
  class ReCGSolver: public Solver {
 
  std::vector<Vec> P;

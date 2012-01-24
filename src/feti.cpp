@@ -359,9 +359,16 @@ void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
 
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("BA+BT")->startTimer();
 
+	PetscReal v1, v2, v3;
+
 	MatMult(BT, in, temp);
+	VecNorm(temp, &v1);
 	applyInvA(temp, info);
+	VecNorm(temp, &v2);
 	MatMult(B, temp, out);
+	VecNorm(out, &v3);
+
+	PetscPrintf(PETSC_COMM_WORLD, "%e\t%e\t%e\n", v1, v2, v3);
 
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("BA+BT")->stopTimer();
 
@@ -1100,6 +1107,20 @@ void FFeti::solve() {
  outerPrec = 1e-7;
  }
  */
+
+ASolver* iFeti1::instanceOuterSolver(Vec d, Vec l) {
+	//return new CGSolver(this, d, l, this);
+
+
+	if (outerSolver == NULL) {
+		outerSolver = new BBSolver(this);
+		outerSolver->setPreconditioner(this);
+		outerSolver->setProjector(this);
+	}
+
+	return outerSolver;
+}
+
 ASolver* mFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 	//outerPrec = 1e-4;
 	//lastNorm = 1e-4;
