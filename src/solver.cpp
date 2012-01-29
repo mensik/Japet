@@ -172,14 +172,9 @@ void CGSolver::solve(Vec b, Vec x) {
 }
 
 void BBSolver::projectedMult(Vec in, Vec out) {
-	sProj->applyProjection(in, in);
-	//PetscReal normMult, norm;
-	//VecNorm(in, &norm);
+	if (sProj != NULL) sProj->applyProjection(in, in);
 	sApp->applyMult(in, out, &itManager);
-	//sPC->applyPC(out, out);
-	//VecNorm(out, &normMult);
-	//PetscPrintf(PETSC_COMM_WORLD, "%e -> %e \n", norm, normMult);
-	sProj->applyProjection(out, out);
+	if (sProj != NULL) sProj->applyProjection(out, out);
 }
 
 void BBSolver::solve(Vec b, Vec x) {
@@ -234,6 +229,8 @@ void BBSolver::solve(Vec b, Vec x) {
 
 			//alpha_old = alpha;
 
+			VecAXPY(x, -alpha, g);
+
 			projectedMult(g, temp);
 
 			VecDot(g, g, &gTg);
@@ -241,11 +238,6 @@ void BBSolver::solve(Vec b, Vec x) {
 
 			alpha = gTg / tempTg;
 
-			if (alpha > 1e36) {
-				alpha = 5000;
-			}
-
-			VecAXPY(x, -alpha, g);
 
 			VecCopy(b, g);
 			projectedMult(x, temp);

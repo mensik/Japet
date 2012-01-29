@@ -359,16 +359,18 @@ void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
 
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("BA+BT")->startTimer();
 
-	PetscReal v1, v2, v3;
-
 	MatMult(BT, in, temp);
-	VecNorm(temp, &v1);
-	applyInvA(temp, info);
-	VecNorm(temp, &v2);
-	MatMult(B, temp, out);
-	VecNorm(out, &v3);
 
-	PetscPrintf(PETSC_COMM_WORLD, "%e\t%e\t%e\n", v1, v2, v3);
+	PetscReal tNorm;
+	VecNorm(temp, &tNorm);
+
+	VecScale(temp, 1/tNorm);
+	applyInvA(temp, info);
+	VecScale(temp, tNorm);
+
+	MatMult(B, temp, out);
+
+	//PetscPrintf(PETSC_COMM_WORLD, "%e\t%e\t%e\n", v1, v2, v3);
 
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("BA+BT")->stopTimer();
 
@@ -641,15 +643,15 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 
 		MatAXPY(Areg, 1, REGREGT, DIFFERENT_NONZERO_PATTERN);
 
-		//std::stringstream ss2;
-		//ss2 << "../matlab/data/Ar" << cMan->getPrimalRank() << ".m";
+		std::stringstream ss2;
+		ss2 << "../matlab/data/Ar" << cMan->getPrimalRank() << ".m";
 
-		//	int rank;
+		int rank;
 
-		//	PetscViewer v;
-		//	PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
-		//	MatView(Areg, v);
-		//	PetscViewerDestroy(v);
+		PetscViewer v;
+		PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
+		MatView(Areg, v);
+		PetscViewerDestroy(v);
 
 		PC pc;
 
@@ -660,8 +662,8 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		PCSetUp(pc);
 
 		KSPCreate(PETSC_COMM_SELF, &kspA);
-		KSPSetTolerances(kspA, 1e-10, 1e-10, 1e7, 1);
-		KSPSetPC(kspA, pc);
+	//	KSPSetTolerances(kspA, 1e-10, 1e-10, 1e7, 1);
+	//	KSPSetPC(kspA, pc);
 		KSPSetOperators(kspA, Areg, Areg, SAME_PRECONDITIONER);
 
 		MyLogger::Instance()->getTimer("Factorization")->stopTimer();
@@ -729,6 +731,7 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 	MatNullSpaceRemove(locNS, tempInvGh, PETSC_NULL);
 
+	KSPSetTolerances(kspA, precision, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
 	KSPSolve(kspA, tempInvGh, tempInvGhB);
 
 	MatNullSpaceRemove(locNS, tempInvGhB, PETSC_NULL);
@@ -747,12 +750,14 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 }
 
 void Feti1::applyPC(Vec g, Vec z) {
+	/*
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->startTimer();
 	MatMult(BT, g, temp);
 	applyPrimalMult(temp, temp);
 	MatMult(B, temp, z);
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->stopTimer();
-
+*/
+	VecCopy(g, z);
 }
 
 void Feti1::applyPrimalMult(Vec in, Vec out) {

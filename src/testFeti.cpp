@@ -166,7 +166,7 @@ int main(int argc, char *argv[]) {
 		}
 
 		if (conf->saveOutputs) {
-
+/*
 			std::stringstream ss2;
 
 			ss2 << "../matlab/data/A" << rank << ".m";
@@ -197,32 +197,27 @@ int main(int argc, char *argv[]) {
 				VecView(lmb, v);
 				PetscViewerDestroy(v);
 			}
+			*/
 		}
 
 		PetscLogStagePop();
 
 		//delete feti;
 
+
+		feti->saveIterationInfo(conf->name);
+
+		if (conf->saveOutputs) {
+			/*
+			PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/data/out.m", FILE_MODE_WRITE, &v);
+
+			MatView(B, v);
+
+			PetscViewerDestroy(v);
+			*/
+		}
+
 		/*
-		 feti->saveIterationInfo(conf->name);
-
-		 if (conf->saveOutputs) {
-		 PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/mesh.m", FILE_MODE_WRITE, &v);
-		 mesh->dumpForMatlab(v);
-		 PetscViewerDestroy(v);
-
-		 feti->copyLmb(lmb);
-
-		 PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/out.m", FILE_MODE_WRITE, &v);
-		 MatView(A, v);
-		 VecView(b, v);
-		 MatView(B, v);
-		 VecView(x, v);
-		 VecView(lmb, v);
-		 PetscViewerDestroy(v);
-		 }
-
-
 
 		 //MatDestroy(A);
 		 //MatDestroy(B);
