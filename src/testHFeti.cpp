@@ -90,10 +90,10 @@ int main(int argc, char *argv[]) {
 		int desRank =
 				getDesiredRank(conf->m, conf->n, conf->clustM, conf->clustN, oRank);
 
-		MPI_Barrier(PETSC_COMM_WORLD);
+		//MPI_Barrier(PETSC_COMM_WORLD);
 		MPI_Comm_split(PETSC_COMM_WORLD, 0, desRank, &PERMUTATED_WORLD);
 		//PERMUTATED_WORLD = PETSC_COMM_WORLD;
-		MPI_Barrier(PERMUTATED_WORLD);
+		//MPI_Barrier(PERMUTATED_WORLD);
 
 		int rank;
 		MPI_Comm_rank(PERMUTATED_WORLD, &rank);
