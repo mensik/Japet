@@ -362,9 +362,9 @@ void AFeti::applyMult(Vec in, Vec out, IterationManager *info) {
 	MatMult(BT, in, temp);
 
 	PetscReal tNorm;
-	VecNorm(temp, &tNorm);
+	VecNorm(temp, NORM_2, &tNorm);
 
-	VecScale(temp, 1/tNorm);
+	VecScale(temp, 1 / tNorm);
 	applyInvA(temp, info);
 	VecScale(temp, tNorm);
 
@@ -642,17 +642,17 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		MatDuplicate(Aloc, MAT_COPY_VALUES, &Areg);
 
 		MatAXPY(Areg, 1, REGREGT, DIFFERENT_NONZERO_PATTERN);
+		/*
+		 std::stringstream ss2;
+		 ss2 << "../matlab/data/Ar" << cMan->getPrimalRank() << ".m";
 
-		std::stringstream ss2;
-		ss2 << "../matlab/data/Ar" << cMan->getPrimalRank() << ".m";
+		 int rank;
 
-		int rank;
-
-		PetscViewer v;
-		PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
-		MatView(Areg, v);
-		PetscViewerDestroy(v);
-
+		 PetscViewer v;
+		 PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
+		 MatView(Areg, v);
+		 PetscViewerDestroy(v);
+		 */
 		PC pc;
 
 		MyLogger::Instance()->getTimer("Factorization")->startTimer();
@@ -662,8 +662,8 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		PCSetUp(pc);
 
 		KSPCreate(PETSC_COMM_SELF, &kspA);
-	//	KSPSetTolerances(kspA, 1e-10, 1e-10, 1e7, 1);
-	//	KSPSetPC(kspA, pc);
+		KSPSetTolerances(kspA, 1e-10, 1e-10, 1e7, 1);
+		KSPSetPC(kspA, pc);
 		KSPSetOperators(kspA, Areg, Areg, SAME_PRECONDITIONER);
 
 		MyLogger::Instance()->getTimer("Factorization")->stopTimer();
@@ -750,14 +750,14 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 }
 
 void Feti1::applyPC(Vec g, Vec z) {
-	/*
+
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->startTimer();
 	MatMult(BT, g, temp);
 	applyPrimalMult(temp, temp);
 	MatMult(B, temp, z);
 	if (cMan->isPrimalRoot()) MyLogger::Instance()->getTimer("F^-1")->stopTimer();
-*/
-	VecCopy(g, z);
+
+	//VecCopy(g, z);
 }
 
 void Feti1::applyPrimalMult(Vec in, Vec out) {
@@ -897,13 +897,13 @@ FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 	//gatherMatrix(G, Groot, 0, cMan->getPrimal());
 
 	if (cMan->isPrimalRoot()) {
-
-		PetscViewer v;
-		PetscViewerBinaryOpen(PETSC_COMM_SELF, "../matlab/data/F.m", FILE_MODE_WRITE, &v);
-		MatView(F, v);
-		MatView(Groot, v);
-		PetscViewerDestroy(v);
-
+		/*
+		 PetscViewer v;
+		 PetscViewerBinaryOpen(PETSC_COMM_SELF, "../matlab/data/F.m", FILE_MODE_WRITE, &v);
+		 MatView(F, v);
+		 MatView(Groot, v);
+		 PetscViewerDestroy(v);
+		 */
 		PC pcF;
 		PCCreate(PETSC_COMM_SELF, &pcF);
 		PCSetOperators(pcF, F, F, SAME_PRECONDITIONER);
