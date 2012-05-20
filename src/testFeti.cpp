@@ -97,6 +97,14 @@ int main(int argc, char *argv[]) {
 			GenerateTotalJumpOperator(mesh, 1, B, BT, lmb, commManager);
 			if (commManager->isPrimal()) Generate2DLaplaceTotalNullSpace(mesh, &nullSpace, commManager->getPrimal());
 		}
+
+
+		JumpRectMatrix jrm = JumpRectMatrix(0, conf->Hx, 0.0, conf->Hy, h, conf->m, conf->n);
+
+		//PetscPrintf(PETSC_COMM_WORLD, "%d \n")
+
+		//Generate2DTotalJumpOperatorRECT(0, conf->Hx, 0.0, conf->Hy, h, conf->m, conf->n, BT, commManager->getPrimal());
+
 		PetscLogStagePop();
 
 		if (commManager->isPrimalRoot()) {
@@ -104,6 +112,7 @@ int main(int argc, char *argv[]) {
 
 			VecGetSize(b, &dimPrim);
 			MatGetSize(B, &dimDual, PETSC_NULL);
+			PetscPrintf(PETSC_COMM_SELF,"B: %d\n", dimDual);
 			MatGetSize(nullSpace.R, PETSC_NULL, &dimNull);
 
 			PetscPrintf(PETSC_COMM_SELF, "\nPrimal var. : %d \nDual var.   : %d\nCoarse dim. : %d \n\n", dimPrim, dimDual, dimNull);

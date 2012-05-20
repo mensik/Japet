@@ -87,6 +87,7 @@ int main(int argc, char *argv[]) {
 
 		MPI_Comm PERMUTATED_WORLD;
 
+		MyLogger::Instance()->getTimer("comInit")->startTimer();
 		int desRank =
 				getDesiredRank(conf->m, conf->n, conf->clustM, conf->clustN, oRank);
 
@@ -108,6 +109,8 @@ int main(int argc, char *argv[]) {
 		int size;
 		MPI_Comm_size(PERMUTATED_WORLD, &size);
 
+		MyLogger::Instance()->getTimer("comInit")->stopTimer();
+
 		Mesh *mesh = new Mesh();
 
 		bool bound[] = { false, false, false, true };
@@ -119,22 +122,30 @@ int main(int argc, char *argv[]) {
 		Mat A;
 		Vec b;
 
+		MyLogger::Instance()->getTimer("elastAss")->startTimer();
 		FEMAssemble2DElasticity(commManager->getPrimal(), mesh, A, b, conf->E, conf->mu, funDensity, funGravity);
-		PetscPrintf(PERMUTATED_WORLD, "Elasticity assembled \n\n");
+		MyLogger::Instance()->getTimer("elastAss")->stopTimer();
+		PetscPrintf(PERMUTATED_WORLD, "\nElasticity assembled in              %e s\n", MyLogger::Instance()->getTimer("elastAss")->getTotalTime());
 
 		Mat Bl, Bg, BTg, BTl;
 		Vec lmbG, lmbL;
 
 		SubdomainCluster cluster;
 
+		MyLogger::Instance()->getTimer("clustInit")->startTimer();
 		mesh->generateRectMeshCluster(&cluster, conf->m, conf->n, clXCount, clYCount, PERMUTATED_WORLD);
-		PetscPrintf(PERMUTATED_WORLD, "Cluster constructed \n");
+		MyLogger::Instance()->getTimer("clustInit")->stopTimer();
+		PetscPrintf(PERMUTATED_WORLD, "Cluster constructed in               %e s\n", MyLogger::Instance()->getTimer("clustInit")->getTotalTime());
 
+		MyLogger::Instance()->getTimer("clustJump")->startTimer();
 		GenerateClusterJumpOperator(mesh, &cluster, Bg, BTg, lmbG, Bl, BTl, lmbL, PERMUTATED_WORLD);
-		PetscPrintf(PERMUTATED_WORLD, "Cluster jump operator constructed \n");
+		MyLogger::Instance()->getTimer("clustJump")->stopTimer();
+		PetscPrintf(PERMUTATED_WORLD, "Cluster jump operator constructed in %e s\n", MyLogger::Instance()->getTimer("clustJump")->getTotalTime());
 
+		MyLogger::Instance()->getTimer("clustNull")->startTimer();
 		Generate2DElasticityClusterNullSpace(mesh, &cluster, PERMUTATED_WORLD);
-		PetscPrintf(PERMUTATED_WORLD, "Cluster null space constructed \n");
+		MyLogger::Instance()->getTimer("clustNull")->stopTimer();
+		PetscPrintf(PERMUTATED_WORLD, "Cluster null space constructed in    %e s \n", MyLogger::Instance()->getTimer("clustNull")->getTotalTime());
 
 		MyLogger::Instance()->getTimer("Initiation")->startTimer();
 		HFeti
@@ -142,6 +153,8 @@ int main(int argc, char *argv[]) {
 						new HFeti(commManager, A, b, Bg, BTg, Bl, BTl, lmbG, lmbL, &cluster, mesh->vetrices.size());
 
 		MyLogger::Instance()->getTimer("Initiation")->stopTimer();
+		PetscPrintf(PERMUTATED_WORLD, "HFeti initiated in                   %e s \n\n\n", MyLogger::Instance()->getTimer("Initiation")->getTotalTime());
+
 		//		Feti1
 		//				*feti =
 		//						new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), PETSC_COMM_WORLD);
@@ -150,6 +163,9 @@ int main(int argc, char *argv[]) {
 		//		feti->dumpSystem(v);
 		//		hFeti->dumpSolution(v);
 		//		PetscViewerDestroy(v);
+
+
+
 
 
 		hFeti->setIsVerbose(true);
@@ -164,6 +180,11 @@ int main(int argc, char *argv[]) {
 			PetscPrintf(PETSC_COMM_SELF, "Init time              : %e \n", MyLogger::Instance()->getTimer("Initiation")->getTotalTime());
 
 		}
+
+		PetscViewer v;
+		PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/data/B.m", FILE_MODE_WRITE, &v);
+		MatView(Bg, v);
+		PetscViewerDestroy(v);
 
 		delete mesh;
 		delete hFeti;

@@ -1535,9 +1535,9 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 	MPI_Bcast(&globalPairsCount, 1, MPI_INT, 0, comm);
 
 	MatCreateMPIAIJ(comm, PETSC_DECIDE, mesh->vetrices.size() * d, (globalPairsCount
-			+ dSum) * d, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BGlob);
+			+ dSum) * d, PETSC_DECIDE, 4, PETSC_NULL, 4, PETSC_NULL, &BGlob);
 	MatCreateMPIAIJ(comm, mesh->vetrices.size() * d, PETSC_DECIDE, PETSC_DECIDE, (globalPairsCount
-			+ dSum) * d, 2, PETSC_NULL, 2, PETSC_NULL, &BTGlob);
+			+ dSum) * d, 4, PETSC_NULL, 4, PETSC_NULL, &BTGlob);
 
 	if (!rank) {
 
@@ -1648,9 +1648,9 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 	MPI_Bcast(&clusterPairCount, 1, MPI_INT, 0, cluster->clusterComm);
 
 	MatCreateMPIAIJ(cluster->clusterComm, PETSC_DECIDE, mesh->vetrices.size() * d, clusterPairCount
-			* d, PETSC_DECIDE, 2, PETSC_NULL, 2, PETSC_NULL, &BCluster);
+			* d, PETSC_DECIDE, 4, PETSC_NULL, 4, PETSC_NULL, &BCluster);
 	MatCreateMPIAIJ(cluster->clusterComm, mesh->vetrices.size() * d, PETSC_DECIDE, PETSC_DECIDE, clusterPairCount
-			* d, 2, PETSC_NULL, 2, PETSC_NULL, &BTCluster);
+			* d, 4, PETSC_NULL, 4, PETSC_NULL, &BTCluster);
 
 	VecCreateMPI(cluster->clusterComm, PETSC_DECIDE, clusterPairCount * d, &lmbCluster);
 
@@ -2169,3 +2169,45 @@ Feti1* createFeti(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point),
 	//return new Feti1(A, b, B, lmb, &nullSpace, mesh->vetrices.size(), comm);
 	return NULL;
 }
+
+JumpRectMatrix::JumpRectMatrix(PetscReal x0, PetscReal x1, PetscReal y0,
+		PetscReal y1, PetscReal h, PetscInt m, PetscInt n) {
+
+	PetscReal Hx = (x1 - x0) / (PetscReal) m;
+	PetscReal Hy = (y1 - y0) / (PetscReal) n;
+
+	xEdges = (PetscInt) ceil(Hx / h);
+	yEdges = (PetscInt) ceil(Hy / h);
+
+	nDirchlets = (yEdges + 1) * n;
+	nCorners = (m - 1) * (n - 1);
+	nPairs = 2 * (m - 1) * yEdges + (n - 2) * (m - 1) * (yEdges - 1) + (n - 1)
+			* xEdges + (m - 1) * (n - 1) * (xEdges - 1);
+
+	bRows = (nDirchlets + nCorners * 3 + nPairs) * 2;
+
+	//PetscPrintf(comm, "B has %d rows %d %d %f\n", bRows, xEdges, yEdges, h);
+
+}
+
+PetscInt JumpRectMatrix::getGlobalIndex(PetscInt subDom, PetscInt x, PetscInt y) {
+	return (xEdges + 1) * (yEdges + 1) * subDom + (xEdges + 1) * y + x;
+}
+
+std::map<PetscInt, PetscReal> JumpRectMatrix::getRow(PetscInt rowNumber) {
+
+	std::map<PetscInt, PetscReal> row;
+
+	if (rowNumber < nDirchlets * 2) { //DIRCHLET
+	//	int subDom =
+
+	} else if (rowNumber < (nDirchlets + nCorners * 3) * 2) { //CORNER
+
+
+	} else { //PAIR
+
+	}
+
+	return row;
+}
+

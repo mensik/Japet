@@ -342,7 +342,31 @@ Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster,
 
 void getLocalJumpPart(Mat B, Mat *Bloc);
 
+void Generate2DTotalJumpOperatorRECT(PetscReal x0, PetscReal x1, PetscReal y0,
+		PetscReal y1, PetscReal h, PetscInt m, PetscInt n, Mat BT, MPI_Comm comm);
+
 Feti1* createFeti(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point),
 		MPI_Comm comm);
+
+class JumpRectMatrix {
+	PetscReal h;
+	PetscInt m;
+	PetscInt n;
+
+	PetscInt xEdges;
+	PetscInt yEdges;
+
+	PetscInt nDirchlets;
+	PetscInt nCorners;
+	PetscInt nPairs;
+	PetscInt bRows;
+public:
+	JumpRectMatrix(PetscReal x0, PetscReal x1, PetscReal y0,
+			PetscReal y1, PetscReal h, PetscInt m, PetscInt n);
+
+	PetscInt getGlobalIndex(PetscInt subDom, PetscInt x, PetscInt y);
+
+	std::map<PetscInt, PetscReal> getRow(PetscInt row);
+};
 
 #endif
