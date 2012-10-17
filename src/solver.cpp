@@ -124,8 +124,8 @@ void CGSolver::solve(Vec b, Vec x) {
 
 			VecAXPY(x, -a, p);
 
-			if (restartRate != -1 && getItCount() > 1 && getItCount() % restartRate
-					== 0) {
+			if (restartRate != -1 && getItCount() > 1
+					&& getItCount() % restartRate == 0) {
 
 				VecCopy(b, g);
 				sApp->applyMult(x, temp, &itManager);
@@ -182,7 +182,9 @@ void BBSolver::solve(Vec b, Vec x) {
 	itManager.reset();
 	itManager.setTitle("BB");
 
-	sApp->setRequiredPrecision(MAXPREC);
+	double precision = 1e-6;
+
+	sApp->setRequiredPrecision(precision);
 
 	VecNorm(b, NORM_2, &bNorm);
 
@@ -231,13 +233,19 @@ void BBSolver::solve(Vec b, Vec x) {
 
 			VecAXPY(x, -alpha, g);
 
+			if (precision > rNorm) {
+				precision = rNorm;
+				sApp->setRequiredPrecision(precision);
+			} else {
+				precision = precision * 0.7;
+				sApp->setRequiredPrecision(precision);
+			}
 			projectedMult(g, temp);
 
 			VecDot(g, g, &gTg);
 			VecDot(temp, g, &tempTg);
 
 			alpha = gTg / tempTg;
-
 
 			VecCopy(b, g);
 			projectedMult(x, temp);
@@ -250,6 +258,223 @@ void BBSolver::solve(Vec b, Vec x) {
 		VecSet(x, 0);
 	}
 }
+
+void SteepestDescent::projectedMult(Vec in, Vec out) {
+	if (sProj != NULL) sProj->applyProjection(in, in);
+	sApp->applyMult(in, out, &itManager);
+	if (sProj != NULL) sProj->applyProjection(out, out);
+}
+
+void SteepestDescent::solve(Vec b, Vec x) {
+
+	itManager.reset();
+	itManager.setTitle("SteepestDescent Solver");
+
+	double precision = 1e-6;
+	sApp->setRequiredPrecision(precision);
+
+	VecNorm(b, NORM_2, &bNorm);
+
+	if (bNorm > 1e-16) { // right hand side is too small for computations
+
+		Vec g, p, temp;
+
+		VecDuplicate(b, &g);
+		VecDuplicate(b, &p);
+		VecDuplicate(b, &temp);
+
+		VecCopy(b, g);
+		projectedMult(x, temp);
+		VecAYPX(g, -1, temp); // g = Ax - b
+
+		VecNorm(g, NORM_2, &rNorm);
+		r0Norm = rNorm;
+
+		PetscReal relativeCoef = MAX(bNorm, r0Norm);
+
+		PetscReal pTg, gTg;
+		PetscReal alpha;
+
+		projectedMult(g, p);
+
+		while (!sCtr->isConverged(getItCount(), rNorm, relativeCoef, &g)) {
+
+			itManager.setIterationData("Rel. err", rNorm / relativeCoef);
+			itManager.setIterationData("alpha", alpha);
+
+			nextIteration();
+
+			VecDot(g, g, &gTg);
+			VecDot(p, g, &pTg);
+
+			alpha = gTg / pTg;
+
+			VecAXPY(x, -alpha, g);
+
+			VecCopy(b, g);
+			projectedMult(x, temp);
+			VecAYPX(g, -1, temp); // g = Ax - b
+
+			VecNorm(g, NORM_2, &rNorm);
+
+			if (precision > rNorm) {
+				precision = rNorm;
+				sApp->setRequiredPrecision(precision);
+			} else {
+				precision = precision * 0.7;
+				sApp->setRequiredPrecision(precision);
+			}
+
+			projectedMult(g, p);
+		}
+
+	} else {
+		VecSet(x, 0);
+	}
+}
+
+void ASinSolver::projectedMult(Vec in, Vec out) {
+	if (sProj != NULL) sProj->applyProjection(in, in);
+	sApp->applyMult(in, out, &itManager);
+	if (sProj != NULL) sProj->applyProjection(out, out);
+}
+
+void ASinSolver::solve(Vec b, Vec x) {
+
+	itManager.reset();
+	itManager.setTitle("ArcSin Solver");
+
+	double precision = 1e-6;
+	sApp->setRequiredPrecision(precision);
+
+	VecNorm(b, NORM_2, &bNorm);
+
+	if (bNorm > 1e-16) { // right hand side is too small for computations
+
+		Vec g, p, temp;
+
+		PetscReal m = 0, M = 0, epsilon;
+
+		VecDuplicate(b, &g);
+		VecDuplicate(b, &p);
+		VecDuplicate(b, &temp);
+
+		VecCopy(b, g);
+		projectedMult(x, temp);
+		VecAYPX(g, -1, temp); // g = Ax - b
+
+		VecNorm(g, NORM_2, &rNorm);
+		r0Norm = rNorm;
+
+		PetscReal relativeCoef = MAX(bNorm, r0Norm);
+
+		PetscReal pTg, gTg;
+		PetscReal alpha;
+
+		for (int i = 0; i < 2; i++) {
+
+			itManager.setIterationData("Rel. err", rNorm / relativeCoef);
+			//itManager.setIterationData("alpha", alpha);
+
+			nextIteration();
+
+			projectedMult(g, p);
+
+			VecDot(g, g, &gTg);
+			VecDot(p, g, &pTg);
+
+			alpha = gTg / pTg;
+
+			if (i == 0) {
+				m = 1 / alpha;
+				M = 1 / alpha;
+			} else {
+				m = fmin(m, 1 / alpha);
+				M = fmax(M, 1 / alpha);
+			}
+
+			VecAXPY(x, -alpha, g);
+
+			VecCopy(b, g);
+			projectedMult(x, temp);
+			VecAYPX(g, -1, temp); // g = Ax - b
+
+			VecNorm(g, NORM_2, &rNorm);
+
+			if (precision > rNorm) {
+				precision = rNorm;
+				sApp->setRequiredPrecision(precision);
+			} else {
+				precision = precision * 0.7;
+				sApp->setRequiredPrecision(precision);
+			}
+		}
+
+		PetscReal z = 0;
+
+		while (!sCtr->isConverged(getItCount(), rNorm, relativeCoef, &g)) {
+			epsilon = tau * (M - m);
+			PetscReal beta;
+
+			PetscReal mOld = m, MOld = M;
+
+			for (int i = 0; i < 2; i++) {
+
+				if (i == 0) {
+					z = z + phi;
+					beta = mOld + epsilon
+							+ (cos(PI * z) + 1) * (MOld - mOld - 2 * epsilon) / 2;
+				} else {
+					beta = MOld + mOld - beta;
+				}
+
+				itManager.setIterationData("Rel. err", rNorm / relativeCoef);
+				//itManager.setIterationData("alpha", alpha);
+				itManager.setIterationData("m", m);
+				itManager.setIterationData("M", M);
+				itManager.setIterationData("beta", beta);
+				itManager.setIterationData("prec", precision);
+
+				nextIteration();
+
+				VecAXPY(x, -1 / beta, g);
+
+				if (true) { //RESTART LOOP
+					VecCopy(b, g);
+					projectedMult(x, temp);
+					VecAYPX(g, -1, temp); // g = Ax - b
+				} else {
+					VecAXPY(g, -1 / beta, p);
+				}
+
+				VecNorm(g, NORM_2, &rNorm);
+
+				sApp->setRequiredPrecision(fmin(precision*1e2, 1e-7));
+				projectedMult(g, p); // p = Ag
+
+				VecDot(g, g, &gTg);
+				VecDot(p, g, &pTg);
+				alpha = pTg / gTg; // 1st moment
+
+				m = fmin(m, alpha);
+				M = fmax(M, alpha);
+
+				if (precision > rNorm) {
+					precision = rNorm;
+					sApp->setRequiredPrecision(precision);
+				} else {
+					precision = precision * 0.7;
+					sApp->setRequiredPrecision(precision);
+				}
+
+			}
+		}
+
+	} else {
+		VecSet(x, 0);
+	}
+}
+
 /*
  ReCGSolver::~ReCGSolver() {
  clearSubspace();

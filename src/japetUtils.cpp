@@ -182,6 +182,9 @@ ConfigManager::ConfigManager() {
 
 	reqSize = 100;
 
+	innerSolver = BB;
+	asinTau = 1e-4;
+
 	PetscTruth flg;
 
 	coarseProblemMethod = MasterWork;
@@ -189,6 +192,12 @@ ConfigManager::ConfigManager() {
 	saveOutputs = false;
 
 	char tName[PETSC_MAX_PATH_LEN] = "FetiTest.log";
+
+	char optName[PETSC_MAX_PATH_LEN] = "japet.cfg";
+
+	PetscOptionsGetString(PETSC_NULL, "-japet_config", optName, PETSC_MAX_PATH_LEN -1, &flg);
+	PetscOptionsInsertFile(PETSC_COMM_WORLD, optName, PETSC_FALSE);
+
 
 	PetscOptionsGetInt(PETSC_NULL, "-japet_req_size", &reqSize, PETSC_NULL);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_max_it", &maxIt, PETSC_NULL);
@@ -200,14 +209,16 @@ ConfigManager::ConfigManager() {
 	PetscOptionsGetReal(PETSC_NULL, "-japet_h", &h, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_size_x", &Hx, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_size_y", &Hy, PETSC_NULL);
-	PetscOptionsGetString(PETSC_NULL, "-japet_name", tName, PETSC_MAX_PATH_LEN
-			- 1, &flg);
+	PetscOptionsGetString(PETSC_NULL, "-japet_name", tName, PETSC_MAX_PATH_LEN - 1, &flg);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_cpmethod", (PetscInt*) &coarseProblemMethod, PETSC_NULL);
 	PetscOptionsGetInt(PETSC_NULL, "-japet_pd_strategy", (PetscInt*) &pdStrategy, PETSC_NULL);
 	PetscOptionsGetTruth(PETSC_NULL, "-japet_save_output", (PetscTruth*) &saveOutputs, PETSC_NULL);
 
 	PetscOptionsGetReal(PETSC_NULL, "-japet_e", &E, PETSC_NULL);
 	PetscOptionsGetReal(PETSC_NULL, "-japet_mu", &mu, PETSC_NULL);
+
+	PetscOptionsGetInt(PETSC_NULL, "-japet_isolver", &innerSolver, PETSC_NULL);
+	PetscOptionsGetReal(PETSC_NULL, "-japet_asin_tau", &asinTau, PETSC_NULL);
 
 	name = tName;
 

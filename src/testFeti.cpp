@@ -62,8 +62,10 @@ int main(int argc, char *argv[]) {
 		PetscReal h = conf->Hx / (PetscReal) ((PetscReal) (conf->m)
 				* (PetscReal) (conf->reqSize));
 
-		mesh->generateTearedRectMesh(0, conf->Hx, 0.0, conf->Hy, h, conf->m, conf->n, bound, commManager);
-
+		{
+			mesh->generateTearedRectMesh(0, conf->Hx, 0.0, conf->Hy, h, conf->m, conf->n, bound, commManager);
+		}
+		/*
 		if (commManager->isPrimal()) {
 			if (conf->saveOutputs) {
 				PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/data/mesh.m", FILE_MODE_WRITE, &v);
@@ -71,35 +73,36 @@ int main(int argc, char *argv[]) {
 				PetscViewerDestroy(v);
 			}
 		}
-
+		*/
 		//***********************************************************************************************
 
 
 		Mat A;
 		Vec b;
-
-		if (commManager->isPrimal()) {
-			if (problemType == 1) {
-				FEMAssemble2DElasticity(commManager->getPrimal(), mesh, A, b, conf->E, conf->mu, funDensity, funGravity);
-			} else {
-				FEMAssembleTotal2DLaplace(commManager->getPrimal(), mesh, A, b, funConst, funConst);
+		{
+			if (commManager->isPrimal()) {
+				if (problemType == 1) {
+					FEMAssemble2DElasticity(commManager->getPrimal(), mesh, A, b, conf->E, conf->mu, funDensity, funGravity);
+				} else {
+					FEMAssembleTotal2DLaplace(commManager->getPrimal(), mesh, A, b, funConst, funConst);
+				}
 			}
 		}
-
 		Mat B, BT;
 		Vec lmb;
 		NullSpaceInfo nullSpace;
 
-		if (problemType == 1) {
-			GenerateTotalJumpOperator(mesh, 2, B, BT, lmb, commManager);
-			if (commManager->isPrimal()) Generate2DElasticityNullSpace(mesh, &nullSpace, commManager->getPrimal());
-		} else {
-			GenerateTotalJumpOperator(mesh, 1, B, BT, lmb, commManager);
-			if (commManager->isPrimal()) Generate2DLaplaceTotalNullSpace(mesh, &nullSpace, commManager->getPrimal());
+		{
+			if (problemType == 1) {
+				GenerateTotalJumpOperator(mesh, 2, B, BT, lmb, commManager);
+				if (commManager->isPrimal()) Generate2DElasticityNullSpace(mesh, &nullSpace, commManager->getPrimal());
+			} else {
+				GenerateTotalJumpOperator(mesh, 1, B, BT, lmb, commManager);
+				if (commManager->isPrimal()) Generate2DLaplaceTotalNullSpace(mesh, &nullSpace, commManager->getPrimal());
+			}
 		}
-
-
-		JumpRectMatrix jrm = JumpRectMatrix(0, conf->Hx, 0.0, conf->Hy, h, conf->m, conf->n);
+		//JumpRectMatrix jrm =
+		//		JumpRectMatrix(0, conf->Hx, 0.0, conf->Hy, h, conf->m, conf->n);
 
 		//PetscPrintf(PETSC_COMM_WORLD, "%d \n")
 
@@ -112,7 +115,7 @@ int main(int argc, char *argv[]) {
 
 			VecGetSize(b, &dimPrim);
 			MatGetSize(B, &dimDual, PETSC_NULL);
-			PetscPrintf(PETSC_COMM_SELF,"B: %d\n", dimDual);
+			PetscPrintf(PETSC_COMM_SELF, "B: %d\n", dimDual);
 			MatGetSize(nullSpace.R, PETSC_NULL, &dimNull);
 
 			PetscPrintf(PETSC_COMM_SELF, "\nPrimal var. : %d \nDual var.   : %d\nCoarse dim. : %d \n\n", dimPrim, dimDual, dimNull);
@@ -122,15 +125,20 @@ int main(int argc, char *argv[]) {
 		PetscLogStagePush(fetiStage);
 
 		MyLogger::Instance()->getTimer("feti")->startTimer();
-		Feti1
-				*feti =
-						new Feti1(commManager, A, b, BT, B, lmb, &nullSpace, mesh->vetrices.size(), 0, NULL, MasterWork);
 
+		Feti1 *feti;
+		{
+
+			feti
+					= new iFeti1(commManager, A, b, BT, B, lmb, &nullSpace, mesh->vetrices.size(), 0, NULL, MasterWork);
+		}
 		feti->setIsVerbose(true);
 
 		MyLogger::Instance()->getTimer("Solving")->startTimer();
 
-		feti->solve();
+		{
+			feti->solve();
+		}
 
 		MyLogger::Instance()->getTimer("Solving")->stopTimer();
 		MyLogger::Instance()->getTimer("feti")->stopTimer();
@@ -175,38 +183,38 @@ int main(int argc, char *argv[]) {
 		}
 
 		if (conf->saveOutputs) {
-/*
-			std::stringstream ss2;
+			/*
+			 std::stringstream ss2;
 
-			ss2 << "../matlab/data/A" << rank << ".m";
-			PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
-			MatView(A, v);
-			PetscViewerDestroy(v);
+			 ss2 << "../matlab/data/A" << rank << ".m";
+			 PetscViewerBinaryOpen(PETSC_COMM_SELF, ss2.str().c_str(), FILE_MODE_WRITE, &v);
+			 MatView(A, v);
+			 PetscViewerDestroy(v);
 
-			if (commManager->isPrimal()) {
+			 if (commManager->isPrimal()) {
 
-				Vec x;
-				VecDuplicate(b, &x);
-				feti->copySolution(x);
+			 Vec x;
+			 VecDuplicate(b, &x);
+			 feti->copySolution(x);
 
-				PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/data/outP.m", FILE_MODE_WRITE, &v);
-				//MatView(A, v);
-				VecView(b, v);
-				//MatView(BT, v);
-				MatView(B, v);
-				MatView(nullSpace.R, v);
-				VecView(x, v);
-				//PetscViewerDestroy(v);
+			 PetscViewerBinaryOpen(commManager->getPrimal(), "../matlab/data/outP.m", FILE_MODE_WRITE, &v);
+			 //MatView(A, v);
+			 VecView(b, v);
+			 //MatView(BT, v);
+			 MatView(B, v);
+			 MatView(nullSpace.R, v);
+			 VecView(x, v);
+			 //PetscViewerDestroy(v);
 
-				VecDestroy(x);
-			}
+			 VecDestroy(x);
+			 }
 
-			if (commManager->isDual()) {
-				PetscViewerBinaryOpen(commManager->getDual(), "../matlab/data/outD.m", FILE_MODE_WRITE, &v);
-				VecView(lmb, v);
-				PetscViewerDestroy(v);
-			}
-			*/
+			 if (commManager->isDual()) {
+			 PetscViewerBinaryOpen(commManager->getDual(), "../matlab/data/outD.m", FILE_MODE_WRITE, &v);
+			 VecView(lmb, v);
+			 PetscViewerDestroy(v);
+			 }
+			 */
 		}
 
 		PetscLogStagePop();
@@ -214,16 +222,16 @@ int main(int argc, char *argv[]) {
 		//delete feti;
 
 
-		feti->saveIterationInfo(conf->name);
+		//feti->saveIterationInfo(conf->name);
 
 		if (conf->saveOutputs) {
 			/*
-			PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/data/out.m", FILE_MODE_WRITE, &v);
+			 PetscViewerBinaryOpen(PETSC_COMM_WORLD, "../matlab/data/out.m", FILE_MODE_WRITE, &v);
 
-			MatView(B, v);
+			 MatView(B, v);
 
-			PetscViewerDestroy(v);
-			*/
+			 PetscViewerDestroy(v);
+			 */
 		}
 
 		/*

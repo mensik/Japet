@@ -11,6 +11,8 @@ static char help[] = "My first own testing utility for PETSc\n\n";
 #include "solver.h"
 #include "feti.h"
 
+#include "vt_user.h"
+
 static PetscReal den = 7.85e-9;
 
 void funGravity(Element* e, PetscReal density, PetscReal *fs) {
@@ -122,36 +124,49 @@ int main(int argc, char *argv[]) {
 		Mat A;
 		Vec b;
 
+		{
+		VT_TRACER("Elast. assemnle");	
 		MyLogger::Instance()->getTimer("elastAss")->startTimer();
 		FEMAssemble2DElasticity(commManager->getPrimal(), mesh, A, b, conf->E, conf->mu, funDensity, funGravity);
 		MyLogger::Instance()->getTimer("elastAss")->stopTimer();
 		PetscPrintf(PERMUTATED_WORLD, "\nElasticity assembled in              %e s\n", MyLogger::Instance()->getTimer("elastAss")->getTotalTime());
+		}
 
 		Mat Bl, Bg, BTg, BTl;
 		Vec lmbG, lmbL;
 
 		SubdomainCluster cluster;
-
+		
+		{
+		VT_TRACER("Cluster init");
 		MyLogger::Instance()->getTimer("clustInit")->startTimer();
 		mesh->generateRectMeshCluster(&cluster, conf->m, conf->n, clXCount, clYCount, PERMUTATED_WORLD);
 		MyLogger::Instance()->getTimer("clustInit")->stopTimer();
 		PetscPrintf(PERMUTATED_WORLD, "Cluster constructed in               %e s\n", MyLogger::Instance()->getTimer("clustInit")->getTotalTime());
+		}
 
 		MyLogger::Instance()->getTimer("clustJump")->startTimer();
 		GenerateClusterJumpOperator(mesh, &cluster, Bg, BTg, lmbG, Bl, BTl, lmbL, PERMUTATED_WORLD);
 		MyLogger::Instance()->getTimer("clustJump")->stopTimer();
 		PetscPrintf(PERMUTATED_WORLD, "Cluster jump operator constructed in %e s\n", MyLogger::Instance()->getTimer("clustJump")->getTotalTime());
 
+
 		MyLogger::Instance()->getTimer("clustNull")->startTimer();
 		Generate2DElasticityClusterNullSpace(mesh, &cluster, PERMUTATED_WORLD);
 		MyLogger::Instance()->getTimer("clustNull")->stopTimer();
 		PetscPrintf(PERMUTATED_WORLD, "Cluster null space constructed in    %e s \n", MyLogger::Instance()->getTimer("clustNull")->getTotalTime());
-
+		{
+		VT_TRACER("HFeti Init start");
 		MyLogger::Instance()->getTimer("Initiation")->startTimer();
+		}
+		
 		HFeti
-				*hFeti =
+				*hFeti;
+		{
+		VT_TRACER("HFETI initiation");	
+		hFeti =
 						new HFeti(commManager, A, b, Bg, BTg, Bl, BTl, lmbG, lmbL, &cluster, mesh->vetrices.size());
-
+		}
 		MyLogger::Instance()->getTimer("Initiation")->stopTimer();
 		PetscPrintf(PERMUTATED_WORLD, "HFeti initiated in                   %e s \n\n\n", MyLogger::Instance()->getTimer("Initiation")->getTotalTime());
 
@@ -169,23 +184,24 @@ int main(int argc, char *argv[]) {
 
 
 		hFeti->setIsVerbose(true);
-
+		{
+		VT_TRACER("HFeti solving");
 		MyLogger::Instance()->getTimer("Solving")->startTimer();
 		hFeti->solve();
 		MyLogger::Instance()->getTimer("Solving")->stopTimer();
-
+		}
 		if (commManager->isPrimalRoot()) {
 
 			PetscPrintf(PETSC_COMM_SELF, "Solve time             : %e \n", MyLogger::Instance()->getTimer("Solving")->getTotalTime());
 			PetscPrintf(PETSC_COMM_SELF, "Init time              : %e \n", MyLogger::Instance()->getTimer("Initiation")->getTotalTime());
 
 		}
-
+/*
 		PetscViewer v;
 		PetscViewerBinaryOpen(PERMUTATED_WORLD, "../matlab/data/B.m", FILE_MODE_WRITE, &v);
 		MatView(Bg, v);
 		PetscViewerDestroy(v);
-
+*/
 		delete mesh;
 		delete hFeti;
 

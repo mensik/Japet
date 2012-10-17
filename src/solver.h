@@ -14,7 +14,7 @@
 #include "petscksp.h"
 
 const double PI = 4.0 * std::atan(1.0);
-const double MAXPREC = 1e-6;
+const double MAXPREC = 1e-16;
 
 class SolverApp {
 public:
@@ -116,10 +116,10 @@ protected:
 public:
 	IterationManager itManager;
 
-			Solver(Mat A, SolverPreconditioner *PC = NULL,
-					MPI_Comm comm = MPI_COMM_WORLD);
-	Solver(SolverApp *sa, SolverPreconditioner *PC = NULL,
+	Solver(Mat A, SolverPreconditioner *PC = NULL,
 			MPI_Comm comm = MPI_COMM_WORLD);
+	Solver(SolverApp *sa, SolverPreconditioner *PC = NULL, MPI_Comm comm =
+			MPI_COMM_WORLD);
 	virtual ~Solver();
 
 	void setIterationData(std::string name, PetscReal value) {
@@ -161,12 +161,12 @@ class CGSolver: public Solver {
 	void initSolver();
 public:
 	CGSolver(Mat A) :
-		Solver(A) {
+			Solver(A) {
 	}
 
-	CGSolver(SolverApp *sa, SolverPreconditioner *pc = NULL,
-			MPI_Comm comm = MPI_COMM_WORLD, int restartRate = -1) :
-		Solver(sa, pc, comm) {
+	CGSolver(SolverApp *sa, SolverPreconditioner *pc = NULL, MPI_Comm comm =
+			MPI_COMM_WORLD, int restartRate = -1) :
+			Solver(sa, pc, comm) {
 		this->restartRate = restartRate;
 	}
 
@@ -181,16 +181,57 @@ class BBSolver: public Solver {
 
 public:
 	BBSolver(Mat A) :
-		Solver(A) {
+			Solver(A) {
 	}
 
-	BBSolver(SolverApp *sa, SolverPreconditioner *pc = NULL,
-			MPI_Comm comm = MPI_COMM_WORLD) :
-		Solver(sa, pc, comm) {
+	BBSolver(SolverApp *sa, SolverPreconditioner *pc = NULL, MPI_Comm comm =
+			MPI_COMM_WORLD) :
+			Solver(sa, pc, comm) {
+	}
+
+	void solve(Vec b, Vec x); ///< begin solving
+
+};
+
+class SteepestDescent: public Solver {
+
+	void projectedMult(Vec in, Vec out);
+
+public:
+	SteepestDescent(Mat A) :
+			Solver(A) {
+	}
+
+	SteepestDescent(SolverApp *sa, SolverPreconditioner *pc = NULL, MPI_Comm comm =
+			MPI_COMM_WORLD) :
+			Solver(sa, pc, comm) {
 	}
 
 	void solve(Vec b, Vec x); ///< begin solving
 };
+
+class ASinSolver: public Solver {
+
+	void projectedMult(Vec in, Vec out);
+
+	PetscReal tau;
+	PetscReal phi;
+
+public:
+	ASinSolver(Mat A) :
+			Solver(A) {
+	}
+
+	ASinSolver(SolverApp *sa, SolverPreconditioner *pc = NULL, MPI_Comm comm =
+			MPI_COMM_WORLD) :
+			Solver(sa, pc, comm) {
+		tau = ConfigManager::Instance()->asinTau;
+		phi = (sqrt(5) - 1) / 2;
+	}
+
+	void solve(Vec b, Vec x); ///< begin solving
+};
+
 /*
  class ReCGSolver: public Solver {
 

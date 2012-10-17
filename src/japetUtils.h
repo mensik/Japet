@@ -23,6 +23,10 @@ enum CoarseProblemMethod {
 	ParaCG = 0, MasterWork = 1, ORTO = 2
 };
 
+enum InnerSolverType {
+	STEEPEST_DESCENT = 0, BB = 1, ASIN = 2
+};
+
 struct IterationInfo {
 	int itNumber;
 	PetscReal rNorm;
@@ -161,6 +165,7 @@ public:
 	}
 };
 
+
 class ConfigManager {
 	static ConfigManager *instance;
 	ConfigManager();
@@ -179,6 +184,9 @@ public:
 	PetscInt clustN;
 
 	PetscInt problem; //< 0 - Laplace, 1 - lin.elasticity
+	PetscInt innerSolver;
+
+	PetscReal asinTau;
 
 	CoarseProblemMethod coarseProblemMethod;
 	PDStrategy pdStrategy;

@@ -46,7 +46,7 @@ protected:
 
 	PDCommManager *cMan;
 
-	ASolver *outerSolver; ///< Solver class for outer loop (default is CGSolver)
+	ASolver *outerSolver;
 	bool isVerbose;
 
 	//
@@ -254,6 +254,11 @@ public:
 	}
 
 	virtual ASolver* instanceOuterSolver(Vec d, Vec lmb);
+
+	virtual void setRequiredPrecision(PetscReal reqPrecision) {
+		//PetscPrintf(PETSC_COMM_WORLD, "PRECSET: %e \n", reqPrecision);
+		KSPSetTolerances(kspA, reqPrecision, reqPrecision, 1e10, 1000);
+	}
 };
 
 class mFeti1: public Feti1 {

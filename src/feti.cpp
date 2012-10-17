@@ -79,6 +79,7 @@ AFeti::AFeti(PDCommManager* comMan, Vec b, Mat BT, Mat B, Vec lmb,
 
 void AFeti::initCoarse() {
 	//PetscInt rank;
+
 	Mat GTemp, GTGloc;
 
 	MyLogger::Instance()->getTimer("Coarse init")->startTimer();
@@ -388,7 +389,6 @@ void AFeti::applyPrimalMult(Vec in, Vec out) {
 ASolver* AFeti::instanceOuterSolver(Vec d, Vec l) {
 	//return new CGSolver(this, d, l, this);
 
-
 	if (outerSolver == NULL) {
 		outerSolver = new CGSolver(this);
 		outerSolver->setPreconditioner(this);
@@ -557,7 +557,7 @@ bool AFeti::isConverged(PetscInt itNumber, PetscReal norm, PetscReal bNorm,
 Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
 		PetscInt *fNodes, CoarseProblemMethod cpM, SystemR *sR) :
-	AFeti(comMan, b, BT, B, lmb, nullSpace, cpM, sR) {
+		AFeti(comMan, b, BT, B, lmb, nullSpace, cpM, sR) {
 
 	if (cMan->isPrimal()) {
 
@@ -656,16 +656,18 @@ Feti1::Feti1(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		PC pc;
 
 		MyLogger::Instance()->getTimer("Factorization")->startTimer();
-		PCCreate(PETSC_COMM_SELF, &pc);
-		PCSetOperators(pc, Areg, Areg, SAME_PRECONDITIONER);
-		PCSetFromOptions(pc);
-		PCSetUp(pc);
+		{
 
-		KSPCreate(PETSC_COMM_SELF, &kspA);
-		KSPSetTolerances(kspA, 1e-10, 1e-10, 1e7, 1);
-		KSPSetPC(kspA, pc);
-		KSPSetOperators(kspA, Areg, Areg, SAME_PRECONDITIONER);
+			PCCreate(PETSC_COMM_SELF, &pc);
+			PCSetOperators(pc, Areg, Areg, SAME_PRECONDITIONER);
+			PCSetFromOptions(pc);
+			PCSetUp(pc);
 
+			KSPCreate(PETSC_COMM_SELF, &kspA);
+			KSPSetTolerances(kspA, 1e-20, 1e-20, 1e8, 1000);
+			KSPSetPC(kspA, pc);
+			KSPSetOperators(kspA, Areg, Areg, SAME_PRECONDITIONER);
+		}
 		MyLogger::Instance()->getTimer("Factorization")->stopTimer();
 
 		MatDestroy(Areg);
@@ -731,7 +733,7 @@ void Feti1::applyInvA(Vec in, IterationManager *itManager) {
 
 	MatNullSpaceRemove(locNS, tempInvGh, PETSC_NULL);
 
-	KSPSetTolerances(kspA, precision, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
+	//KSPSetTolerances(kspA, precision, precision, 1e8, 100);
 	KSPSolve(kspA, tempInvGh, tempInvGhB);
 
 	MatNullSpaceRemove(locNS, tempInvGhB, PETSC_NULL);
@@ -774,216 +776,226 @@ void Feti1::applyPrimalMult(Vec in, Vec out) {
 FFeti::FFeti(PDCommManager *comMan, Mat A, Vec b, Mat BT, Mat B, Vec lmb,
 		NullSpaceInfo *nullSpace, PetscInt localNodeCount, PetscInt fNodesCount,
 		PetscInt *fNodes, CoarseProblemMethod cpM, SystemR *sR) :
-			Feti1(comMan, A, b, BT, B, lmb, nullSpace, localNodeCount, fNodesCount, fNodes, cpM, sR) {
+		Feti1(comMan, A, b, BT, B, lmb, nullSpace, localNodeCount, fNodesCount, fNodes, cpM, sR) {
+	{
 
-	PetscInt BRowCount, BLocalColCount, BLocalRowCount;
-	PetscInt myStart, myEnd;
+		PetscInt BRowCount, BLocalColCount, BLocalRowCount;
+		PetscInt myStart, myEnd;
 
-	MatGetLocalSize(B, &BLocalRowCount, &BLocalColCount);
-	MatGetSize(B, &BRowCount, PETSC_NULL);
-	MatGetOwnershipRange(B, &myStart, &myEnd);
+		MatGetLocalSize(B, &BLocalRowCount, &BLocalColCount);
+		MatGetSize(B, &BRowCount, PETSC_NULL);
+		MatGetOwnershipRange(B, &myStart, &myEnd);
 
-	//Vec unitVector;
-	Vec bRow;
+		//Vec unitVector;
+		Vec bRow;
 
-	VecCreateMPI(comMan->getPrimal(), BLocalColCount, PETSC_DECIDE, &bRow);
-	VecCreateMPI(comMan->getPrimal(), BLocalRowCount, PETSC_DECIDE, &fGlobal);
+		VecCreateMPI(comMan->getPrimal(), BLocalColCount, PETSC_DECIDE, &bRow);
+		VecCreateMPI(comMan->getPrimal(), BLocalRowCount, PETSC_DECIDE, &fGlobal);
 
-	VecScatterCreateToZero(fGlobal, &fToRoot, &fLocal);
+		VecScatterCreateToZero(fGlobal, &fToRoot, &fLocal);
 
-	if (comMan->isPrimalRoot()) {
-		MatCreateSeqDense(PETSC_COMM_SELF, BRowCount, BRowCount, PETSC_NULL, &F);
-		//MatCreateSeqAIJ(PETSC_COMM_SELF, BRowCount, BRowCount, BRowCount, PETSC_NULL, &F);
-	}
-
-	PetscInt ncols;
-	const PetscInt *cols;
-	const PetscScalar *vals;
-
-	for (int row = 0; row < BRowCount; row++) {
-
-		//VecSet(unitVector, 0);
-		//if (comMan->isPrimalRoot()) VecSetValue(unitVector, row, 1, INSERT_VALUES);
-
-		//VecAssemblyBegin(unitVector);
-		//VecAssemblyEnd(unitVector);
-
-		//applyMult(unitVector, fGlobal, NULL);
-
-
-		VecSet(bRow, 0);
-		if (row >= myStart && row < myEnd) {
-			MatGetRow(B, row, &ncols, &cols, &vals);
-			for (int i = 0; i < ncols; i++)
-				VecSetValue(bRow, cols[i], vals[i], INSERT_VALUES);
-			MatRestoreRow(B, row, &ncols, &cols, &vals);
+		if (comMan->isPrimalRoot()) {
+			MatCreateSeqDense(PETSC_COMM_SELF, BRowCount, BRowCount, PETSC_NULL, &F);
+			//MatCreateSeqAIJ(PETSC_COMM_SELF, BRowCount, BRowCount, BRowCount, PETSC_NULL, &F);
 		}
-		VecAssemblyBegin(bRow);
-		VecAssemblyEnd(bRow);
-
-		applyInvA(bRow, NULL);
-
-		//if (row == 70) {
-		//	PetscViewer v;
-		////	PetscViewerBinaryOpen(comMan->getPrimal(), "../matlab/data/fTest.m", FILE_MODE_WRITE, &v);
-		//	VecView(bRow, v);
-		//	PetscViewerDestroy(v);
-		//	}
-
-		MatMult(B, bRow, fGlobal);
-
-		VecScatterBegin(fToRoot, fGlobal, fLocal, INSERT_VALUES, SCATTER_FORWARD);
-		VecScatterEnd(fToRoot, fGlobal, fLocal, INSERT_VALUES, SCATTER_FORWARD);
-
-		if (cMan->isPrimalRoot()) {
-			PetscScalar *fVals;
-			VecGetArray(fLocal, &fVals);
-
-			for (int i = 0; i < BRowCount; i++) {
-				if (fVals[i] != 0) {
-					MatSetValue(F, i, row, fVals[i], INSERT_VALUES);
-				}
-			}
-			VecRestoreArray(fLocal, &fVals);
-			MatAssemblyBegin(F, MAT_FINAL_ASSEMBLY);
-			MatAssemblyEnd(F, MAT_FINAL_ASSEMBLY);
-		}
-	}
-
-	//
-	// Prepare G regularization (if necessary)
-	//
-
-	Mat RgLOC; // Local matrix of null space of G (tricky, isn't it ;-))
-	Mat RRt;
-
-	if (sR != NULL && sR->rDim > 0) {
-		VecScatter rScat;
-		Vec rLocal;
-		VecScatterCreateToZero(sR->systemGNullSpace[0], &rScat, &rLocal);
-
-		PetscInt rRows;
-		if (cMan->isPrimalRoot()) {
-			VecGetSize(rLocal, &rRows);
-			MatCreateSeqDense(PETSC_COMM_SELF, rRows, sR->rDim, PETSC_NULL, &RgLOC);
-		}
-
-		for (int i = 0; i < sR->rDim; i++) {
-			VecScatterBegin(rScat, sR->systemGNullSpace[i], rLocal, INSERT_VALUES, SCATTER_FORWARD);
-			VecScatterEnd(rScat, sR->systemGNullSpace[i], rLocal, INSERT_VALUES, SCATTER_FORWARD);
-
-			if (cMan->isPrimalRoot()) {
-				PetscScalar *rVals;
-				VecGetArray(rLocal, &rVals);
-				for (int j = 0; j < rRows; j++) {
-					MatSetValue(RgLOC, j, i, rVals[j], INSERT_VALUES);
-				}
-				VecRestoreArray(rLocal, &rVals);
-				MatAssemblyBegin(RgLOC, MAT_FINAL_ASSEMBLY);
-				MatAssemblyEnd(RgLOC, MAT_FINAL_ASSEMBLY);
-			}
-		}
-
-		if (cMan->isPrimalRoot()) {
-			Mat Rt;
-			MatTranspose(RgLOC, MAT_INITIAL_MATRIX, &Rt);
-			MatMatMult(RgLOC, Rt, MAT_INITIAL_MATRIX, 1, &RRt);
-			MatDestroy(Rt);
-		}
-	}
-
-	//VecDestroy(bRow);
-	//Mat Groot;
-	//gatherMatrix(G, Groot, 0, cMan->getPrimal());
-
-	if (cMan->isPrimalRoot()) {
-		/*
-		 PetscViewer v;
-		 PetscViewerBinaryOpen(PETSC_COMM_SELF, "../matlab/data/F.m", FILE_MODE_WRITE, &v);
-		 MatView(F, v);
-		 MatView(Groot, v);
-		 PetscViewerDestroy(v);
-		 */
-		PC pcF;
-		PCCreate(PETSC_COMM_SELF, &pcF);
-		PCSetOperators(pcF, F, F, SAME_PRECONDITIONER);
-		PCSetType(pcF, "cholesky");
-		PCSetUp(pcF);
-
-		KSPCreate(PETSC_COMM_SELF, &kspF);
-		KSPSetTolerances(kspF, 1e-10, 1e-10, 1e7, 1);
-		KSPSetPC(kspF, pcF);
-		KSPSetOperators(kspF, F, F, SAME_PRECONDITIONER);
-
-		//MatDestroy(F);
-		PCDestroy(pcF);
-
-		Vec gCol, sCol;
-		Mat GrootT, S;
-		PetscInt gRows, gCols;
-		MatGetSize(Groot, &gRows, &gCols);
-
-		VecCreateSeq(PETSC_COMM_SELF, gRows, &gCol);
-		VecCreateSeq(PETSC_COMM_SELF, gCols, &sCol);
-		MatCreateSeqDense(PETSC_COMM_SELF, gCols, gCols, PETSC_NULL, &S);
-
-		MatTranspose(Groot, MAT_INITIAL_MATRIX, &GrootT);
 
 		PetscInt ncols;
 		const PetscInt *cols;
 		const PetscScalar *vals;
 
-		for (int col = 0; col < gCols; col++) {
-			VecSet(gCol, 0);
-			MatGetRow(GrootT, col, &ncols, &cols, &vals);
-			for (int i = 0; i < ncols; i++)
-				VecSetValue(gCol, cols[i], vals[i], INSERT_VALUES);
-			MatRestoreRow(GrootT, col, &ncols, &cols, &vals);
-			VecAssemblyBegin(gCol);
-			VecAssemblyEnd(gCol);
+		for (int row = 0; row < BRowCount; row++) {
+			{
 
-			KSPSolve(kspF, gCol, gCol);
+				//VecSet(unitVector, 0);
+				//if (comMan->isPrimalRoot()) VecSetValue(unitVector, row, 1, INSERT_VALUES);
 
-			MatMult(GrootT, gCol, sCol);
+				//VecAssemblyBegin(unitVector);
+				//VecAssemblyEnd(unitVector);
 
-			PetscScalar *sVals;
-			VecGetArray(sCol, &sVals);
+				//applyMult(unitVector, fGlobal, NULL);
 
-			for (int i = 0; i < gCols; i++) {
-				if (sVals[i] != 0) {
-					MatSetValue(S, col, i, sVals[i], INSERT_VALUES);
+				{
+
+					VecSet(bRow, 0);
+					if (row >= myStart && row < myEnd) {
+						MatGetRow(B, row, &ncols, &cols, &vals);
+						for (int i = 0; i < ncols; i++)
+							VecSetValue(bRow, cols[i], vals[i], INSERT_VALUES);
+						MatRestoreRow(B, row, &ncols, &cols, &vals);
+					}
+					VecAssemblyBegin(bRow);
+					VecAssemblyEnd(bRow);
+				}
+
+				{
+
+					applyInvA(bRow, NULL);
+				}
+				//if (row == 70) {
+				//	PetscViewer v;
+				////	PetscViewerBinaryOpen(comMan->getPrimal(), "../matlab/data/fTest.m", FILE_MODE_WRITE, &v);
+				//	VecView(bRow, v);
+				//	PetscViewerDestroy(v);
+				//	}
+
+				MatMult(B, bRow, fGlobal);
+
+				VecScatterBegin(fToRoot, fGlobal, fLocal, INSERT_VALUES, SCATTER_FORWARD);
+				VecScatterEnd(fToRoot, fGlobal, fLocal, INSERT_VALUES, SCATTER_FORWARD);
+
+				{
+
+					if (cMan->isPrimalRoot()) {
+						PetscScalar *fVals;
+						VecGetArray(fLocal, &fVals);
+
+						for (int i = 0; i < BRowCount; i++) {
+							if (fVals[i] != 0) {
+								MatSetValue(F, i, row, fVals[i], INSERT_VALUES);
+							}
+						}
+						VecRestoreArray(fLocal, &fVals);
+						MatAssemblyBegin(F, MAT_FINAL_ASSEMBLY);
+						MatAssemblyEnd(F, MAT_FINAL_ASSEMBLY);
+					}
 				}
 			}
-			VecRestoreArray(sCol, &sVals);
-			MatAssemblyBegin(S, MAT_FINAL_ASSEMBLY);
-			MatAssemblyEnd(S, MAT_FINAL_ASSEMBLY);
-
 		}
+
+		//
+		// Prepare G regularization (if necessary)
+		//
+
+		Mat RgLOC; // Local matrix of null space of G (tricky, isn't it ;-))
+		Mat RRt;
 
 		if (sR != NULL && sR->rDim > 0) {
-			MatAXPY(S, 1, RRt, SAME_NONZERO_PATTERN);
+			VecScatter rScat;
+			Vec rLocal;
+			VecScatterCreateToZero(sR->systemGNullSpace[0], &rScat, &rLocal);
+
+			PetscInt rRows;
+			if (cMan->isPrimalRoot()) {
+				VecGetSize(rLocal, &rRows);
+				MatCreateSeqDense(PETSC_COMM_SELF, rRows, sR->rDim, PETSC_NULL, &RgLOC);
+			}
+
+			for (int i = 0; i < sR->rDim; i++) {
+				VecScatterBegin(rScat, sR->systemGNullSpace[i], rLocal, INSERT_VALUES, SCATTER_FORWARD);
+				VecScatterEnd(rScat, sR->systemGNullSpace[i], rLocal, INSERT_VALUES, SCATTER_FORWARD);
+
+				if (cMan->isPrimalRoot()) {
+					PetscScalar *rVals;
+					VecGetArray(rLocal, &rVals);
+					for (int j = 0; j < rRows; j++) {
+						MatSetValue(RgLOC, j, i, rVals[j], INSERT_VALUES);
+					}
+					VecRestoreArray(rLocal, &rVals);
+					MatAssemblyBegin(RgLOC, MAT_FINAL_ASSEMBLY);
+					MatAssemblyEnd(RgLOC, MAT_FINAL_ASSEMBLY);
+				}
+			}
+
+			if (cMan->isPrimalRoot()) {
+				Mat Rt;
+				MatTranspose(RgLOC, MAT_INITIAL_MATRIX, &Rt);
+				MatMatMult(RgLOC, Rt, MAT_INITIAL_MATRIX, 1, &RRt);
+				MatDestroy(Rt);
+			}
 		}
 
-		PC pcS;
-		PCCreate(PETSC_COMM_SELF, &pcS);
-		PCSetOperators(pcS, S, S, SAME_PRECONDITIONER);
-		PCSetType(pcS, "cholesky");
-		PCSetUp(pcS);
+		//VecDestroy(bRow);
+		//Mat Groot;
+		//gatherMatrix(G, Groot, 0, cMan->getPrimal());
 
-		KSPCreate(PETSC_COMM_SELF, &kspS);
-		KSPSetTolerances(kspS, 1e-10, 1e-10, 1e7, 1);
-		KSPSetPC(kspS, pcS);
-		KSPSetOperators(kspS, S, S, SAME_PRECONDITIONER);
+		if (cMan->isPrimalRoot()) {
+			/*
+			 PetscViewer v;
+			 PetscViewerBinaryOpen(PETSC_COMM_SELF, "../matlab/data/F.m", FILE_MODE_WRITE, &v);
+			 MatView(F, v);
+			 MatView(Groot, v);
+			 PetscViewerDestroy(v);
+			 */
+			PC pcF;
+			PCCreate(PETSC_COMM_SELF, &pcF);
+			PCSetOperators(pcF, F, F, SAME_PRECONDITIONER);
+			PCSetType(pcF, "cholesky");
+			PCSetUp(pcF);
 
-		//MatDestroy(F);
-		PCDestroy(pcS);
+			KSPCreate(PETSC_COMM_SELF, &kspF);
+			KSPSetTolerances(kspF, 1e-10, 1e-10, 1e7, 1);
+			KSPSetPC(kspF, pcF);
+			KSPSetOperators(kspF, F, F, SAME_PRECONDITIONER);
 
+			//MatDestroy(F);
+			PCDestroy(pcF);
+
+			Vec gCol, sCol;
+			Mat GrootT, S;
+			PetscInt gRows, gCols;
+			MatGetSize(Groot, &gRows, &gCols);
+
+			VecCreateSeq(PETSC_COMM_SELF, gRows, &gCol);
+			VecCreateSeq(PETSC_COMM_SELF, gCols, &sCol);
+			MatCreateSeqDense(PETSC_COMM_SELF, gCols, gCols, PETSC_NULL, &S);
+
+			MatTranspose(Groot, MAT_INITIAL_MATRIX, &GrootT);
+
+			PetscInt ncols;
+			const PetscInt *cols;
+			const PetscScalar *vals;
+
+			for (int col = 0; col < gCols; col++) {
+				VecSet(gCol, 0);
+				MatGetRow(GrootT, col, &ncols, &cols, &vals);
+				for (int i = 0; i < ncols; i++)
+					VecSetValue(gCol, cols[i], vals[i], INSERT_VALUES);
+				MatRestoreRow(GrootT, col, &ncols, &cols, &vals);
+				VecAssemblyBegin(gCol);
+				VecAssemblyEnd(gCol);
+
+				KSPSolve(kspF, gCol, gCol);
+
+				MatMult(GrootT, gCol, sCol);
+
+				PetscScalar *sVals;
+				VecGetArray(sCol, &sVals);
+
+				for (int i = 0; i < gCols; i++) {
+					if (sVals[i] != 0) {
+						MatSetValue(S, col, i, sVals[i], INSERT_VALUES);
+					}
+				}
+				VecRestoreArray(sCol, &sVals);
+				MatAssemblyBegin(S, MAT_FINAL_ASSEMBLY);
+				MatAssemblyEnd(S, MAT_FINAL_ASSEMBLY);
+
+			}
+
+			if (sR != NULL && sR->rDim > 0) {
+				MatAXPY(S, 1, RRt, SAME_NONZERO_PATTERN);
+			}
+
+			PC pcS;
+			PCCreate(PETSC_COMM_SELF, &pcS);
+			PCSetOperators(pcS, S, S, SAME_PRECONDITIONER);
+			PCSetType(pcS, "cholesky");
+			PCSetUp(pcS);
+
+			KSPCreate(PETSC_COMM_SELF, &kspS);
+			KSPSetTolerances(kspS, 1e-10, 1e-10, 1e7, 1);
+			KSPSetPC(kspS, pcS);
+			KSPSetOperators(kspS, S, S, SAME_PRECONDITIONER);
+
+			//MatDestroy(F);
+			PCDestroy(pcS);
+
+		}
+		//PetscViewer v;
+		//PetscViewerBinaryOpen(comMan->getPrimal(), "../matlab/F.m", FILE_MODE_WRITE, &v);
+		//MatView(F, v);
+		//PetscViewerDestroy(v);
 	}
-	//PetscViewer v;
-	//PetscViewerBinaryOpen(comMan->getPrimal(), "../matlab/F.m", FILE_MODE_WRITE, &v);
-	//MatView(F, v);
-	//PetscViewerDestroy(v);
-
 }
 
 void FFeti::applyMult(Vec in, Vec out, IterationManager *info) {
@@ -1116,12 +1128,29 @@ void FFeti::solve() {
 ASolver* iFeti1::instanceOuterSolver(Vec d, Vec l) {
 	//return new CGSolver(this, d, l, this);
 
-
 	if (outerSolver == NULL) {
-		outerSolver = new BBSolver(this);
+
+		switch (ConfigManager::Instance()->innerSolver) {
+
+		case STEEPEST_DESCENT:
+			outerSolver = new SteepestDescent(this);
+			break;
+		case BB:
+			outerSolver = new BBSolver(this);
+			break;
+		case ASIN:
+			outerSolver = new ASinSolver(this);
+			break;
+		default:
+			outerSolver = new BBSolver(this);
+			break;
+		}
+
 		outerSolver->setPreconditioner(this);
 		outerSolver->setProjector(this);
 	}
+
+	KSPSetTolerances(kspA, 1e-20, 1e-20, 1e8, 300);
 
 	return outerSolver;
 }
@@ -1142,7 +1171,6 @@ ASolver* InexactFeti1::instanceOuterSolver(Vec d, Vec lmb) {
 	//outerPrec = 1e-4;
 	//lastNorm = 1e-4;
 	//inCounter = 0;
-
 
 	//TODO!!!!!!!
 	return NULL;
@@ -1170,7 +1198,7 @@ void InexactFeti1::setRequiredPrecision(PetscReal reqPrecision) {
 HFeti::HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob,
 		Mat BClust, Mat BTClust, Vec lmbGl, Vec lmbCl, SubdomainCluster *cluster,
 		PetscInt localNodeCount) :
-	AFeti(pdMan, b, BTGlob, BGlob, lmbGl, cluster->outerNullSpace, MasterWork) {
+		AFeti(pdMan, b, BTGlob, BGlob, lmbGl, cluster->outerNullSpace, MasterWork) {
 
 	VecCreateGhost(cMan->getParen(), localNodeCount * 2, PETSC_DECIDE, 0, PETSC_NULL, &globTemp);
 	VecSet(globTemp, 0);
@@ -1199,8 +1227,8 @@ HFeti::HFeti(PDCommManager* pdMan, Mat A, Vec b, Mat BGlob, Mat BTGlob,
 	// TODO GTG ve vnitrnim feti neni regularni!!!
 	//
 
-	subClusterSystem
-			= new FFeti(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
+	subClusterSystem =
+			new FFeti(clustComMan, A, clustb, BTClust, BClust, lmbCl, cluster->clusterNullSpace, localNodeCount, 0, NULL, MasterWork, &(cluster->clusterR));
 
 	subClusterSystem->setPrec(1e-8);
 
@@ -1306,7 +1334,6 @@ void HFeti::setRequiredPrecision(PetscReal reqPrecision) {
 //
 //
 
-
 void GenerateJumpOperator(Mesh *mesh, Mat &B, Vec &lmb) {
 	PetscInt rank;
 	MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -1348,8 +1375,8 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 		//
 		int dSize;
 		std::set<PetscInt> indDirchlet;
-		for (std::set<PetscInt>::iterator i = mesh->borderEdges.begin(); i
-				!= mesh->borderEdges.end(); i++) {
+		for (std::set<PetscInt>::iterator i = mesh->borderEdges.begin();
+				i != mesh->borderEdges.end(); i++) {
 
 			for (int j = 0; j < 2; j++) {
 				indDirchlet.insert(mesh->edges[*i]->vetrices[j]);
@@ -1359,8 +1386,8 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 
 		PetscInt locDirch[dSize];
 		int counter = 0;
-		for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i
-				!= indDirchlet.end(); i++) {
+		for (std::set<PetscInt>::iterator i = indDirchlet.begin();
+				i != indDirchlet.end(); i++) {
 			locDirch[counter++] = *i;
 		}
 
@@ -1404,7 +1431,6 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 
 			PetscReal boundVal = 1.0 / sqrt(2.0); // Value to keep the B ortonormal
 
-
 			std::set<PetscInt> cornerInd;
 
 			for (unsigned int i = 0; i < mesh->corners.size(); i++) {
@@ -1421,8 +1447,8 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 
 						MatSetValue(B, rowCounter * d + j, mesh->pointPairing[i * 2] * d
 								+ j, boundVal, INSERT_VALUES);
-						MatSetValue(B, rowCounter * d + j, mesh->pointPairing[i * 2 + 1]
-								* d + j, -boundVal, INSERT_VALUES);
+						MatSetValue(B, rowCounter * d + j, mesh->pointPairing[i * 2 + 1] * d
+								+ j, -boundVal, INSERT_VALUES);
 
 						MatSetValue(BT, mesh->pointPairing[i * 2] * d + j, rowCounter * d
 								+ j, boundVal, INSERT_VALUES);
@@ -1441,8 +1467,8 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 
 				for (int j = 0; j < cornerSize - 1; j++) {
 
-					PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1) * (cornerSize
-							- j - 1) + (cornerSize - j - 1));
+					PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1)
+							* (cornerSize - j - 1) + (cornerSize - j - 1));
 
 					for (int dim = 0; dim < d; dim++) {
 						MatSetValue(B, rowCounter * d + dim, vetrices[j] * d + dim, -(cornerSize
@@ -1468,12 +1494,13 @@ void GenerateTotalJumpOperator(Mesh *mesh, int d, Mat &B, Mat &BT, Vec &lmb,
 			//
 			MPI_Gatherv(locDirch, dSize, MPI_INT, NULL, 0, NULL, MPI_INT, 0, commManager->getPrimal());
 		}
+		{
 
-		MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
-		MatAssemblyBegin(BT, MAT_FINAL_ASSEMBLY);
-		MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
-		MatAssemblyEnd(BT, MAT_FINAL_ASSEMBLY);
-
+			MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+			MatAssemblyBegin(BT, MAT_FINAL_ASSEMBLY);
+			MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+			MatAssemblyEnd(BT, MAT_FINAL_ASSEMBLY);
+		}
 	}
 
 	if (commManager->isDual()) {
@@ -1508,8 +1535,8 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 
 	int dSize;
 	std::set<PetscInt> indDirchlet;
-	for (std::set<PetscInt>::iterator i = mesh->borderEdges.begin(); i
-			!= mesh->borderEdges.end(); i++) {
+	for (std::set<PetscInt>::iterator i = mesh->borderEdges.begin();
+			i != mesh->borderEdges.end(); i++) {
 
 		for (int j = 0; j < 2; j++) {
 			indDirchlet.insert(mesh->edges[*i]->vetrices[j]);
@@ -1520,8 +1547,8 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 
 	PetscInt locDirch[dSize];
 	int counter = 0;
-	for (std::set<PetscInt>::iterator i = indDirchlet.begin(); i
-			!= indDirchlet.end(); i++) {
+	for (std::set<PetscInt>::iterator i = indDirchlet.begin();
+			i != indDirchlet.end(); i++) {
 		locDirch[counter++] = *i;
 	}
 	int dNodeCounts[size];
@@ -1561,8 +1588,8 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		typedef std::map<PetscInt, std::set<PetscInt> > PGroupMap;
 		PGroupMap equalGroups;
 
-		for (std::vector<PetscInt>::iterator i = cluster->globalPairing.begin(); i
-				!= cluster->globalPairing.end(); i = i + 2) {
+		for (std::vector<PetscInt>::iterator i = cluster->globalPairing.begin();
+				i != cluster->globalPairing.end(); i = i + 2) {
 
 			std::set<PetscInt> newSet;
 
@@ -1571,14 +1598,16 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 			for (int j = 0; j < 2; j++) {
 				newSet.insert(pair[j]);
 
-				for (std::set<PetscInt>::iterator k = equalGroups[pair[j]].begin(); k
-						!= equalGroups[pair[j]].end(); k++) {
+				for (std::set<PetscInt>::iterator k = equalGroups[pair[j]].begin();
+						k != equalGroups[pair[j]].end(); k++) {
 					newSet.insert(*k);
 				}
 			}
 
-			for (std::set<PetscInt>::iterator j = newSet.begin(); j != newSet.end(); j++) {
-				for (std::set<PetscInt>::iterator k = newSet.begin(); k != newSet.end(); k++) {
+			for (std::set<PetscInt>::iterator j = newSet.begin(); j != newSet.end();
+					j++) {
+				for (std::set<PetscInt>::iterator k = newSet.begin(); k != newSet.end();
+						k++) {
 					equalGroups[*j].insert(*k);
 				}
 			}
@@ -1592,7 +1621,6 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		// }
 		// PetscPrintf(PETSC_COMM_SELF, "\n");
 		// }
-
 
 		PetscInt rowCounter = dSum;
 
@@ -1611,8 +1639,8 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 
 			for (int j = 0; j < cornerSize - 1; j++) {
 
-				PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1) * (cornerSize
-						- j - 1) + (cornerSize - j - 1));
+				PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1)
+						* (cornerSize - j - 1) + (cornerSize - j - 1));
 
 				for (int dim = 0; dim < d; dim++) {
 					MatSetValue(BGlob, rowCounter * d + dim, vetrices[j] * d + dim, -(cornerSize
@@ -1635,11 +1663,14 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		MPI_Gatherv(locDirch, dSize, MPI_INT, NULL, 0, NULL, MPI_INT, 0, comm);
 	}
 
-	MatAssemblyBegin(BGlob, MAT_FINAL_ASSEMBLY);
-	MatAssemblyEnd(BGlob, MAT_FINAL_ASSEMBLY);
+	{
 
-	MatAssemblyBegin(BTGlob, MAT_FINAL_ASSEMBLY);
-	MatAssemblyEnd(BTGlob, MAT_FINAL_ASSEMBLY);
+		MatAssemblyBegin(BGlob, MAT_FINAL_ASSEMBLY);
+		MatAssemblyEnd(BGlob, MAT_FINAL_ASSEMBLY);
+
+		MatAssemblyBegin(BTGlob, MAT_FINAL_ASSEMBLY);
+		MatAssemblyEnd(BTGlob, MAT_FINAL_ASSEMBLY);
+	}
 
 	VecCreateMPI(comm, PETSC_DECIDE, (globalPairsCount + dSum) * d, &lmbGlob);
 	VecSet(lmbGlob, 0);
@@ -1659,8 +1690,8 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		typedef std::map<PetscInt, std::set<PetscInt> > PGroupMap;
 		PGroupMap equalGroups;
 
-		for (std::vector<PetscInt>::iterator i = cluster->localPairing.begin(); i
-				!= cluster->localPairing.end(); i = i + 2) {
+		for (std::vector<PetscInt>::iterator i = cluster->localPairing.begin();
+				i != cluster->localPairing.end(); i = i + 2) {
 
 			std::set<PetscInt> newSet;
 
@@ -1669,14 +1700,16 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 			for (int j = 0; j < 2; j++) {
 				newSet.insert(pair[j]);
 
-				for (std::set<PetscInt>::iterator k = equalGroups[pair[j]].begin(); k
-						!= equalGroups[pair[j]].end(); k++) {
+				for (std::set<PetscInt>::iterator k = equalGroups[pair[j]].begin();
+						k != equalGroups[pair[j]].end(); k++) {
 					newSet.insert(*k);
 				}
 			}
 
-			for (std::set<PetscInt>::iterator j = newSet.begin(); j != newSet.end(); j++) {
-				for (std::set<PetscInt>::iterator k = newSet.begin(); k != newSet.end(); k++) {
+			for (std::set<PetscInt>::iterator j = newSet.begin(); j != newSet.end();
+					j++) {
+				for (std::set<PetscInt>::iterator k = newSet.begin(); k != newSet.end();
+						k++) {
 					equalGroups[*j].insert(*k);
 				}
 			}
@@ -1703,8 +1736,8 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 
 			for (int j = 0; j < cornerSize - 1; j++) {
 
-				PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1) * (cornerSize
-						- j - 1) + (cornerSize - j - 1));
+				PetscReal norm = sqrt((PetscReal) (cornerSize - j - 1)
+						* (cornerSize - j - 1) + (cornerSize - j - 1));
 
 				for (int dim = 0; dim < d; dim++) {
 
@@ -1728,11 +1761,14 @@ void GenerateClusterJumpOperator(Mesh *mesh, SubdomainCluster *cluster,
 		}
 	}
 
-	MatAssemblyBegin(BCluster, MAT_FINAL_ASSEMBLY);
-	MatAssemblyEnd(BCluster, MAT_FINAL_ASSEMBLY);
+	{
 
-	MatAssemblyBegin(BTCluster, MAT_FINAL_ASSEMBLY);
-	MatAssemblyEnd(BTCluster, MAT_FINAL_ASSEMBLY);
+		MatAssemblyBegin(BCluster, MAT_FINAL_ASSEMBLY);
+		MatAssemblyEnd(BCluster, MAT_FINAL_ASSEMBLY);
+
+		MatAssemblyBegin(BTCluster, MAT_FINAL_ASSEMBLY);
+		MatAssemblyEnd(BTCluster, MAT_FINAL_ASSEMBLY);
+	}
 
 	VecSet(lmbCluster, 0);
 
@@ -1770,7 +1806,8 @@ void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 	}
 
 	PetscInt nullSpaceDim;
-	MPI_Allreduce(&hasDirchBound, &nullSpaceDim, 1, MPI_INT, MPI_SUM, comm); //Sum number of regular subdomains
+	MPI_Allreduce(&hasDirchBound, &nullSpaceDim, 1, MPI_INT, MPI_SUM, comm);
+	//Sum number of regular subdomains
 	nullSpaceDim = size - nullSpaceDim; //Dimnesion of null space is number of subdomains without dirch. border
 	PetscInt nsDomInd[nullSpaceDim];
 
@@ -1793,8 +1830,8 @@ void Generate2DLaplaceNullSpace(Mesh *mesh, bool &isSingular,
 		MatCreateMPIDense(comm, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, nullSpaceDim, PETSC_NULL, R);
 		for (int i = 0; i < nullSpaceDim; i++) {
 			if (nsDomInd[i] == rank) {
-				for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
-						!= mesh->vetrices.end(); v++) {
+				for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin();
+						v != mesh->vetrices.end(); v++) {
 					MatSetValue(*R, v->first, i, 1, INSERT_VALUES);
 				}
 			}
@@ -1829,8 +1866,8 @@ void Generate2DLaplaceTotalNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 	MatCreateMPIDense(comm, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, size, PETSC_NULL, R);
 	for (int i = 0; i < size; i++) {
 		if (i == rank) {
-			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
-					!= mesh->vetrices.end(); v++) {
+			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin();
+					v != mesh->vetrices.end(); v++) {
 				MatSetValue(*R, v->first, i, 1 / sqrt((double) mesh->vetrices.size()), INSERT_VALUES);
 			}
 		}
@@ -1861,8 +1898,8 @@ void Generate2DElasticityNullSpace(Mesh *mesh, NullSpaceInfo *nullSpace,
 
 	for (int i = 0; i < size; i++) {
 		if (i == rank) {
-			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
-					!= mesh->vetrices.end(); v++) {
+			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin();
+					v != mesh->vetrices.end(); v++) {
 				VecSetValue(nullSpace->localBasis[0], (v->first - mesh->startIndexes[i])
 						* 2, 1, INSERT_VALUES);
 				VecSetValue(nullSpace->localBasis[1], (v->first - mesh->startIndexes[i])
@@ -1930,8 +1967,8 @@ void genClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster, Mat *R) {
 	MatCreateMPIDense(comm, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, size, PETSC_NULL, R);
 	for (int i = 0; i < size; i++) {
 		if (i == rank) {
-			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
-					!= mesh->vetrices.end(); v++) {
+			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin();
+					v != mesh->vetrices.end(); v++) {
 				MatSetValue(*R, v->first + cluster->indexDiff, i, 1, INSERT_VALUES);
 			}
 		}
@@ -1956,8 +1993,8 @@ void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster) {
 	MatCreateMPIDense(PETSC_COMM_WORLD, mesh->vetrices.size(), PETSC_DECIDE, PETSC_DECIDE, cluster->clusterCount, PETSC_NULL, &RGlob);
 	for (int i = 0; i < cluster->clusterCount; i++) {
 		if (i == cluster->clusterColor) {
-			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
-					!= mesh->vetrices.end(); v++) {
+			for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin();
+					v != mesh->vetrices.end(); v++) {
 				MatSetValue(RGlob, v->first, i, 1, INSERT_VALUES);
 			}
 		}
@@ -1976,8 +2013,8 @@ void Generate2DLaplaceClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster) {
 	cluster->Rin = RClust;
 }
 
-void Generate2DElasticityClusterNullSpace(Mesh *mesh,
-		SubdomainCluster *cluster, MPI_Comm com_world) {
+void Generate2DElasticityClusterNullSpace(Mesh *mesh, SubdomainCluster *cluster,
+		MPI_Comm com_world) {
 
 	NullSpaceInfo *nullSpace = new NullSpaceInfo();
 	NullSpaceInfo *gNullSpace = new NullSpaceInfo();
@@ -2019,8 +2056,8 @@ void Generate2DElasticityClusterNullSpace(Mesh *mesh,
 	MPI_Comm_rank(cluster->clusterComm, &cRank);
 
 	int counter = 0;
-	for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin(); v
-			!= mesh->vetrices.end(); v++) {
+	for (std::map<PetscInt, Point*>::iterator v = mesh->vetrices.begin();
+			v != mesh->vetrices.end(); v++) {
 
 		rowIndGlob[counter] = v->first * 2;
 		rowIndG[counter++] = (v->first + cluster->indexDiff) * 2;
@@ -2157,7 +2194,7 @@ void Generate2DElasticityClusterNullSpace(Mesh *mesh,
 
 }
 
-Feti1* createFeti(Mesh *mesh, PetscReal(*f)(Point), PetscReal(*K)(Point),
+Feti1* createFeti(Mesh *mesh, PetscReal (*f)(Point), PetscReal (*K)(Point),
 		MPI_Comm comm) {
 	Mat A, B;
 	Vec b, lmb;
@@ -2181,8 +2218,8 @@ JumpRectMatrix::JumpRectMatrix(PetscReal x0, PetscReal x1, PetscReal y0,
 
 	nDirchlets = (yEdges + 1) * n;
 	nCorners = (m - 1) * (n - 1);
-	nPairs = 2 * (m - 1) * yEdges + (n - 2) * (m - 1) * (yEdges - 1) + (n - 1)
-			* xEdges + (m - 1) * (n - 1) * (xEdges - 1);
+	nPairs = 2 * (m - 1) * yEdges + (n - 2) * (m - 1) * (yEdges - 1)
+			+ (n - 1) * xEdges + (m - 1) * (n - 1) * (xEdges - 1);
 
 	bRows = (nDirchlets + nCorners * 3 + nPairs) * 2;
 
@@ -2190,7 +2227,8 @@ JumpRectMatrix::JumpRectMatrix(PetscReal x0, PetscReal x1, PetscReal y0,
 
 }
 
-PetscInt JumpRectMatrix::getGlobalIndex(PetscInt subDom, PetscInt x, PetscInt y) {
+PetscInt JumpRectMatrix::getGlobalIndex(PetscInt subDom, PetscInt x,
+		PetscInt y) {
 	return (xEdges + 1) * (yEdges + 1) * subDom + (xEdges + 1) * y + x;
 }
 
@@ -2202,7 +2240,6 @@ std::map<PetscInt, PetscReal> JumpRectMatrix::getRow(PetscInt rowNumber) {
 	//	int subDom =
 
 	} else if (rowNumber < (nDirchlets + nCorners * 3) * 2) { //CORNER
-
 
 	} else { //PAIR
 
